@@ -169,7 +169,9 @@ const ENTRIES: &[Entry] = &[
             "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
             "                   [--report ram|contracts|indirect-cost|name-env]",
             "                   [--extra-entry <module|path.emp>]... [--check]",
-            "                   [--anchor-overlay <anchors.toml>]",
+            "                   [--anchor-overlay <anchors.toml>] [--no-build-json]",
+            "note:  -o also writes <out stem>.build.json beside the ROM (the build-data export,",
+            "       bound to the ROM by its SHA-256); --no-build-json writes none",
             "note:  --anchor-overlay replaces the `at` of the map.toml anchors its [[anchor]]",
             "       rows name, for this build only (a clip's own sound-bank positions); give",
             "       emit_sound_blob the same file",
@@ -199,6 +201,7 @@ const ENTRIES: &[Entry] = &[
             valued("--extra-entry"),
             flag("--check"),
             valued("--anchor-overlay"),
+            flag("--no-build-json"),
             valued("--report"),
         ],
         run: run_build,
@@ -3036,6 +3039,8 @@ struct BuildOpts {
     /// own sound-bank positions). Resolved against the working directory. `None` builds
     /// from the map as written.
     anchor_overlay: Option<String>,
+    /// `--no-build-json`: with `-o`, write the ROM but no `<stem>.build.json` beside it.
+    no_build_json: bool,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -3079,6 +3084,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut extra_entries: Vec<String> = Vec::new();
     let mut check = false;
     let mut anchor_overlay: Option<String> = None;
+    let mut no_build_json = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -3106,6 +3112,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             // Repeatable, order-preserving: one module evaluated per occurrence.
             "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
             "--check" => check = true,
+            "--no-build-json" => no_build_json = true,
             "--anchor-overlay" => {
                 if anchor_overlay.is_some() {
                     return Err("--anchor-overlay takes one file; naming two applies only the last".into());
@@ -3180,7 +3187,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             return Err("--report prints instead of building; --anchor-overlay needs a build".into());
         }
     }
-    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay })
+    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay, no_build_json })
 }
 
 /// `profile` with the `--anchor-overlay` file read and attached, or `profile` itself
@@ -3513,7 +3520,35 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         },
         None => None,
     };
+    // The build-data export, stated before anything is written (see `ExportParts`).
+    let export_parts = match (&opts.output, opts.no_build_json) {
+        (Some(_), false) => match prepare_export(aeon, opts, &listing) {
+            Ok(parts) => Some(parts),
+            Err(err) => {
+                eprintln!("error: native build ({label}) build export: {err}");
+                process::exit(1);
+            }
+        },
+        _ => None,
+    };
+    // WRITE ORDER (spec 4.2). A sidecar is only ever written for a ROM it names:
+    //  1. remove any sidecar already beside the destination, so no failure from here on
+    //     can leave a sidecar that matches a ROM it was not written for;
+    //  2. install the ROM, then the listing;
+    //  3. hash the exact bytes installed (`full`);
+    //  4. write the sidecar atomically.
+    // A failure after step 1 writes no sidecar. This runs even under `--no-build-json`:
+    // the old sidecar would describe a ROM that is about to be replaced.
     if let Some(out_path) = &opts.output {
+        let stale = sidecar_path(std::path::Path::new(out_path));
+        match std::fs::remove_file(&stale) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                eprintln!("error: cannot remove the stale {}: {e}", stale.display());
+                process::exit(1);
+            }
+        }
         if let Err(err) = install_artifact(out_path, &full) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
@@ -3526,39 +3561,98 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     }
-    // SPIKE (G0a Task 1, replaced by the real sidecar in Task 3): measure the export's
-    // size and load time. Strictly opt-in; unset, nothing here runs and no byte moves.
-    if std::env::var_os("SIGIL_EXPORT_SPIKE").is_some_and(|v| v == "1") {
-        if let Some(out_path) = &opts.output {
-            export_spike(aeon, opts, out_path, &full, &listing);
+    if let (Some(out_path), Some(parts)) = (&opts.output, export_parts) {
+        let out = std::path::Path::new(out_path);
+        // Test-only failure injection between "hash" and "write the sidecar": the point
+        // where a crash must leave NO sidecar. Nothing sets it outside the test that
+        // proves the stale sidecar was removed first.
+        if std::env::var_os("SIGIL_TEST_FAIL_BEFORE_SIDECAR").is_some_and(|v| v == "1") {
+            eprintln!("error: native build ({label}): SIGIL_TEST_FAIL_BEFORE_SIDECAR=1, stopping before the sidecar");
+            process::exit(1);
+        }
+        let rom_name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let text = match render_export(parts, rom_name, &full) {
+            Ok(t) => t,
+            Err(err) => {
+                eprintln!("error: native build ({label}) build export: {err}");
+                process::exit(1);
+            }
+        };
+        let path = sidecar_path(out);
+        if let Err(err) = sigil_harness::atomic_write::write_atomic(&path, text.as_bytes()) {
+            eprintln!("error: cannot write {}: {err}", path.display());
+            process::exit(1);
         }
     }
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
-/// The Task-1 spike: `rom`, `tool`, `shape`, symbols from the listing (kind
-/// `Label`/`Equ`, no space) and line rows at section granularity (the one ROM section
-/// split at label addresses; the resolved sections are not visible from here), written
-/// to `<output>.spike.json`.
-fn export_spike(
+/// Where the build-data export for the ROM written to `rom_out` lives: the ROM's
+/// final extension replaced by `build.json`, so `s4.bin` is described by `s4.build.json`
+/// and `s4.debug.bin` by `s4.debug.build.json`. A ROM with no extension gains one
+/// (`rom` becomes `rom.build.json`).
+fn sidecar_path(rom_out: &std::path::Path) -> std::path::PathBuf {
+    rom_out.with_extension("build.json")
+}
+
+/// Everything the sidecar says that does not depend on the installed ROM's hash.
+/// Assembled BEFORE anything is written, so an export that cannot be stated (a define
+/// that does not fit, a source read that fits no root, a file that changed while the
+/// build read it) fails the build while the previous ROM and its sidecar still agree.
+struct ExportParts {
+    tool: sigil_link::export::ToolRecord,
+    shape: sigil_link::export::ShapeRecord,
+    inputs_sha256: [u8; 32],
+    files: Vec<sigil_link::export::FileRecord>,
+    symbols: Vec<sigil_link::export::SymbolRecord>,
+}
+
+/// The names the export gives the shape.
+///
+///  * `shape.game` is the GAME, the `--game` value: `sonic4` or `demo`. The fixed
+///    off-canonical shapes (`--config-a`, `--config-b`, `--lean`, `--stress-*`) are
+///    sonic4 builds, as [`digest_target`] already says.
+///  * `shape.shape` is the target's display label from
+///    [`BuildTarget::label_and_profile`], the very string every other subcommand names
+///    the target by (`sonic4 plain`, `sonic4 debug`, `demo plain`, `demo debug`,
+///    `config_a`, `config_b`, `lean`, `stress_evict`, `stress_art`), so a report and an
+///    export over one target can never name it differently.
+fn export_shape_names(target: &BuildTarget) -> (String, String) {
+    (digest_target(target).1.to_string(), target.label_and_profile().0)
+}
+
+fn prepare_export(
     aeon: &std::path::Path,
     opts: &BuildOpts,
-    out_path: &str,
-    full: &[u8],
     listing: &[sigil_link::ListingSymbol],
-) {
+) -> Result<ExportParts, String> {
     use sigil_link::export::*;
-    let (target, game) = digest_target(&opts.target);
     let (_, profile) = opts.target.label_and_profile();
-    let shape = if profile.debug { format!("{target}.debug") } else { target.to_string() };
-    let defines = match sigil_harness::native::shape_defines(&profile, aeon) {
-        Ok(d) => d.into_iter().filter_map(|(k, v)| i64::try_from(v).ok().map(|v| (k, v))).collect(),
-        Err(err) => {
-            eprintln!("error: export spike: {err}");
-            process::exit(1);
-        }
+    let defines_wide = sigil_harness::native::shape_defines(&profile, aeon)?;
+    let mut defines = Vec::with_capacity(defines_wide.len());
+    for (name, value) in &defines_wide {
+        let narrow = i64::try_from(*value).map_err(|_| {
+            format!("define {name} = {value} does not fit a 64-bit integer, so the build export cannot state it")
+        })?;
+        defines.push((name.clone(), narrow));
+    }
+    let aeon_root = std::fs::canonicalize(aeon)
+        .map_err(|e| format!("resolve the aeon root {}: {e}", aeon.display()))?;
+    let files = sigil_harness::export_files::export_files(
+        &aeon_root,
+        &sigil_harness::source_digest::sigil_source_root(),
+        &sigil_span::read_set::snapshot(),
+    )?;
+    let tool = ToolRecord {
+        name: "sigil".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        revision: env!("SIGIL_REVISION").into(),
+        tree: env!("SIGIL_TREE_STATE").into(),
     };
-    let symbols: Vec<SymbolRecord> = listing
+    let (game, shape_name) = export_shape_names(&opts.target);
+    let shape = ShapeRecord { game, shape: shape_name, defines };
+    let inputs_sha256 = inputs_sha256(&tool, &shape, &defines_wide, &files);
+    let symbols = listing
         .iter()
         .map(|l| SymbolRecord {
             name: l.name.clone(),
@@ -3572,57 +3666,28 @@ fn export_spike(
             public: false,
         })
         .collect();
-    let mut starts: Vec<u32> =
-        listing.iter().filter(|l| !l.is_equate && (l.value as usize) < full.len()).map(|l| l.value).collect();
-    starts.sort_unstable();
-    starts.dedup();
-    let rows: Vec<LineRow> = starts
-        .iter()
-        .enumerate()
-        .map(|(i, &vma)| {
-            let end = starts.get(i + 1).copied().unwrap_or(full.len() as u32);
-            LineRow { vma, lma: vma, len: end - vma, file: 0, line: 0, kind: RowKind::Data }
-        })
-        .collect();
+    Ok(ExportParts { tool, shape, inputs_sha256, files, symbols })
+}
+
+/// Render the sidecar for the ROM bytes `full`, which are the bytes already installed.
+fn render_export(parts: ExportParts, rom_name: String, full: &[u8]) -> Result<String, String> {
+    use sigil_link::export::*;
     let export = BuildExport {
-        rom: RomRecord {
-            path: std::path::Path::new(out_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            size: full.len() as u64,
-            sha256: sha256_of(full),
-        },
-        inputs_sha256: [0; 32],
-        tool: ToolRecord {
-            name: "sigil".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            revision: env!("SIGIL_REVISION").into(),
-            tree: env!("SIGIL_TREE_STATE").into(),
-        },
-        shape: ShapeRecord { game: game.into(), shape, defines },
+        rom: RomRecord { path: rom_name, size: full.len() as u64, sha256: sha256_of(full) },
+        inputs_sha256: parts.inputs_sha256,
+        tool: parts.tool,
+        shape: parts.shape,
         spaces: vec![
             SpaceRecord { id: Space::M68k, addr_bits: 24 },
             SpaceRecord { id: Space::Z80, addr_bits: 16 },
         ],
-        files: vec![],
-        symbols,
+        files: parts.files,
+        symbols: parts.symbols,
         layouts: vec![],
         consts: vec![],
-        lines: LineTable { sections: vec![LineSection { name: "rom".into(), space: Space::M68k, rows }] },
+        lines: LineTable { sections: vec![] },
     };
-    let path = format!("{out_path}.spike.json");
-    let text = match to_json(&export) {
-        Ok(t) => t,
-        Err(err) => {
-            eprintln!("error: export spike: {err}");
-            process::exit(1);
-        }
-    };
-    if let Err(err) = install_artifact(&path, text.as_bytes()) {
-        eprintln!("error: cannot write {path}: {err}");
-        process::exit(1);
-    }
+    to_json(&export).map_err(|e| e.to_string())
 }
 
 /// The `.lst` source digest for this build: the read set the recorder captured, the

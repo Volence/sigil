@@ -2024,3 +2024,18 @@ until its row is removed.
 - The CI half already runs everywhere: `sigil-link/tests/vendored_contract.rs::vendored_schema_matches_source`.
 - `SOURCE` pins an empyrean commit on `feat/g0a-build-contract`, not yet on empyrean `main`. Re-vendor (and the
   `empyrean-commit:` line) when that merges, if the merge changes any pinned file.
+
+## G0A-EXPORT-FILES-GAPS
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 3. The sidecar's `files` table is a projection of the read-set recorder
+  (`sigil-harness/src/export_files.rs`), and two kinds of build input are not rows. Neither moves ROM bytes
+  unobserved (the ROM hash binds them), but neither moves `inputsSha256` or shows as a stale source either.
+- (1) **Source files under the aeon `tools/` directory** (`tools/fixtures/anchor_sweep/*.emp`, four files, read by
+  every build through the module scan) fit none of the four roots. The standing rule is that no fifth root is
+  invented, so reads under `tools/` are skipped via `UNROOTED_AEON_DIRS`. Needs a controller ruling: a root,
+  a scan-pattern change so the build stops reading fixtures it never uses, or an explicit exclusion in the schema.
+- (2) **Data and tool inputs** (art and sound blobs, `map.toml`, the `convsym` executable) have no `lang` in the
+  1.0 enum (`emp|asm|z80`), so they are not rows. Folding them into `inputsSha256` needs no schema change (the hash
+  text is ours), only a decision on how Oracle should learn they changed. Until then a changed blob shows as a
+  changed `rom.sha256` and nothing finer.

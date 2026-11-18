@@ -128,6 +128,7 @@ pub mod stdout;
 /// `sigil_span::read_set` recorder), the module scan's membership, the build
 /// configuration and the identity of the ROM it wrote.
 pub mod source_digest;
+pub mod export_files;
 
 use sigil_link::LinkedImage;
 

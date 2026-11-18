@@ -4,9 +4,11 @@
 //! later tasks fill. Closed enums here are closed on purpose: a consumer matches them
 //! exhaustively, and a new variant is a version change, not a silent addition.
 
+pub mod inputs;
 pub mod json;
 pub mod locate;
 
+pub use inputs::{inputs_sha256, inputs_text};
 pub use json::{sha256_hex, sha256_of, to_json, ExportError};
 
 /// Everything the export file holds. Field order is the JSON key order of §4.6.

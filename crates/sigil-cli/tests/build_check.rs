@@ -135,7 +135,12 @@ fn a_clean_check_decides_both_families_and_writes_nothing() {
     assert!(stdout.contains("built: demo plain native ROM, crc="), "{stdout}");
     let len = std::fs::metadata(&rom).expect("the full build wrote demo.bin").len();
     assert!(len > 0, "empty ROM");
+    // A full build also writes the build-data export beside the ROM (G0a); the control
+    // removes both so the refusal below is checked against an empty directory.
+    let sidecar = dir.join("demo.build.json");
+    assert!(sidecar.exists(), "the full build wrote no build.json beside {}", rom.display());
     std::fs::remove_file(&rom).expect("remove the control ROM");
+    std::fs::remove_file(&sidecar).expect("remove the control sidecar");
 
     // The same destination beside --check is refused, and nothing appears.
     let (out, stdout, stderr) = sigil_demo(&aeon, &dir, &["--check", "-o", rom.to_str().unwrap()], &[]);
