@@ -2012,3 +2012,15 @@ until its row is removed.
   found every out-of-range form refused loudly.
 - Work: a Z80 counterpart of the coverage test (the Z80 forms the aeon sound driver emits, by
   mnemonic/operand shape, each generated), then widen `cases_z80` to cover it.
+
+## G0A-VENDORED-CONTRACT-LANDING-LEG
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 2. `scripts/check-vendored-contract.sh` (needs `EMPYREAN_DIR`; unset is exit 2, never a skip)
+  compares `contract/build/SOURCE` and the vendored files against empyrean. It runs standalone and each G0a task's
+  landing bar runs it by hand. It is NOT yet a leg inside `scripts/landing-run.sh`: that script's verdict machinery
+  (`LEDGER_EXIT`, `CI_EXIT` spans, `landing_verdict.rs`, `check_landing_log.py`) is deep enough that a new leg is its
+  own change, with its own red-first proof. Until it is a leg, a landing verdict does not mention a stale vendor.
+- The CI half already runs everywhere: `sigil-link/tests/vendored_contract.rs::vendored_schema_matches_source`.
+- `SOURCE` pins an empyrean commit on `feat/g0a-build-contract`, not yet on empyrean `main`. Re-vendor (and the
+  `empyrean-commit:` line) when that merges, if the merge changes any pinned file.

@@ -1,0 +1,22 @@
+# Vendored copy of the empyrean.build 1.x contract (G0a). Do not edit here: change it in empyrean, then re-vendor.
+# Lines below the header are sha256sum format: <sha256>  <path relative to this directory>.
+empyrean-repo: empyrean
+empyrean-branch: feat/g0a-build-contract
+empyrean-commit: 4ff2533d481a076e7b9011997610b6dd0535dfbb
+map: empyrean contract/schema/build/** and contract/schema/tests/validate_build_schema.py -> here, flat (the runner sits beside the schema)
+files:
+af583bae17c03946d8ec7090c20c11b6ecd0c187fe008893e0729f962b31b722  empyrean.build-1.schema.json
+26a15c8a501da7d66f0af4cbecf19c4c92c034730784c8e336fe59ce43147371  validate_build_schema.py
+1419c69b06435529e9922d844eeba6b407f4b9860db156749879000522ae8084  vectors/pass/demo-minimal.json
+196e605f3f030de1ec53254a4b0f56fd18f41506cbb1d82dee12215a74d6934b  vectors/pass/minor-1-1-unknown-keys.json
+a55f193528ca07f9def7c1d3db6b724e9dc97436398148296ec401e3f16eb39d  vectors/pass/s4-minimal.json
+ae2f81acbc2ab8cba3263f69964e9d9250c0dd6a78e4869a04d34aa80df7eb56  vectors/pass/z80-banked.json
+77bf325cc1dd3034af2da91b490717dc0adf990f61416e199b5f830b15539f4c  vectors/red/absolute-path.json
+1c9ba00d1528381dce9c595a2cd016a0201c61810b2a341c22430d4cf9fd89ac  vectors/red/format-unknown.json
+e602284c8ae72f4b8a958c356b8a048c6a42738283842edbd42e9acdb962f994  vectors/red/hex-string-number.json
+422f5208bdc0e594e64bf8d9bed90b3a3180013a0f72adaf71ef3974e6fe342c  vectors/red/lines-kind-unknown.json
+6ba362dd9e4f54b19b12e6380875ba97f34e7083d3774a06f87072befb0ca652  vectors/red/major-2.json
+984219d09451948a2d298e7e1e540885da602063953b25bad69489a096f0d2ee  vectors/red/missing-rom-sha256.json
+63115cc3b09d3e78ffba3c6fa4448acd5e743ced549286ada40dac68a75138a5  vectors/red/sha256-uppercase.json
+03e0445f933168db6e910ec2a91934efa11db1ffd917d52c83f0e8308750fdaf  vectors/red/timestamp-key-in-envelope.json
+45b1eee2df2e86722da755ed4e6b0815e20269f71512d25a364983c326962788  vectors/red/unknown-space.json
