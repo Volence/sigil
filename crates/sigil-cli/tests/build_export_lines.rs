@@ -14,7 +14,15 @@
 //!  * the checksum row is exactly the field `sigil_link::apply_header_checksum` writes,
 //!    and the ROM's word there IS the header checksum of the file;
 //!  * a fill or org-gap row covers uniform bytes (padding, not code mislabelled);
-//!  * a source row names a `files` row and a line from 1; a no-source row names neither.
+//!  * a source row names a `files` row and a line from 1; a no-source row names neither;
+//!  * a row's `vma` equals its `lma` unless its section is phased (a listing `PHASE`
+//!    label lies in it), and one section has one `vma - lma` offset;
+//!  * a `code` row sits in a placed 68000 section (not `(image)`) at an even address
+//!    with an even length, as every 68000 instruction does; s4 plain has code rows;
+//!  * ATTRIBUTION, against the listing and the source text (see [`attribution`]): the
+//!    row that starts at a listing label is on a line at or after a declaration of that
+//!    label in the same file. Plus the header's declaring lines and the Z80 driver blob
+//!    row (`boot_data.emp`'s `Z80_Sound_Start`, the size of the generated blob).
 //!
 //! Loud on unmeasurable: a sidecar with no rows, a listing without `EndOfRom`, or a ROM
 //! too short for a header fails the gate rather than passing it.
@@ -114,6 +122,7 @@ fn end_of_rom(listing: &str) -> Result<u64, String> {
 #[derive(Clone, Debug)]
 struct Row {
     section: String,
+    vma: u64,
     lma: u64,
     len: u64,
     file: u64,
@@ -134,6 +143,7 @@ fn rows_of(export: &serde_json::Value) -> Result<Vec<Row>, String> {
             let n = |i: usize| r[i].as_u64().ok_or_else(|| format!("section {name}: row {r} column {i} is not an integer"));
             rows.push(Row {
                 section: name.clone(),
+                vma: n(0)?,
                 lma: n(1)?,
                 len: n(2)?,
                 file: n(3)?,
@@ -149,8 +159,17 @@ fn rows_of(export: &serde_json::Value) -> Result<Vec<Row>, String> {
     Ok(rows)
 }
 
+/// The listing's `PHASE NAME VMA $X LMA $Y` rows: the load addresses of phased labels.
+fn phased_lmas(listing: &str) -> Vec<u64> {
+    listing
+        .lines()
+        .filter_map(|l| l.strip_prefix("PHASE ")?.split(" LMA $").nth(1).map(|h| u64::from_str_radix(h.trim(), 16)))
+        .map(|r| r.expect("a PHASE row's LMA is hex"))
+        .collect()
+}
+
 /// Gate 2 over one shape. Returns the problems found (empty = green).
-fn gate2(rom: &[u8], end_of_rom: u64, export: &serde_json::Value, rows: &[Row]) -> Vec<String> {
+fn gate2(rom: &[u8], end_of_rom: u64, phased: &[u64], export: &serde_json::Value, rows: &[Row]) -> Vec<String> {
     let mut bad = Vec::new();
     let len = rom.len() as u64;
     let n_files = export["files"].as_array().map_or(0, |f| f.len()) as u64;
@@ -201,6 +220,33 @@ fn gate2(rom: &[u8], end_of_rom: u64, export: &serde_json::Value, rows: &[Row]) 
         }
     }
 
+    // Addresses: one offset per section; vma == lma unless a PHASE label lies in it.
+    let mut by_section: std::collections::BTreeMap<&str, Vec<&Row>> = std::collections::BTreeMap::new();
+    for r in rows {
+        by_section.entry(r.section.as_str()).or_default().push(r);
+    }
+    for (sec, rs) in &by_section {
+        let delta = |r: &Row| r.vma.wrapping_sub(r.lma);
+        if rs.iter().any(|r| delta(r) != delta(rs[0])) {
+            bad.push(format!("section {sec}: rows disagree on vma - lma"));
+        }
+        let is_phased = rs.iter().any(|r| phased.iter().any(|p| (r.lma..r.lma + r.len).contains(p)));
+        if !is_phased && rs.iter().any(|r| r.vma != r.lma) {
+            bad.push(format!("section {sec} is not phased but a row has vma != lma: {:?}", rs.iter().find(|r| r.vma != r.lma)));
+        }
+    }
+
+    // Code: in a placed 68000 section, whole instructions (even address, even length).
+    let spaces = export["lines"]["sections"].as_object();
+    for r in rows.iter().filter(|r| r.kind == "code") {
+        let space = spaces.and_then(|s| s.get(&r.section)).and_then(|s| s["space"].as_str()).unwrap_or("?");
+        if r.section == "(image)" || !matches!(space, "m68k" | "z80") {
+            bad.push(format!("code row outside a CPU section: {r:?} (space {space})"));
+        } else if space == "m68k" && (r.lma % 2 != 0 || r.len % 2 != 0) {
+            bad.push(format!("code row is not whole 68000 instructions (odd address or length): {r:?}"));
+        }
+    }
+
     // deb2: exactly [EndOfRom, len).
     let deb2: Vec<&Row> = rows.iter().filter(|r| r.kind == "deb2").collect();
     if end_of_rom > len {
@@ -238,6 +284,179 @@ fn gate2(rom: &[u8], end_of_rom: u64, export: &serde_json::Value, rows: &[Row]) 
     bad
 }
 
+/// A `files` row's path on disk.
+fn source_path(tree: &Path, f: &serde_json::Value) -> Option<PathBuf> {
+    let (root, path) = (f["root"].as_str()?, f["path"].as_str()?);
+    Some(match root {
+        "engine" => tree.join("engine").join(path),
+        "game" => tree.join("games").join(path),
+        "generated" => {
+            let (area, rest) = path.split_once('/')?;
+            tree.join("engine").join(area).join("generated").join(rest)
+        }
+        "sigil" => Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path),
+        _ => return None,
+    })
+}
+
+/// The identifier a source line declares, if it has the shape of a label or item
+/// declaration: optional `pub`, optional item keyword, optional `.`, a name, then end of
+/// line or one of `: ( = < {`. (`proc X(`, `pub data X: u16 = 0`, `.loop:`, `Label:`.)
+fn declared_name(line: &str) -> Option<&str> {
+    let mut s = line.split("//").next()?.trim_start();
+    s = s.strip_prefix("pub ").map_or(s, str::trim_start);
+    for kw in ["proc ", "data ", "table ", "dispatch ", "script ", "offsets ", "region "] {
+        if let Some(rest) = s.strip_prefix(kw) {
+            s = rest.trim_start();
+            break;
+        }
+    }
+    s = s.strip_prefix('.').unwrap_or(s);
+    let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(s.len());
+    if end == 0 || s.as_bytes()[0].is_ascii_digit() {
+        return None;
+    }
+    let (name, rest) = s.split_at(end);
+    let rest = rest.trim_start();
+    (rest.is_empty() || rest.starts_with([':', '(', '=', '<', '{'])).then_some(name)
+}
+
+/// The 1-based lines of `text` inside a `comptime fn` or `context` block: TEMPLATE
+/// bodies. Code spliced from a template carries the template's own line until G0a Task 7
+/// gives `.emp` splices expansion ids, so attribution is not checked on these lines.
+fn template_lines(text: &[String]) -> std::collections::HashSet<usize> {
+    let mut out = std::collections::HashSet::new();
+    let (mut inside, mut started, mut depth) = (false, false, 0i64);
+    for (i, raw) in text.iter().enumerate() {
+        let code = raw.split("//").next().unwrap_or("");
+        let head = code.trim_start();
+        let head = head.strip_prefix("pub ").map_or(head, str::trim_start);
+        if !inside && (head.starts_with("comptime fn ") || head.starts_with("context ")) {
+            (inside, started, depth) = (true, false, 0);
+        }
+        if inside {
+            out.insert(i + 1);
+            depth += code.matches('{').count() as i64 - code.matches('}').count() as i64;
+            started |= code.contains('{');
+            if started && depth <= 0 {
+                inside = false;
+            }
+        }
+    }
+    out
+}
+
+/// What [`attribution`] measured.
+#[derive(Debug, Default)]
+struct Attribution {
+    /// Label addresses whose row was checked.
+    checked: usize,
+    /// Label addresses with a source row on a template-body line (Task 7).
+    template: usize,
+    /// Label addresses none of whose labels has a declaration outside a template body.
+    undeclared: usize,
+    bad: Vec<String>,
+}
+
+/// ATTRIBUTION against the listing, the derived set and its rule:
+///
+/// For every address `A` where the listing places a label (`NAME : HEX C |`) and a
+/// `code`/`data` row STARTS, the row's line must not precede a declaration of one of
+/// the labels at `A` in the row's own file: some label at `A` is declared
+/// ([`declared_name`], by its last `$`/`.` component, outside a template body) in the
+/// row's file at a line `<=` the row's line. A row that takes another row's line (a
+/// wrong-owner walk, a shifted attribution) lands before the label's declaration or in
+/// another file. A label is placed at its load address (a listing `PHASE` row's LMA
+/// for a phased label). Excluded, and counted: rows on template-body lines (Task 7),
+/// and addresses where no label has such a declaration at all (comptime-generated
+/// names, labels a template splice defined: `$module$asmN$local`).
+fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[Row]) -> Attribution {
+    let files = export["files"].as_array().cloned().unwrap_or_default();
+    let texts: Vec<Vec<String>> = files
+        .iter()
+        .map(|f| {
+            source_path(tree, f)
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .map(|t| t.lines().map(str::to_string).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    let templates: Vec<_> = texts.iter().map(|t| template_lines(t)).collect();
+    // name -> every (file, line) declaring it outside a template body.
+    let mut decls: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    for (f, t) in texts.iter().enumerate() {
+        for (i, l) in t.iter().enumerate() {
+            if let Some(n) = declared_name(l) {
+                if !templates[f].contains(&(i + 1)) {
+                    decls.entry(n.to_string()).or_default().push((f, i + 1));
+                }
+            }
+        }
+    }
+    // Each label at its LOAD address: the `C` row's VMA, or its `PHASE` row's LMA.
+    let phase: std::collections::HashMap<&str, u64> = listing
+        .lines()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("PHASE ")?;
+            let (name, lma) = (rest.split(' ').next()?, rest.split(" LMA $").nth(1)?);
+            Some((name, u64::from_str_radix(lma.trim(), 16).ok()?))
+        })
+        .collect();
+    let mut at: std::collections::BTreeMap<u64, Vec<&str>> = std::collections::BTreeMap::new();
+    for l in listing.lines() {
+        if let Some((name, hex)) = l.strip_prefix(' ').and_then(|b| b.strip_suffix(" C |")?.split_once(" : ")) {
+            if let Ok(a) = u64::from_str_radix(hex.trim(), 16) {
+                at.entry(phase.get(name).copied().unwrap_or(a)).or_default().push(name);
+            }
+        }
+    }
+    let starts: std::collections::HashMap<u64, &Row> =
+        rows.iter().filter(|r| r.kind == "code" || r.kind == "data").map(|r| (r.lma, r)).collect();
+    let mut out = Attribution::default();
+    for (a, names) in &at {
+        let Some(r) = starts.get(a) else { continue };
+        let (f, line) = (r.file as usize, r.line as usize);
+        if templates.get(f).is_some_and(|t| t.contains(&line)) {
+            out.template += 1;
+            continue;
+        }
+        // A label a template splice defined (`$module$asmN$local`) is declared in the
+        // template body: it has no declaration outside one.
+        let spliced = |n: &&&str| n.split('$').any(|part| part.strip_prefix("asm").is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())));
+        let cands: Vec<(usize, usize)> = names
+            .iter()
+            .filter(|n| !spliced(n))
+            .filter_map(|n| decls.get(n.rsplit(['$', '.']).next().unwrap_or(n)))
+            .flatten()
+            .copied()
+            .collect();
+        if cands.is_empty() {
+            out.undeclared += 1;
+            continue;
+        }
+        out.checked += 1;
+        if !cands.iter().any(|&(df, dl)| df == f && dl <= line) {
+            let path = files.get(f).and_then(|x| x["path"].as_str()).unwrap_or("?");
+            out.bad.push(format!("attribution: row at {a:#X} {names:?} is {path}:{line}, before or outside every declaration {cands:?}"));
+        }
+    }
+    out
+}
+
+/// The row starting at the listing address of `label`.
+fn row_at_label<'a>(listing: &str, rows: &'a [Row], label: &str) -> Option<&'a Row> {
+    let hex = listing.lines().find_map(|l| l.strip_prefix(&format!(" {label} : "))?.strip_suffix(" C |"))?;
+    let a = u64::from_str_radix(hex.trim(), 16).ok()?;
+    rows.iter().find(|r| r.lma == a && (r.kind == "code" || r.kind == "data"))
+}
+
+/// The source text of a row's line.
+fn line_text(tree: &Path, export: &serde_json::Value, r: &Row) -> String {
+    let f = &export["files"][r.file as usize];
+    let text = source_path(tree, f).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    text.lines().nth(r.line as usize - 1).unwrap_or("").to_string()
+}
+
 #[test]
 fn every_rom_byte_is_covered_once() {
     let Some((_g, tree)) = tree() else { return skip() };
@@ -246,10 +465,21 @@ fn every_rom_byte_is_covered_once() {
         let b = build_shape(&tree, name, flags);
         let eor = end_of_rom(&b.listing).unwrap_or_else(|e| panic!("shape {name}: {e}"));
         let rows = rows_of(&b.export).unwrap_or_else(|e| panic!("shape {name}: {e}"));
-        let bad = gate2(&b.rom, eor, &b.export, &rows);
+        let phased = phased_lmas(&b.listing);
+        let mut bad = gate2(&b.rom, eor, &phased, &b.export, &rows);
+        let attr = attribution(&tree, &b.listing, &b.export, &rows);
+        assert!(attr.checked > 0, "shape {name}: attribution checked nothing: {attr:?}");
+        bad.extend(attr.bad.iter().cloned());
+        // The header's declaring lines: what a step into the header lands on.
+        for label in ["GameHeader", "_header_tail"] {
+            match row_at_label(&b.listing, &rows, label) {
+                Some(r) if line_text(&tree, &b.export, r).contains(&format!("data {label}")) => {}
+                other => bad.push(format!("the row at {label} is not its declaring line: {other:?}")),
+            }
+        }
         let count = |k: &str| rows.iter().filter(|r| r.kind == k).count();
         eprintln!(
-            "GATE2 shape={name} rom={} end_of_rom={eor} rows={} code={} data={} fill={} org-gap={} deb2={} checksum={} sections={} sidecar_bytes={} bad={}",
+            "GATE2 shape={name} rom={} end_of_rom={eor} rows={} code={} data={} fill={} org-gap={} deb2={} checksum={} sections={} sidecar_bytes={} attribution_checked={} attribution_template={} attribution_undeclared={} bad={}",
             b.rom.len(),
             rows.len(),
             count("code"),
@@ -260,6 +490,9 @@ fn every_rom_byte_is_covered_once() {
             count("checksum"),
             b.export["lines"]["sections"].as_object().map_or(0, |s| s.len()),
             b.sidecar_len,
+            attr.checked,
+            attr.template,
+            attr.undeclared,
             bad.len()
         );
         if !bad.is_empty() {
@@ -273,11 +506,24 @@ fn every_rom_byte_is_covered_once() {
                 "s4 plain has {} line rows, not more than the spike's {SPIKE_LABEL_ROWS}",
                 rows.len()
             );
-            // Controls: the gate is not blind to the two defects it exists to catch.
+            // Instruction rows exist: the front ends' marks reached the table.
+            assert!(count("code") > 0, "s4 plain has no code rows");
+            // The Z80 driver blob: one data row on its including line, the blob's size.
+            let blob = std::fs::metadata(tree.join("engine/sound/generated/z80_sound_blob.bin")).expect("the blob").len();
+            let z = row_at_label(&b.listing, &rows, "Z80_Sound_Start").expect("a row at Z80_Sound_Start");
+            let zpath = b.export["files"][z.file as usize]["path"].as_str().unwrap_or("");
+            assert!(
+                zpath == "system/boot_data.emp"
+                    && z.kind == "data"
+                    && z.len == blob
+                    && line_text(&tree, &b.export, z).contains("data Z80_Sound_Start"),
+                "the Z80 blob row {z:?} ({zpath}) is not boot_data.emp's Z80_Sound_Start line over {blob} bytes"
+            );
+            // Controls: the gate is not blind to the defects it exists to catch.
             // (1) Drop one row.
             let mut dropped = rows.clone();
             let gone = dropped.remove(dropped.len() / 2);
-            let red = gate2(&b.rom, eor, &b.export, &dropped);
+            let red = gate2(&b.rom, eor, &phased, &b.export, &dropped);
             assert!(red.iter().any(|m| m.contains("gap")), "a dropped row {gone:?} passed gate 2: {red:?}");
             // (2) A source row duplicated over the header back-patch: the checksum bytes
             // claimed again by a data row (the source line that declared them).
@@ -285,8 +531,37 @@ fn every_rom_byte_is_covered_once() {
             let mut dup = rows.clone();
             dup.push(Row { section: ck.section.clone(), kind: "data".into(), file: 0, line: 1, ..ck });
             dup.sort_by_key(|r| (r.lma, r.len));
-            let red = gate2(&b.rom, eor, &b.export, &dup);
+            let red = gate2(&b.rom, eor, &phased, &b.export, &dup);
             assert!(red.iter().any(|m| m.contains("overlap")), "a duplicated header row passed gate 2: {red:?}");
+            // (3) The deb2 row off by one.
+            let mut off = rows.clone();
+            let d = off.iter_mut().find(|r| r.kind == "deb2").expect("a deb2 row");
+            d.lma += 1;
+            d.len -= 1;
+            let red = gate2(&b.rom, eor, &phased, &b.export, &off);
+            assert!(red.iter().any(|m| m.starts_with("deb2 rows")), "a deb2 row off by one passed gate 2: {red:?}");
+            // (4) A data row over non-uniform bytes relabelled fill.
+            let mut relabel = rows.clone();
+            let v = relabel
+                .iter_mut()
+                .find(|r| r.kind == "data" && { let s = &b.rom[r.lma as usize..(r.lma + r.len) as usize]; s.iter().any(|x| *x != s[0]) })
+                .expect("a data row over non-uniform bytes");
+            (v.kind, v.file, v.line) = ("fill".into(), 0, 0);
+            let red = gate2(&b.rom, eor, &phased, &b.export, &relabel);
+            assert!(red.iter().any(|m| m.contains("non-uniform")), "a data row relabelled fill passed gate 2: {red:?}");
+            // (5) A row's vma moved off its lma in an unphased section.
+            let mut moved = rows.clone();
+            let v = moved.iter_mut().find(|r| r.kind == "code").unwrap();
+            v.vma += 2;
+            let red = gate2(&b.rom, eor, &phased, &b.export, &moved);
+            assert!(red.iter().any(|m| m.contains("vma")), "a vma moved off its lma passed gate 2: {red:?}");
+            // (6) Attribution shifted by one row: each row takes the previous row's line.
+            let mut shifted = rows.clone();
+            for i in (1..shifted.len()).rev() {
+                (shifted[i].file, shifted[i].line) = (shifted[i - 1].file, shifted[i - 1].line);
+            }
+            let red = attribution(&tree, &b.listing, &b.export, &shifted);
+            assert!(!red.bad.is_empty(), "attribution shifted by one row passed: {red:?}");
         }
     }
     assert!(failures.is_empty(), "gate 2 failed:\n{}", failures.join("\n"));

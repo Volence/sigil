@@ -109,6 +109,8 @@ pub enum ExportError {
     FileNotInTable { path: String, why: String },
     /// Two `files` rows with one `(root, path)`.
     DuplicateFile { root: &'static str, path: String },
+    /// A front end's instruction mark that names no single placed `Data` run.
+    CodeMark { section: String, why: String },
     /// An exporter invariant that does not hold (a bug, not data).
     Internal(String),
 }
@@ -133,6 +135,9 @@ impl std::fmt::Display for ExportError {
                 write!(f, "line table: source file {path} wrote ROM bytes but has no row in `files`: {why}")
             }
             ExportError::DuplicateFile { root, path } => write!(f, "files: `{root}/{path}` is listed twice"),
+            ExportError::CodeMark { section, why } => {
+                write!(f, "line table: an instruction mark for section `{section}` cannot be placed: {why}")
+            }
             ExportError::Internal(m) => write!(f, "build export internal error: {m}"),
         }
     }

@@ -3,7 +3,7 @@
 //! Driver-independent on purpose: the driver supplies placed sections, a span
 //! locator and its side tables; nothing here knows a front end.
 
-use super::lines::{check_image_coverage, merge_adjacent, section_fill, walk_lines, NoSourceRange};
+use super::lines::{check_image_coverage, merge_adjacent, walk_lines, NoSourceRange};
 use super::locate::SpanLocator;
 use super::{
     BuildExport, ConstRecord, ExportError, FileRecord, LayoutRecord, LineTable, RomRecord, RootName, RowKind,
@@ -25,6 +25,9 @@ pub struct SideTables {
     pub layouts: Vec<LayoutRecord>,
     pub consts: Vec<ConstRecord>,
     pub z80: Option<Z80Bridge>,
+    /// The fragments the front ends emitted as instructions, by section name and
+    /// fragment range (`sigil_ir::Module::code`): the line table's `code` rows.
+    pub code: Vec<(String, std::ops::Range<usize>)>,
 }
 
 /// Everything a build keeps for its export, taken before the sections are consumed.
@@ -45,7 +48,7 @@ pub type FileKey<'a> = &'a dyn Fn(&str) -> Result<(RootName, String), String>;
 ///
 /// `post_link` declares the image bytes written after the link, by no source line:
 /// the deb2 appendix and the folded header checksum, as the driver measured them on
-/// this build. Section fill between placed sections is derived here from the sections.
+/// this build. Section fill between placed sections is derived by the walk.
 /// `file_key` maps a located file to its `files` row (see [`FileKey`]); a located file
 /// with no row is an error naming it, never dropped and never row 0.
 ///
@@ -69,9 +72,7 @@ pub fn build_export(
             return Err(ExportError::DuplicateFile { root: w[0].root.as_str(), path: w[0].path.clone() });
         }
     }
-    let mut no_source = section_fill(&inputs.sections);
-    no_source.extend_from_slice(post_link);
-    let mut lines = walk_lines(&inputs.sections, &*inputs.locator, &no_source)?;
+    let mut lines = walk_lines(&inputs.sections, &*inputs.locator, post_link, &inputs.side.code)?;
     map_files(&mut lines, &*inputs.locator, &files, file_key)?;
     merge_adjacent(&mut lines);
     check_image_coverage(&lines, rom.size)?;

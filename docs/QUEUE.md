@@ -2057,15 +2057,15 @@ until its row is removed.
 
 ## G0A-LINE-KIND-CODE
 
-- state: **OPEN** 2026-11-18  size: `M`  project: `G0A-BUILD-EXPORT`
-- Found in G0a Task 6. The line table's `kind` is `code` only when the fragment that wrote a byte is known to be
-  an instruction emit, and the IR at the walk point cannot say: both front ends push instructions and `dc`/blob data
-  through the one `IrStreamer::emit_data`, and `resolve_layout` lowers the three relaxable instruction fragments to
-  plain `Data`. Nothing is guessed from bytes, so every located row is `data` today (`row_kind` in
-  `sigil-link/src/export/lines.rs` is the one place the rule lives). All 7 shapes: 0 `code` rows.
-- Work: the front ends record which fragments are instruction emits (a per-fragment flag, or a `Module` side table
-  of fragment positions like `Module.procs`, which survives relaxation 1:1), and `row_kind` reads it. That is an IR
-  change, so it waits for the controller's ruling; the row schema is already right (`code` is in the closed kind enum).
-- Note, same task: the header's ROM-end field (`$1A4`) is re-written after the link in appendix shapes
-  (`append_deb2_appendix`), but stays attributed to the line that declares it (`rom_end:` in `header.emp`). Only the
-  checksum is a declared no-source range, per spec §4.4.
+- state: **CLOSED** 2026-11-18 (G0a Task 6 fix round 1)  size: `M`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 6: the IR could not tell an instruction emit from a `dc`/blob, so every located line row was
+  `data`. Ruled YES by the controller. Closed by `sigil_ir::Module::code` (`CodeMark`: runs of fragment indices per
+  section, inert metadata like `Module.procs`; no link step reads it, `Module` derives no `Hash`/`Serialize`). The
+  `.emp` lowering marks around each `CodeItem::Instr` in `lower_code_buf`, the AS front end around
+  `lower_instruction`; `dc`/`ds`/`binclude`/data items are never marked. The driver hands the marks to the exporter by
+  section name (`SideTables.code`), and `lines.rs::row_kind` reads them; a mark that names no single placed `Data`
+  run is refused (`ExportError::CodeMark`). s4 plain: 12,086 code rows, 581 data rows. Gate 2 holds code rows to
+  placed 68000 sections at even address and length, and requires code rows on s4 plain.
+- Still true, unchanged: the header's ROM-end field (`$1A4`) is re-written after the link in appendix shapes
+  (`append_deb2_appendix`) but stays attributed to its declaring line (`rom_end:` in `header.emp`). Only the checksum
+  is a declared no-source range, per spec §4.4.

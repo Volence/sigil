@@ -10333,10 +10333,14 @@ impl Asm {
 
     fn lower_instruction(&mut self, mn: &str, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        // The fragments an instruction pushes are `code` in the build export's line
+        // table (`Module::code`); `dc`/`ds`/`binclude` never come through here.
+        let before = self.builder.fragment_position();
         match self.state.cpu {
             Cpu::Z80 => self.lower_z80(mn, rest, span),
             Cpu::M68000 => self.lower_m68k(mn, rest, span),
         }
+        self.builder.mark_code_since(before);
     }
 
     /// Lower one Z80 instruction.

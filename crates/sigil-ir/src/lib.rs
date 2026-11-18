@@ -502,6 +502,41 @@ pub struct Module {
     /// export's symbol table (G0a). Emits nothing and is read by no link step. Empty
     /// for every front end that has no notion of a procedure.
     pub procs: Vec<ProcMark>,
+    /// The fragments the front end emitted as INSTRUCTIONS, as runs of fragment
+    /// indices per section ([`CodeMark`]), for the build export's line table (G0a):
+    /// a row is `code` only when its fragment is marked. Emits nothing and is read by
+    /// no link step. Empty for a front end that records none.
+    pub code: Vec<CodeMark>,
+}
+
+/// A run of consecutive fragments of one section that a front end emitted as
+/// instructions (not `dc`, blob or embedded data). `section` indexes
+/// [`Module::sections`]; `[start_fragment, end_fragment)` indexes that section's
+/// fragments.
+///
+/// INVARIANT: like [`ProcMark`], these positions stay valid only because the rebuild
+/// in `sigil-link/src/relax.rs` maps fragments 1:1 (one lowered fragment per input)
+/// and nothing between lowering and the export inserts or removes a fragment before a
+/// marked one. The exporter refuses a mark that does not land on a `Data` fragment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CodeMark {
+    pub section: usize,
+    pub start_fragment: usize,
+    pub end_fragment: usize,
+}
+
+impl Module {
+    /// Every [`CodeMark`] keyed by its section's NAME, for a consumer that sees the
+    /// sections after they leave this module (placed, reordered among other modules').
+    pub fn named_code_marks(&self) -> Vec<(String, std::ops::Range<usize>)> {
+        self.code
+            .iter()
+            .filter_map(|m| {
+                let sec = self.sections.get(m.section)?;
+                Some((sec.name.clone(), m.start_fragment..m.end_fragment))
+            })
+            .collect()
+    }
 }
 
 /// One procedure a front end lowered: where its body starts and ends, as FRAGMENT
@@ -576,6 +611,7 @@ impl ModuleBuilder {
             link_asserts: Vec::new(),
             comptime_guards: 0,
             procs: Vec::new(),
+            code: Vec::new(),
         }
     }
 }

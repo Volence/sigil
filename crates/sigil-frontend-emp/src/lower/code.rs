@@ -93,7 +93,9 @@ pub fn lower_code_buf(
                 // both CPUs. A Z80 auto-reaching branch (`jr`→`jp` ladder) is
                 // deferred, so on Z80 they are `[branch.non-68k]`.
                 if matches!(mnemonic.as_str(), "jbra" | "jbsr") {
+                    let before = builder.fragment_position();
                     lower_jbra_jbsr(mnemonic, *size, ops, *span, cpu, builder, diags);
+                    builder.mark_code_since(before);
                     continue;
                 }
                 // `assume_some` is the niche-option extraction marker (spec §2):
@@ -141,12 +143,17 @@ pub fn lower_code_buf(
                     }
                     continue;
                 }
+                // An instruction emit: the fragments it pushes are `code` in the build
+                // export's line table (`Module::code`). A `dc` (`CodeItem::Inline`) is not
+                // marked; a `mul_*` expansion marks through the recursive call above.
+                let before = builder.fragment_position();
                 match cpu {
                     Cpu::M68000 => {
                         lower_m68k_instr(mnemonic, *size, ops, *span, as_compat, builder, diags)
                     }
                     Cpu::Z80 => lower_z80_instr(mnemonic, *size, ops, *span, builder, diags),
                 }
+                builder.mark_code_since(before);
             }
         }
     }

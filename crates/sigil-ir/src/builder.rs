@@ -1,7 +1,9 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, EquSym, Fixup, Fragment, Label, LinkAssert, Module, ProcMark, Section, SectionPlacement};
+use crate::{
+    CodeMark, DataFragment, EquSym, Fixup, Fragment, Label, LinkAssert, Module, ProcMark, Section, SectionPlacement,
+};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -60,6 +62,8 @@ pub struct IrBuilder {
     force_next_pinned: bool,
     /// Procedure extents the front end recorded ([`Module::procs`]).
     procs: Vec<ProcMark>,
+    /// Instruction fragments the front end recorded ([`Module::code`]).
+    code: Vec<CodeMark>,
 }
 
 impl IrBuilder {
@@ -253,6 +257,28 @@ impl IrBuilder {
         self.procs.push(mark);
     }
 
+    /// Mark every fragment pushed to the open section since `before` (a
+    /// [`fragment_position`](Self::fragment_position) read before lowering one
+    /// instruction) as an instruction emit ([`Module::code`]). Nothing is marked when
+    /// no section was open at `before` or a different one is open now: an instruction
+    /// never opens a section mid-emit, so that is a fragment this cannot place.
+    /// Adjacent runs merge.
+    pub fn mark_code_since(&mut self, before: Option<(usize, usize)>) {
+        let (Some((sec, start)), Some((now_sec, end))) = (before, self.fragment_position()) else {
+            return;
+        };
+        if sec != now_sec || end <= start {
+            return;
+        }
+        if let Some(last) = self.code.last_mut() {
+            if last.section == sec && last.end_fragment == start {
+                last.end_fragment = end;
+                return;
+            }
+        }
+        self.code.push(CodeMark { section: sec, start_fragment: start, end_fragment: end });
+    }
+
     /// Record `n` comptime guard verdicts (see [`Module::comptime_guards`]).
     pub fn add_comptime_guards(&mut self, n: usize) {
         self.comptime_guards += n;
@@ -267,6 +293,7 @@ impl IrBuilder {
                 link_asserts: self.link_asserts,
                 comptime_guards: self.comptime_guards,
                 procs: self.procs,
+                code: self.code,
             },
             self.diags,
         )
@@ -549,5 +576,41 @@ mod tests {
         b.seek(10, 0x00, span());
         assert_eq!(b.current_offset(), 10);
         assert_eq!(b.extent(), 10);
+    }
+
+    #[test]
+    fn mark_code_since_marks_the_fragments_pushed_and_merges_adjacent_runs() {
+        use crate::CodeMark;
+        let mut b = IrBuilder::new();
+        assert!(b.fragment_position().is_none());
+        b.mark_code_since(None); // no section open: nothing to mark
+        b.switch_section("a", Cpu::M68000, None);
+        b.emit_data(&[1, 2], vec![], span()); // a dc: unmarked
+        let p = b.fragment_position();
+        b.emit_data(&[0x4E, 0x75], vec![], span());
+        b.mark_code_since(p);
+        let p = b.fragment_position();
+        b.emit_data(&[0x4E, 0x71], vec![], span());
+        b.emit_data(&[0x4E, 0x71], vec![], span());
+        b.mark_code_since(p); // adjacent: extends the run
+        let p = b.fragment_position();
+        b.mark_code_since(p); // nothing pushed: no mark
+        b.switch_section("b", Cpu::M68000, None);
+        let p = b.fragment_position();
+        b.emit_data(&[0x4E, 0x75], vec![], span());
+        b.mark_code_since(p);
+        let stale = p;
+        b.switch_section("c", Cpu::M68000, None);
+        b.emit_data(&[0x4E, 0x75], vec![], span());
+        b.mark_code_since(stale); // another section opened since: not placeable, not marked
+        let (m, _) = b.finish();
+        assert_eq!(
+            m.code,
+            vec![
+                CodeMark { section: 0, start_fragment: 1, end_fragment: 4 },
+                CodeMark { section: 1, start_fragment: 0, end_fragment: 1 },
+            ]
+        );
+        assert_eq!(m.named_code_marks(), vec![("a".to_string(), 1..4), ("b".to_string(), 0..1)]);
     }
 }

@@ -40,6 +40,9 @@ pub struct EmpSymbol {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProgramSymbols {
     pub symbols: Vec<EmpSymbol>,
+    /// The instruction fragments every module lowered ([`sigil_ir::Module::code`]), by
+    /// section name and fragment range, for the line table's `code` rows.
+    pub code: Vec<(String, std::ops::Range<usize>)>,
     seen: HashSet<String>,
 }
 
@@ -48,6 +51,7 @@ impl ProgramSymbols {
     /// `pub_names` is every name the module declares `pub`, spelled as its label is
     /// after the rename ([`pub_item_names`]); a label or equ named there is public.
     pub fn record_module(&mut self, module_id: &str, module: &Module, pub_names: &HashSet<String>) {
+        self.code.extend(module.named_code_marks());
         let procs: HashMap<&str, &sigil_ir::ProcMark> =
             module.procs.iter().map(|p| (p.name.as_str(), p)).collect();
         for sec in &module.sections {
@@ -162,6 +166,7 @@ mod tests {
             link_asserts: vec![],
             comptime_guards: 0,
             procs: vec![],
+            code: vec![],
         };
         let pubs: HashSet<String> = ["PubData", "PUB_EQU"].iter().map(|s| s.to_string()).collect();
         let mut t = ProgramSymbols::default();

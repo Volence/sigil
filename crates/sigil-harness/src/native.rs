@@ -3803,6 +3803,9 @@ struct ChainedResolve {
     /// The names the AS residual defined, taken before its sections joined the
     /// `.emp` ones.
     as_symbols: sigil_frontend_as::export_side::AsSymbols,
+    /// The AS front end's instruction fragments ([`sigil_ir::Module::code`]), by
+    /// section name, taken while its module is still whole.
+    as_code: Vec<(String, std::ops::Range<usize>)>,
 }
 
 /// How many guards a resolve decided, by family. Every figure is OBSERVED at the
@@ -3921,6 +3924,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         build_emp(aeon, profile)?;
     // The AS front end's side table, while its sections are still its own.
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
+    let as_code = as_module.named_code_marks();
     // THE SEAM. One section list out of two front ends, and therefore one location
     // authority out of two maps: `ChainSources` joins them over a single id space
     // and REBASES every span the AS-side sections carry into it. Without this, a
@@ -4009,7 +4013,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
     let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
-    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, as_symbols })
+    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, as_symbols, as_code })
 }
 
 /// What a check-only run reports: the guard census and the warn tier.
@@ -4041,7 +4045,7 @@ pub fn build_rom_chained_with_listing(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<RomBuild, String> {
-    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, as_symbols } =
+    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, as_symbols, as_code } =
         resolve_chained(aeon, profile)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
@@ -4097,7 +4101,10 @@ pub fn build_rom_chained_with_listing(
     validate_sound_fold(aeon, &resolved, profile)?;
     check_budgets(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
-    let side = SideTables { symbols, ..SideTables::default() };
+    // The instruction fragments both front ends marked, for the line table's `code` rows.
+    let mut code = emp_symbols.code.clone();
+    code.extend(as_code);
+    let side = SideTables { symbols, code, ..SideTables::default() };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side };
     Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
 }
