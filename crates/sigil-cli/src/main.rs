@@ -3638,11 +3638,12 @@ fn prepare_export(
     }
     let aeon_root = std::fs::canonicalize(aeon)
         .map_err(|e| format!("resolve the aeon root {}: {e}", aeon.display()))?;
-    let files = sigil_harness::export_files::export_files(
+    let rooted = sigil_harness::export_files::export_files(
         &aeon_root,
         &sigil_harness::source_digest::sigil_source_root(),
         &sigil_span::read_set::snapshot(),
     )?;
+    let files = rooted.files;
     let tool = ToolRecord {
         name: "sigil".into(),
         version: env!("CARGO_PKG_VERSION").into(),
@@ -3651,7 +3652,7 @@ fn prepare_export(
     };
     let (game, shape_name) = export_shape_names(&opts.target);
     let shape = ShapeRecord { game, shape: shape_name, defines };
-    let inputs_sha256 = inputs_sha256(&tool, &shape, &defines_wide, &files);
+    let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, &defines_wide, &rooted.inputs);
     let symbols = listing
         .iter()
         .map(|l| SymbolRecord {

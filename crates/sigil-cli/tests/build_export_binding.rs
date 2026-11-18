@@ -207,6 +207,33 @@ fn inputs_sha256_changes_with_one_source_byte() {
 }
 
 #[test]
+fn inputs_sha256_changes_with_one_blob_byte() {
+    let Some((_g, tree)) = tree() else { return skip() };
+    let dir = scratch(&tree, "blob");
+    build_ok(&tree, &["-o", dir.join("before.bin").to_str().unwrap()]);
+
+    // `engine/data/sine.bin` is a data blob the demo build reads: not a file row.
+    let victim = tree.join("engine/data/sine.bin");
+    let original = std::fs::read(&victim).unwrap();
+    struct Restore(PathBuf, Vec<u8>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = std::fs::write(&self.0, &self.1);
+        }
+    }
+    let _restore = Restore(victim.clone(), original.clone());
+    let mut edited = original.clone();
+    let last = edited.len() - 1;
+    edited[last] ^= 1;
+    std::fs::write(&victim, &edited).unwrap();
+    build_ok(&tree, &["-o", dir.join("after.bin").to_str().unwrap()]);
+
+    let (a, b) = (json(&dir.join("before.build.json")), json(&dir.join("after.build.json")));
+    assert_ne!(a["inputsSha256"], b["inputsSha256"], "an edited blob did not move inputsSha256");
+    assert_eq!(a["files"], b["files"], "a blob is not a file row, so the table must not move");
+}
+
+#[test]
 fn inputs_sha256_ignores_output_path() {
     let Some((_g, tree)) = tree() else { return skip() };
     let dir = scratch(&tree, "outpath");

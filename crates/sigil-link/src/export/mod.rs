@@ -8,7 +8,7 @@ pub mod inputs;
 pub mod json;
 pub mod locate;
 
-pub use inputs::{inputs_sha256, inputs_text};
+pub use inputs::{inputs_sha256, inputs_text, InputRead, ToolExe};
 pub use json::{sha256_hex, sha256_of, to_json, ExportError};
 
 /// Everything the export file holds. Field order is the JSON key order of §4.6.

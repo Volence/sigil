@@ -2028,14 +2028,18 @@ until its row is removed.
 ## G0A-EXPORT-FILES-GAPS
 
 - state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
-- Found in G0a Task 3. The sidecar's `files` table is a projection of the read-set recorder
-  (`sigil-harness/src/export_files.rs`), and two kinds of build input are not rows. Neither moves ROM bytes
-  unobserved (the ROM hash binds them), but neither moves `inputsSha256` or shows as a stale source either.
-- (1) **Source files under the aeon `tools/` directory** (`tools/fixtures/anchor_sweep/*.emp`, four files, read by
-  every build through the module scan) fit none of the four roots. The standing rule is that no fifth root is
-  invented, so reads under `tools/` are skipped via `UNROOTED_AEON_DIRS`. Needs a controller ruling: a root,
-  a scan-pattern change so the build stops reading fixtures it never uses, or an explicit exclusion in the schema.
-- (2) **Data and tool inputs** (art and sound blobs, `map.toml`, the `convsym` executable) have no `lang` in the
-  1.0 enum (`emp|asm|z80`), so they are not rows. Folding them into `inputsSha256` needs no schema change (the hash
-  text is ours), only a decision on how Oracle should learn they changed. Until then a changed blob shows as a
-  changed `rom.sha256` and nothing finer.
+- Found in G0a Task 3, narrowed by the controller's ruling the same day. The sidecar's `files` table holds SOURCE
+  rows only (`lang` is the closed enum `emp|asm|z80`). Art and sound blobs and `map.toml` are not rows. They ARE
+  hashed into `inputsSha256` (every read under a root, plus aeon `art/` under the hash-only root `aeon`), and the
+  `convsym` executable is hashed by file name into the tool part. What is still true: a changed blob is visible
+  only through `inputsSha256` and the ROM hash, never as a stale FILE row, so a consumer cannot say WHICH blob changed.
+
+## G0A-SCAN-READS-TOOL-FIXTURES
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 3. Four `.emp` fixtures under the aeon `tools/fixtures/anchor_sweep/` are read by every build
+  only because the module scan reads every `*.emp` in the tree. They are not part of the program and fit none of
+  the four export roots. Ruling: a scan-scope defect, not a missing root. `UNROOTED_AEON_DIRS = ["tools/fixtures"]`
+  (`sigil-harness/src/export_files.rs`) leaves reads under exactly that directory out of the export; any other read
+  under `tools/` is an error naming the path. The hole is DELETED when G0b scopes the module scan to the engine and
+  game roots; then the constant and its test go with it.
