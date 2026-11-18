@@ -104,8 +104,28 @@ enum Placed {
 }
 
 fn place(aeon: &Path, sigil: &Path, r: &FileRead) -> Result<Placed, String> {
-    let lang = lang_of(&r.path);
-    if let Ok(rel) = r.path.strip_prefix(aeon) {
+    place_path(aeon, sigil, &r.path)
+}
+
+/// The `files` row key `(root, path)` of a source file the build located a span in,
+/// given the name its front end opened it under (resolved like the read set resolves
+/// it: [`sigil_span::read_set::canonical`]). The line table maps each located byte to
+/// its row through this, so it is the same placement the `files` rows came from.
+pub fn source_row_key(aeon: &Path, sigil: &Path, name: &str) -> Result<(RootName, String), String> {
+    let path = sigil_span::read_set::canonical(Path::new(name));
+    if lang_of(&path).is_none() {
+        return Err(format!("{} is not a source file (.emp, .asm or .z80), so it has no `files` row", path.display()));
+    }
+    match place_path(aeon, sigil, &path)? {
+        Placed::Rooted(root, rel) => Ok((root, rel)),
+        Placed::Skip => Err(format!("{} is under a directory the export leaves out", path.display())),
+        Placed::AeonData(_) | Placed::External(_) => Err(format!("{} fits no export root", path.display())),
+    }
+}
+
+fn place_path(aeon: &Path, sigil: &Path, path: &Path) -> Result<Placed, String> {
+    let lang = lang_of(path);
+    if let Ok(rel) = path.strip_prefix(aeon) {
         let first = rel.components().next().and_then(|c| c.as_os_str().to_str()).unwrap_or("");
         let (root, under): (RootName, PathBuf) = match first {
             "engine" => {
@@ -128,28 +148,27 @@ fn place(aeon: &Path, sigil: &Path, r: &FileRead) -> Result<Placed, String> {
                 if first == "tools" || lang.is_some() {
                     return Err(format!(
                         "{} is read by the build from the aeon tree outside engine/ and games/, and no export root holds it",
-                        r.path.display()
+                        path.display()
                     ));
                 }
-                return Ok(Placed::AeonData(rel_text(rel, &r.path)?));
+                return Ok(Placed::AeonData(rel_text(rel, path)?));
             }
         };
-        return Ok(Placed::Rooted(root, rel_text(&under, &r.path)?));
+        return Ok(Placed::Rooted(root, rel_text(&under, path)?));
     }
-    if let Ok(rel) = r.path.strip_prefix(sigil) {
-        return Ok(Placed::Rooted(RootName::Sigil, rel_text(rel, &r.path)?));
+    if let Ok(rel) = path.strip_prefix(sigil) {
+        return Ok(Placed::Rooted(RootName::Sigil, rel_text(rel, path)?));
     }
     if lang.is_none() {
-        let name = r
-            .path
+        let name = path
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("{} has no UTF-8 file name", r.path.display()))?;
+            .ok_or_else(|| format!("{} has no UTF-8 file name", path.display()))?;
         return Ok(Placed::External(name.to_string()));
     }
     Err(format!(
         "{} is a source file the build read from outside the aeon tree {} and the sigil checkout {}, so no export root holds it",
-        r.path.display(),
+        path.display(),
         aeon.display(),
         sigil.display()
     ))

@@ -2054,3 +2054,18 @@ until its row is removed.
   68000 address up: `$8000` in m68k space is ROM, not this table. They do carry `lma` (phased rule), so nothing is
   lost, and gate 5 holds (the listing has no space). Task 9 (the Z80 bridge, banks) decides the space of a phased
   bank-window section and moves these rows with it; the schema then requires `lma` on them, which they already have.
+
+## G0A-LINE-KIND-CODE
+
+- state: **OPEN** 2026-11-18  size: `M`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 6. The line table's `kind` is `code` only when the fragment that wrote a byte is known to be
+  an instruction emit, and the IR at the walk point cannot say: both front ends push instructions and `dc`/blob data
+  through the one `IrStreamer::emit_data`, and `resolve_layout` lowers the three relaxable instruction fragments to
+  plain `Data`. Nothing is guessed from bytes, so every located row is `data` today (`row_kind` in
+  `sigil-link/src/export/lines.rs` is the one place the rule lives). All 7 shapes: 0 `code` rows.
+- Work: the front ends record which fragments are instruction emits (a per-fragment flag, or a `Module` side table
+  of fragment positions like `Module.procs`, which survives relaxation 1:1), and `row_kind` reads it. That is an IR
+  change, so it waits for the controller's ruling; the row schema is already right (`code` is in the closed kind enum).
+- Note, same task: the header's ROM-end field (`$1A4`) is re-written after the link in appendix shapes
+  (`append_deb2_appendix`), but stays attributed to the line that declares it (`rom_end:` in `header.emp`). Only the
+  checksum is a declared no-source range, per spec §4.4.

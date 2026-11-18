@@ -96,12 +96,44 @@ fn layout(l: &LayoutRecord) -> Value {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExportError {
     DuplicateKey { what: &'static str, key: String },
+    /// Image bytes no row covers: a fragment whose span names no file, or a gap in the
+    /// image that no section and no declared no-source range accounts for.
+    Uncovered { section: String, lma: u32, len: u32 },
+    /// Two rows (or a no-source range and a section) claim the image byte at `lma`.
+    Overlap { lma: u32 },
+    /// A section still holds a width-deferred fragment at the walk point.
+    Unlowered { section: String },
+    /// A byte-emitting section whose load address is not an image address.
+    ForeignSpace { section: String },
+    /// A located source file with no row in `files`, named as its front end names it.
+    FileNotInTable { path: String, why: String },
+    /// Two `files` rows with one `(root, path)`.
+    DuplicateFile { root: &'static str, path: String },
+    /// An exporter invariant that does not hold (a bug, not data).
+    Internal(String),
 }
 
 impl std::fmt::Display for ExportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExportError::DuplicateKey { what, key } => write!(f, "duplicate {what} key `{key}` in the export"),
+            ExportError::Uncovered { section, lma, len } => write!(
+                f,
+                "line table: {len} byte(s) at ${lma:X} (section `{section}`) have no source line and no declared no-source range"
+            ),
+            ExportError::Overlap { lma } => write!(f, "line table: two rows claim the image byte at ${lma:X}"),
+            ExportError::Unlowered { section } => {
+                write!(f, "line table: section `{section}` still holds a width-deferred fragment at the walk point")
+            }
+            ExportError::ForeignSpace { section } => write!(
+                f,
+                "line table: section `{section}` stores bytes at an address outside the image space, which no row can state"
+            ),
+            ExportError::FileNotInTable { path, why } => {
+                write!(f, "line table: source file {path} wrote ROM bytes but has no row in `files`: {why}")
+            }
+            ExportError::DuplicateFile { root, path } => write!(f, "files: `{root}/{path}` is listed twice"),
+            ExportError::Internal(m) => write!(f, "build export internal error: {m}"),
         }
     }
 }

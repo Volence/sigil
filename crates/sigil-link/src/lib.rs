@@ -1114,12 +1114,20 @@ pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String>
 /// written big-endian at `0x18E`. The genuinely-last byte-mutating pass. An odd
 /// trailing byte is summed as the high half of a word (low half 0x00).
 pub fn apply_header_checksum(rom: &mut [u8]) {
-    if rom.len() < 0x200 {
+    let Some(field) = header_checksum_field(rom.len()) else {
         return;
-    }
+    };
     let sum = header_checksum(rom);
-    rom[0x18E] = (sum >> 8) as u8;
-    rom[0x18F] = (sum & 0xFF) as u8;
+    rom[field.start] = (sum >> 8) as u8;
+    rom[field.start + 1] = (sum & 0xFF) as u8;
+}
+
+/// The bytes [`apply_header_checksum`] writes in an image of `len` bytes: the
+/// checksum word at `0x18E`, or `None` for an image too short to be summed from
+/// `0x200`, which it leaves alone. The build export declares exactly this range as
+/// the folded checksum, so the two cannot disagree.
+pub fn header_checksum_field(len: usize) -> Option<std::ops::Range<usize>> {
+    (len >= 0x200).then_some(CHECKSUM_FIELD..CHECKSUM_FIELD + 2)
 }
 
 /// The checksum [`apply_header_checksum`] writes, without writing it: the 16-bit

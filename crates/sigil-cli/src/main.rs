@@ -3492,6 +3492,8 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     };
+    // The assembled image's length, before any appendix: where the deb2 appendix starts.
+    let assembled_len = rom.len();
     let full = if island {
         match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor, island) {
             Ok(bytes) => bytes,
@@ -3571,7 +3573,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
         let rom_name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let text = match render_export(parts, &export_inputs, rom_name, &full) {
+        let text = match render_export(parts, &export_inputs, rom_name, &full, assembled_len) {
             Ok(t) => t,
             Err(err) => {
                 eprintln!("error: native build ({label}) build export: {err}");
@@ -3604,6 +3606,10 @@ struct ExportParts {
     shape: sigil_link::export::ShapeRecord,
     inputs_sha256: [u8; 32],
     files: Vec<sigil_link::export::FileRecord>,
+    /// The canonical aeon root and sigil checkout the `files` rows are relative to; the
+    /// line table maps each located source file to its row through the same roots.
+    aeon_root: std::path::PathBuf,
+    sigil_root: std::path::PathBuf,
 }
 
 /// The names the export gives the shape.
@@ -3636,11 +3642,8 @@ fn prepare_export(
     }
     let aeon_root = std::fs::canonicalize(aeon)
         .map_err(|e| format!("resolve the aeon root {}: {e}", aeon.display()))?;
-    let rooted = sigil_harness::export_files::export_files(
-        &aeon_root,
-        &sigil_harness::source_digest::sigil_source_root(),
-        &sigil_span::read_set::snapshot(),
-    )?;
+    let sigil_root = sigil_harness::source_digest::sigil_source_root();
+    let rooted = sigil_harness::export_files::export_files(&aeon_root, &sigil_root, &sigil_span::read_set::snapshot())?;
     let files = rooted.files;
     let tool = ToolRecord {
         name: "sigil".into(),
@@ -3651,23 +3654,54 @@ fn prepare_export(
     let (game, shape_name) = export_shape_names(&opts.target);
     let shape = ShapeRecord { game, shape: shape_name, defines };
     let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, &defines_wide, &rooted.inputs);
-    Ok(ExportParts { tool, shape, inputs_sha256, files })
+    Ok(ExportParts { tool, shape, inputs_sha256, files, aeon_root, sigil_root })
 }
 
 /// Render the sidecar for the ROM bytes `full`, which are the bytes already installed.
 /// The build's own tables come through [`sigil_link::export::build_export`]; the
 /// read-set hash is the caller's, set here.
+///
+/// `assembled_len` is the linked image's length before the deb2 appendix. The bytes
+/// written after the link by no source line are declared from this build's own values:
+/// the appendix is `[assembled_len, full.len())`, and the checksum is the field
+/// `sigil_link::apply_header_checksum` wrote (both the link and the appendix re-fix
+/// write it through that function).
 fn render_export(
     parts: ExportParts,
     inputs: &sigil_link::export::ExportInputs,
     rom_name: String,
     full: &[u8],
+    assembled_len: usize,
 ) -> Result<String, String> {
     use sigil_link::export::*;
     let rom = RomRecord { path: rom_name, size: full.len() as u64, sha256: sha256_of(full) };
-    let mut export = build_export(inputs, &rom, parts.tool, parts.shape, parts.files).map_err(|e| e.to_string())?;
+    let mut post_link = Vec::new();
+    if full.len() > assembled_len {
+        post_link.push(NoSourceRange {
+            lma: to_u32(assembled_len, "the assembled image length")?,
+            len: to_u32(full.len() - assembled_len, "the deb2 appendix length")?,
+            kind: NoSourceKind::Deb2Appendix,
+        });
+    } else if full.len() < assembled_len {
+        return Err(format!("the ROM ({} B) is shorter than the image it was assembled from ({assembled_len} B)", full.len()));
+    }
+    if let Some(field) = sigil_link::header_checksum_field(full.len()) {
+        post_link.push(NoSourceRange {
+            lma: to_u32(field.start, "the checksum field")?,
+            len: to_u32(field.len(), "the checksum field")?,
+            kind: NoSourceKind::HeaderChecksum,
+        });
+    }
+    let (aeon_root, sigil_root) = (parts.aeon_root, parts.sigil_root);
+    let key = |name: &str| sigil_harness::export_files::source_row_key(&aeon_root, &sigil_root, name);
+    let mut export = build_export(inputs, &rom, parts.tool, parts.shape, parts.files, &post_link, &key)
+        .map_err(|e| e.to_string())?;
     export.inputs_sha256 = parts.inputs_sha256;
     to_json(&export).map_err(|e| e.to_string())
+}
+
+fn to_u32(n: usize, what: &str) -> Result<u32, String> {
+    u32::try_from(n).map_err(|_| format!("{what} ({n}) does not fit a 32-bit address"))
 }
 
 /// The `.lst` source digest for this build: the read set the recorder captured, the
