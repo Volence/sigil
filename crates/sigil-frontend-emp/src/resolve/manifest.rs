@@ -173,6 +173,18 @@ impl SourceIndex {
         self.paths.is_empty()
     }
 
+    /// The path of source `id`, or `None` for a gap or a file that did not read.
+    pub fn path(&self, id: u32) -> Option<&Path> {
+        self.paths.get(id as usize)?.as_deref()
+    }
+
+    /// `(id, 1-based line)` of `span`'s start, or `None` when its source is not a
+    /// file this index knows. The structured twin of [`locate`](Self::locate).
+    pub fn position(&self, span: Span) -> Option<(u32, u32)> {
+        self.path(span.source.0)?;
+        Some((span.source.0, self.map.location(span).0))
+    }
+
     /// `path:line:col` of `span`'s start, or `None` when `span`'s source is not a
     /// file this index knows (a synthetic module, or an unattributed diagnostic).
     pub fn locate(&self, span: Span) -> Option<String> {

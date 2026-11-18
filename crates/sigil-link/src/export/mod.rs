@@ -4,10 +4,12 @@
 //! later tasks fill. Closed enums here are closed on purpose: a consumer matches them
 //! exhaustively, and a new variant is a version change, not a silent addition.
 
+pub mod entry;
 pub mod inputs;
 pub mod json;
 pub mod locate;
 
+pub use entry::{build_export, ExportInputs, SideTables, Z80Bridge};
 pub use inputs::{inputs_sha256, inputs_text, InputRead, ToolExe};
 pub use json::{sha256_hex, sha256_of, to_json, ExportError};
 

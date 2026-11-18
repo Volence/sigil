@@ -352,6 +352,28 @@ impl SourceMap {
         Some(out)
     }
 
+    /// The outermost source position of `span`: follow `Expansion.call` out of every
+    /// macro or loop (the walk [`label`](Self::label) does) to the file line a person
+    /// wrote. Returns the file's id and the 1-based line, or `None` for a span with
+    /// no named file (the no-source id, an unnamed file, a call chain that does not
+    /// end, as for a span from another map).
+    pub fn outermost(&self, span: Span) -> Option<(SourceId, u32)> {
+        let mut at = span;
+        let mut steps = 0;
+        while let Some(e) = self.expansion(at.source) {
+            steps += 1;
+            if steps > self.expansions.len() {
+                return None;
+            }
+            at = e.call;
+        }
+        let file = self.files.get(at.source.0 as usize)?;
+        if file.name.is_empty() {
+            return None;
+        }
+        Some((at.source, self.location(at).0))
+    }
+
     /// Return the 1-based `(line, column)` of `span.start` within its source.
     ///
     /// Columns count CHARACTERS, not bytes: a multi-byte UTF-8 character before

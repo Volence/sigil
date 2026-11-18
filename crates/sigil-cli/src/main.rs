@@ -3459,7 +3459,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
         ),
     };
-    let native::RomBuild { rom, listing, warnings, registry } = match built {
+    let native::RomBuild { rom, listing, warnings, registry, export_inputs } = match built {
         Ok(build) => build,
         Err(err) => {
             eprintln!("error: native build ({label}): {err}");
@@ -3522,7 +3522,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     };
     // The build-data export, stated before anything is written (see `ExportParts`).
     let export_parts = match (&opts.output, opts.no_build_json) {
-        (Some(_), false) => match prepare_export(aeon, opts, &listing) {
+        (Some(_), false) => match prepare_export(aeon, opts) {
             Ok(parts) => Some(parts),
             Err(err) => {
                 eprintln!("error: native build ({label}) build export: {err}");
@@ -3571,7 +3571,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
         let rom_name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let text = match render_export(parts, rom_name, &full) {
+        let text = match render_export(parts, &export_inputs, rom_name, &full) {
             Ok(t) => t,
             Err(err) => {
                 eprintln!("error: native build ({label}) build export: {err}");
@@ -3604,7 +3604,6 @@ struct ExportParts {
     shape: sigil_link::export::ShapeRecord,
     inputs_sha256: [u8; 32],
     files: Vec<sigil_link::export::FileRecord>,
-    symbols: Vec<sigil_link::export::SymbolRecord>,
 }
 
 /// The names the export gives the shape.
@@ -3624,7 +3623,6 @@ fn export_shape_names(target: &BuildTarget) -> (String, String) {
 fn prepare_export(
     aeon: &std::path::Path,
     opts: &BuildOpts,
-    listing: &[sigil_link::ListingSymbol],
 ) -> Result<ExportParts, String> {
     use sigil_link::export::*;
     let (_, profile) = opts.target.label_and_profile();
@@ -3653,41 +3651,22 @@ fn prepare_export(
     let (game, shape_name) = export_shape_names(&opts.target);
     let shape = ShapeRecord { game, shape: shape_name, defines };
     let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, &defines_wide, &rooted.inputs);
-    let symbols = listing
-        .iter()
-        .map(|l| SymbolRecord {
-            name: l.name.clone(),
-            demangled: None,
-            space: None,
-            vma: l.value,
-            lma: l.lma,
-            kind: if l.is_equate { SymbolKind::Equ } else { SymbolKind::Label },
-            size: None,
-            module: None,
-            public: false,
-        })
-        .collect();
-    Ok(ExportParts { tool, shape, inputs_sha256, files, symbols })
+    Ok(ExportParts { tool, shape, inputs_sha256, files })
 }
 
 /// Render the sidecar for the ROM bytes `full`, which are the bytes already installed.
-fn render_export(parts: ExportParts, rom_name: String, full: &[u8]) -> Result<String, String> {
+/// The build's own tables come through [`sigil_link::export::build_export`]; the
+/// read-set hash is the caller's, set here.
+fn render_export(
+    parts: ExportParts,
+    inputs: &sigil_link::export::ExportInputs,
+    rom_name: String,
+    full: &[u8],
+) -> Result<String, String> {
     use sigil_link::export::*;
-    let export = BuildExport {
-        rom: RomRecord { path: rom_name, size: full.len() as u64, sha256: sha256_of(full) },
-        inputs_sha256: parts.inputs_sha256,
-        tool: parts.tool,
-        shape: parts.shape,
-        spaces: vec![
-            SpaceRecord { id: Space::M68k, addr_bits: 24 },
-            SpaceRecord { id: Space::Z80, addr_bits: 16 },
-        ],
-        files: parts.files,
-        symbols: parts.symbols,
-        layouts: vec![],
-        consts: vec![],
-        lines: LineTable { sections: vec![] },
-    };
+    let rom = RomRecord { path: rom_name, size: full.len() as u64, sha256: sha256_of(full) };
+    let mut export = build_export(inputs, &rom, parts.tool, parts.shape, parts.files).map_err(|e| e.to_string())?;
+    export.inputs_sha256 = parts.inputs_sha256;
     to_json(&export).map_err(|e| e.to_string())
 }
 

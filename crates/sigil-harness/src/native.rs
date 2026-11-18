@@ -40,6 +40,8 @@ use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
 
+use sigil_link::export::locate::{SourcePos, SpanLocator};
+use sigil_link::export::{ExportInputs, SideTables, SymbolKind, SymbolRecord};
 use crate::{seam1, seam2};
 
 // ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
@@ -1583,6 +1585,9 @@ pub struct ChainSources {
     as_map: sigil_span::SourceMap,
     /// Where the `.emp` ids stop and the rebased AS ids start.
     as_base: u32,
+    /// Every file of the joined id space, by id (`.emp` ids, then rebased AS ids):
+    /// what [`SpanLocator::file`] hands out.
+    files: Vec<sigil_link::export::locate::FileRef>,
 }
 
 /// Whether `emp_len` `.emp` ids and `as_len` AS ids fit in one file-id space below
@@ -1632,7 +1637,12 @@ impl ChainSources {
     ) -> Result<(ChainSources, Vec<Section>), String> {
         let as_base = emp.len();
         check_joined_space(as_base, as_map.len())?;
-        let chain = ChainSources { emp, as_map, as_base: as_base as u32 };
+        let files = (0..as_base)
+            .map(|k| emp.path(k as u32).map(|p| p.display().to_string()).unwrap_or_default())
+            .chain((0..as_map.len()).map(|k| as_map.name(sigil_span::SourceId(k as u32)).to_string()))
+            .map(|path| sigil_link::export::locate::FileRef { path })
+            .collect();
+        let chain = ChainSources { emp, as_map, as_base: as_base as u32, files };
         for sec in &mut as_sections {
             chain.rebase_section(sec);
         }
@@ -1701,6 +1711,34 @@ impl ChainSources {
             source: sigil_span::SourceId(span.source.0 - self.as_base),
             ..span
         })
+    }
+}
+
+/// The export's locator: the outermost line, in the joined id space. An AS expansion
+/// follows `Expansion.call` out to the line that invoked it (the walk
+/// [`SourceMap::label`](sigil_span::SourceMap::label) makes); a rebased AS file id is
+/// brought back down before the AS map is asked and the answer moved up again.
+impl SpanLocator for ChainSources {
+    fn outermost(&self, span: sigil_span::Span) -> Option<SourcePos> {
+        if span.source.is_expansion() {
+            let (id, line) = self.as_map.outermost(span)?;
+            return Some(SourcePos { file: id.0 + self.as_base, line });
+        }
+        if span.source.0 < self.as_base {
+            let (file, line) = self.emp.position(span)?;
+            return Some(SourcePos { file, line });
+        }
+        let (id, line) = self.as_map.outermost(sigil_span::Span {
+            source: sigil_span::SourceId(span.source.0 - self.as_base),
+            ..span
+        })?;
+        Some(SourcePos { file: id.0 + self.as_base, line })
+    }
+
+    fn file(&self, id: u32) -> &sigil_link::export::locate::FileRef {
+        self.files
+            .get(id as usize)
+            .unwrap_or_else(|| panic!("file id {id} was never issued by this locator ({} files)", self.files.len()))
     }
 }
 
@@ -3725,6 +3763,29 @@ pub struct RomBuild {
     pub warnings: Vec<BuildWarning>,
     /// The module roots the build derived from the game's map and placed.
     pub registry: Vec<ModuleSpec>,
+    /// What the build-data export reads: the placed sections, the span locator and the
+    /// side tables ([`sigil_link::export::build_export`]).
+    pub export_inputs: ExportInputs,
+}
+
+/// The sidecar's symbols as the listing states them. This is the interim source
+/// (G0a Task 5 replaces it with the front ends' own tables): one row per listing
+/// symbol, no module, no extent.
+fn symbols_from_listing(listing: &[sigil_link::ListingSymbol]) -> Vec<SymbolRecord> {
+    listing
+        .iter()
+        .map(|l| SymbolRecord {
+            name: l.name.clone(),
+            demangled: None,
+            space: None,
+            vma: l.value,
+            lma: l.lma,
+            kind: if l.is_equate { SymbolKind::Equ } else { SymbolKind::Label },
+            size: None,
+            module: None,
+            public: false,
+        })
+        .collect()
 }
 
 /// The chained build's program, placed and guard-decided: everything
@@ -4043,7 +4104,9 @@ pub fn build_rom_chained_with_listing(
     validate_sound_fold(aeon, &resolved, profile)?;
     check_budgets(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
-    Ok(RomBuild { rom, listing, warnings, registry })
+    let side = SideTables { symbols: symbols_from_listing(&listing), ..SideTables::default() };
+    let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side };
+    Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
 }
 
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
