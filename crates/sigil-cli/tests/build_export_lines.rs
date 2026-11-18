@@ -454,7 +454,8 @@ fn row_at_label<'a>(listing: &str, rows: &'a [Row], label: &str) -> Option<&'a R
 fn line_text(tree: &Path, export: &serde_json::Value, r: &Row) -> String {
     let f = &export["files"][r.file as usize];
     let text = source_path(tree, f).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
-    text.lines().nth(r.line as usize - 1).unwrap_or("").to_string()
+    // Line 0 (a no-source line) is no text: a row wrongly carrying it fails the caller's check.
+    (r.line as usize).checked_sub(1).and_then(|i| text.lines().nth(i)).unwrap_or("").to_string()
 }
 
 #[test]
