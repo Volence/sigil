@@ -3,10 +3,11 @@
 //! which module defined it, whether it is a procedure and how far its body runs, and
 //! whether it is `pub`. Recorded while [`crate::resolve`] lowers each module (after the
 //! module's rename, so every name is spelled as its label is, which is the listing's
-//! spelling), then resolved to final addresses against the placed sections.
+//! spelling). Placing it (final addresses, extents in bytes) is the driver's step
+//! (`sigil-harness` `export_symbols`): this crate does not depend on the linker, and
+//! the crate graph (`sigil-cli/tests/crate_graph.rs`) keeps it that way.
 
 use sigil_ir::Module;
-use sigil_link::export::{PlacedSymbols, SymbolKind, SymbolRecord};
 use std::collections::{HashMap, HashSet};
 
 /// What the lowering knew about one symbol.
@@ -79,35 +80,4 @@ impl ProgramSymbols {
     pub fn defines(&self, name: &str) -> bool {
         self.seen.contains(name)
     }
-}
-
-/// The `.emp` program's symbols at their final placement. A procedure is `kind: proc`
-/// with `size` from its first byte to the last byte its body stored, in the same
-/// section. A label no placed section defines is an error (the side table and the
-/// sections disagree); an equate that did not fold is left out, as the listing leaves
-/// it out.
-pub fn emp_symbols(program: &ProgramSymbols, placed: &PlacedSymbols) -> Result<Vec<SymbolRecord>, String> {
-    let mut out = Vec::with_capacity(program.symbols.len());
-    for s in &program.symbols {
-        let module = Some(s.module.clone());
-        match &s.kind {
-            EmpSymbolKind::Equ => out.extend(placed.equ_record(&s.name, module, s.public)),
-            EmpSymbolKind::Label | EmpSymbolKind::Proc { .. } => {
-                let p = placed.label(&s.name).ok_or_else(|| {
-                    format!("`.emp` symbol `{}` (module {}) is in no placed section", s.name, s.module)
-                })?;
-                let kind = if matches!(s.kind, EmpSymbolKind::Proc { .. }) { SymbolKind::Proc } else { SymbolKind::Label };
-                let mut r = placed.label_record(&s.name, kind, module, s.public).expect("looked up above");
-                if let EmpSymbolKind::Proc { start_fragment, end_fragment } = s.kind {
-                    r.size = Some(
-                        placed
-                            .extent(&p, start_fragment, end_fragment)
-                            .map_err(|e| format!("proc `{}` (module {}): {e}", s.name, s.module))?,
-                    );
-                }
-                out.push(r);
-            }
-        }
-    }
-    Ok(out)
 }

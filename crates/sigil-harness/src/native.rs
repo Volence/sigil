@@ -41,7 +41,7 @@ use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
 
 use sigil_link::export::locate::{SourcePos, SpanLocator};
-use sigil_link::export::{ExportInputs, SideTables, SymbolKind, SymbolRecord};
+use sigil_link::export::{ExportInputs, SideTables};
 use crate::{seam1, seam2};
 
 // ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
@@ -3771,44 +3771,6 @@ pub struct RomBuild {
     pub export_inputs: ExportInputs,
 }
 
-/// The sidecar's symbols (G0a spec 4.5): each front end's side table placed against
-/// the resolved sections, `.emp` first (it knows modules, procedures and `pub`), then
-/// the AS residual, then the build-supplied defines, which no front end defines (they
-/// come from the shape, `game_defines::define_listing_rows`). A name two populations
-/// both claim is kept once, from the first; its address comes from the one placed
-/// index either way, so the choice never moves an address.
-fn export_symbols(
-    emp: &sigil_frontend_emp::export_side::ProgramSymbols,
-    as_side: &sigil_frontend_as::export_side::AsSymbols,
-    defines: &[sigil_link::ListingSymbol],
-    resolved: &[Section],
-    stubs: &SymbolTable,
-) -> Result<Vec<SymbolRecord>, String> {
-    let placed = sigil_link::export::PlacedSymbols::new(resolved, stubs);
-    let mut out = sigil_frontend_emp::export_side::emp_symbols(emp, &placed)
-        .map_err(|e| format!("build export: {e}"))?;
-    let mut seen: std::collections::HashSet<String> = out.iter().map(|s| s.name.clone()).collect();
-    let as_recs = sigil_frontend_as::export_side::as_symbols(as_side, &placed)
-        .map_err(|e| format!("build export: {e}"))?;
-    out.extend(as_recs.into_iter().filter(|s| seen.insert(s.name.clone())));
-    for d in defines {
-        if seen.insert(d.name.clone()) {
-            out.push(SymbolRecord {
-                name: d.name.clone(),
-                demangled: None,
-                space: None,
-                vma: d.value,
-                lma: None,
-                kind: SymbolKind::Equ,
-                size: None,
-                module: None,
-                public: false,
-            });
-        }
-    }
-    Ok(out)
-}
-
 /// The chained build's program, placed and guard-decided: everything
 /// `build_rom_chained_with_listing` computes BEFORE it links. Emit the sound
 /// artifacts (sound-on shapes), assemble the AS residual, lower the `.emp`
@@ -4107,7 +4069,7 @@ pub fn build_rom_chained_with_listing(
     };
     // The export's symbols, from the front ends' side tables (spec 4.5), placed
     // against the same resolved sections the listing reads.
-    let symbols = export_symbols(&emp_symbols, &as_symbols, &define_rows, &resolved, &stubs)?;
+    let symbols = crate::export_symbols::export_symbols(&emp_symbols, &as_symbols, &define_rows, &resolved, &stubs)?;
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| render_declared_chain("link", &d, &sources))?;
