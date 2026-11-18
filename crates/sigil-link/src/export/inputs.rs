@@ -9,7 +9,7 @@
 //! sources, art and sound blobs, `map.toml`. A changed blob therefore moves the hash
 //! even though no file row changes. Reads that lie under no root but are still build
 //! inputs (the aeon `art/` directory) are covered too, under the hash-only root name
-//! `aeon`, which never appears in the schema. Helper executables the build runs
+//! `aeon`, which never appears in the schema; a data file handed to the build from outside both trees (the anchor overlay) is covered as `external`, by file name only. Helper executables the build runs
 //! (`convsym`) are tool identity: their file name and SHA-256, never a path.
 //!
 //! The hashed text is canonical and line-oriented, one line per item, so a reader can

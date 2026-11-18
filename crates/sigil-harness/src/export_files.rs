@@ -27,6 +27,10 @@
 //!    blob therefore moves `inputsSha256` although no file row changes. A read under
 //!    the aeon tree but under no root (the `art/` directory) is still an input; it is
 //!    hashed under the hash-only root name `aeon` and never reaches the schema.
+//!  * A DATA file read from outside both the aeon tree and the sigil checkout (the
+//!    `--anchor-overlay` file) is an input too: hashed under the hash-only root
+//!    `external` by file name alone. A SOURCE file from there fits no root and is an
+//!    error naming the path.
 //!  * `tool_exes`: executables the build ran (`convsym`) are tool identity, recorded
 //!    by file name and hash only, wherever they live.
 //!
@@ -91,6 +95,10 @@ enum Placed {
     Rooted(RootName, String),
     /// Under the aeon tree, under no root, a data file: hashed as `aeon`.
     AeonData(String),
+    /// Outside the aeon tree and the sigil checkout, a data file the caller handed the
+    /// build (the `--anchor-overlay` file): hashed as `external` by FILE NAME only, since
+    /// its directory says where the build ran.
+    External(String),
     /// Deliberately left out.
     Skip,
 }
@@ -131,8 +139,16 @@ fn place(aeon: &Path, sigil: &Path, r: &FileRead) -> Result<Placed, String> {
     if let Ok(rel) = r.path.strip_prefix(sigil) {
         return Ok(Placed::Rooted(RootName::Sigil, rel_text(rel, &r.path)?));
     }
+    if lang.is_none() {
+        let name = r
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("{} has no UTF-8 file name", r.path.display()))?;
+        return Ok(Placed::External(name.to_string()));
+    }
     Err(format!(
-        "{} was read by the build from outside the aeon tree {} and the sigil checkout {}, so no export root holds it",
+        "{} is a source file the build read from outside the aeon tree {} and the sigil checkout {}, so no export root holds it",
         r.path.display(),
         aeon.display(),
         sigil.display()
@@ -168,6 +184,9 @@ pub fn export_files(aeon: &Path, sigil: &Path, snapshot: &Snapshot) -> Result<Ex
             }
             Placed::AeonData(path) => {
                 out.inputs.push(InputRead { root: "aeon".to_string(), path, sha256: r.sha256 })
+            }
+            Placed::External(name) => {
+                out.inputs.push(InputRead { root: "external".to_string(), path: name, sha256: r.sha256 })
             }
             Placed::Skip => {}
         }
@@ -239,6 +258,13 @@ mod tests {
     }
 
     #[test]
+    fn an_external_data_file_is_hashed_by_name_only() {
+        let e = run(&["/tmp/x/anchors.toml"]).unwrap();
+        assert_eq!(e.inputs, vec![InputRead { root: "external".into(), path: "anchors.toml".into(), sha256: [9; 32] }]);
+        assert!(e.files.is_empty());
+    }
+
+    #[test]
     fn the_tool_executable_is_identity_by_name_only() {
         let mut tool = read("/a/tools/convsym");
         tool.tool = true;
@@ -266,10 +292,8 @@ mod tests {
     fn a_source_read_outside_every_root_is_an_error_naming_the_path() {
         let e = rows(&["/a/engine/ok.emp", "/a/other/x.emp"]).unwrap_err();
         assert!(e.contains("/a/other/x.emp"), "{e}");
-        for p in ["/elsewhere/y.asm", "/elsewhere/z.bin"] {
-            let e = rows(&[p]).unwrap_err();
-            assert!(e.contains(p), "{e}");
-        }
+        let e = rows(&["/elsewhere/y.asm"]).unwrap_err();
+        assert!(e.contains("/elsewhere/y.asm"), "{e}");
     }
 
     #[test]
