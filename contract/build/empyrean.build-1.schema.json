@@ -2,9 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://empyrean.invalid/contract/build/1",
   "title": "empyrean.build 1.x",
-  "description": "The build-data export: one <stem>.build.json per ROM, written by the assembler (G0a design, docs/v2/specs/2026-11-17-G0a-build-data-export-design.md). The schema and the vectors beside it are the contract (4.3); a vector change is a contract amendment first. The ENVELOPE (format, version, rom, inputsSha256, tool, shape, spaces, and the set of top-level collections) is closed: an unknown envelope key fails. RECORD PAYLOADS (a file, symbol, layout, field, overlay, const, line section) are OPEN: a minor version adds keys to records and a 1.0 reader ignores them. Numbers are JSON integers, never hex strings. No absolute paths, timestamps or hostnames. The binding key is rom.sha256: the SHA-256 of the ROM file as written; results name it romSha256 on the bus.",
+  "description": "The build-data export: one <stem>.build.json per ROM, written by the assembler (G0a design, docs/v2/specs/2026-11-17-G0a-build-data-export-design.md). The schema and the vectors beside it are the contract (4.3); a vector change is a contract amendment first. The ENVELOPE OBJECTS (version, rom, tool, shape, and each spaces entry) are closed: an unknown key inside them fails, which is what keeps timestamps and hostnames out. The ROOT is open and so are RECORD PAYLOADS (a file, symbol, layout, field, overlay, const, line section): a minor version adds top-level collections and record keys, and a 1.0 reader ignores both (spec 4.3). Numbers are JSON integers, never hex strings. No absolute paths, timestamps or hostnames. The binding key is rom.sha256: the SHA-256 of the ROM file as written; results name it romSha256 on the bus.",
   "type": "object",
-  "additionalProperties": false,
   "required": ["format", "version", "rom", "inputsSha256", "tool", "shape", "spaces", "files", "symbols", "layouts", "consts", "lines"],
   "properties": {
     "format": { "const": "empyrean.build" },
@@ -52,6 +51,11 @@
     "spaces": {
       "type": "array",
       "minItems": 1,
+      "allOf": [
+        { "contains": { "required": ["id"], "properties": { "id": { "const": "m68k" } } }, "minContains": 0, "maxContains": 1 },
+        { "contains": { "required": ["id"], "properties": { "id": { "const": "z80" } } }, "minContains": 0, "maxContains": 1 }
+      ],
+      "description": "Each space at most once. Unique-by-key is not expressible in plain JSON Schema, so this bounds each id of the closed enum with maxContains; a new space (a major version) adds a clause.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -92,11 +96,16 @@
           "module": { "type": "string" },
           "public": { "type": "boolean" }
         },
-        "if": {
-          "required": ["space", "vma"],
-          "properties": { "space": { "const": "z80" }, "vma": { "minimum": 32768 } }
-        },
-        "then": { "required": ["lma"] }
+        "allOf": [
+          {
+            "if": { "required": ["space"], "properties": { "space": { "const": "z80" } } },
+            "then": { "properties": { "vma": { "maximum": 65535 } } }
+          },
+          {
+            "if": { "required": ["space", "vma"], "properties": { "space": { "const": "z80" }, "vma": { "minimum": 32768, "maximum": 65535 } } },
+            "then": { "required": ["lma"] }
+          }
+        ]
       }
     },
     "layouts": {

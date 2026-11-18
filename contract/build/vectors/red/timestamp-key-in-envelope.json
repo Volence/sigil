@@ -1,7 +1,7 @@
 {
- "why": "The envelope is closed and deterministic: no timestamps (4.6).",
+ "why": "Envelope objects are closed and the file is deterministic: no timestamps in tool (4.6). The root is open (4.3), so the key must sit inside an envelope object.",
  "expect": {
-  "path": "",
+  "path": "/tool",
   "keyword": "additionalProperties"
  },
  "doc": {
@@ -20,7 +20,8 @@
    "name": "sigil",
    "version": "0.1.0",
    "revision": "6b40f52fb3741b410ca5048f321674ea98f4f0fc",
-   "tree": "clean"
+   "tree": "clean",
+   "builtAt": "2026-11-17T22:47:00Z"
   },
   "shape": {
    "game": "sonic4",
@@ -183,7 +184,6 @@
      ]
     }
    }
-  },
-  "builtAt": "2026-11-17T22:47:00Z"
+  }
  }
 }
