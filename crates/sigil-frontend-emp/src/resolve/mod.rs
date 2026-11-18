@@ -746,6 +746,10 @@ pub struct BuiltProgram {
     /// What the lowering knew about every symbol it defined (module, procedure
     /// extent, `pub`), for the build export ([`crate::export_side`]).
     pub symbols: crate::export_side::ProgramSymbols,
+    /// Every layout and constant the lowering resolved, keyed by defining module, for
+    /// the build export ([`crate::export_side::emp_layouts`]). Empty unless the build
+    /// records (the same gate as [`expansions`](Self::expansions)).
+    pub layouts: crate::export_side::ProgramLayouts,
     /// Every template splice's expansion, program-wide (G0a spec 4.4): the ids the
     /// sections' spliced spans carry, in the order handed out. A `SourceIndex`
     /// built with them ([`SourceIndex::with_expansions`](manifest::SourceIndex::with_expansions))
@@ -787,6 +791,14 @@ fn build_program_with(
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
     let mut symbols = crate::export_side::ProgramSymbols::default();
+    // The layout/constant registry (G0a spec 4.5), read-only and inert: filled only when
+    // `record`, from a separate evaluator per module, after the module is lowered.
+    let mut layouts = crate::export_side::ProgramLayouts::default();
+    let source_home: HashMap<sigil_span::SourceId, String> = if record {
+        manifest.modules.iter().map(|pm| (pm.file.module.span.source, pm.id.clone())).collect()
+    } else {
+        HashMap::new()
+    };
     // The program's template expansions, threaded through every module's lowering
     // so the ids are program-wide (see `BuiltProgram::expansions`).
     let mut expansions = sigil_span::SourceMap::new();
@@ -1020,14 +1032,14 @@ fn build_program_with(
         };
         let ambient =
             ambient_items(pm, prelude_pm, manifest, &mut memo);
-        let (mut module, ldiags) = if ambient.is_empty() {
-            // zero-clone common path; `region_ends` is empty for region-free builds.
-            lower_one(&pm.file, &mut expansions)
+        let synthetic: ast::File;
+        let view: &ast::File = if ambient.is_empty() {
+            &pm.file
         } else {
             // The own-items clone here could later be avoided by having the
             // evaluator index a separate ambient slice (deferred — preludes are
             // small).
-            let synthetic = ast::File {
+            synthetic = ast::File {
                 module: pm.file.module.clone(),
                 attrs: pm.file.attrs.clone(),
                 items: ambient
@@ -1041,8 +1053,14 @@ fn build_program_with(
                 // attach only).
                 docs: pm.file.docs.clone(),
             };
-            lower_one(&synthetic, &mut expansions)
+            &synthetic
         };
+        // Zero-clone common path when nothing is injected; `region_ends` is empty for
+        // region-free builds.
+        let (mut module, ldiags) = lower_one(view, &mut expansions);
+        if record {
+            layouts.record_importer(view, &source_home, &opts.defines, &iface_env, opts.include_root.as_deref());
+        }
         // A diagnostic about a spliced line names the line as WRITTEN, the template
         // body, exactly as before splices recorded expansions: the expansion ids are
         // for the build export's line table, and they never reach the diagnostics
@@ -1118,7 +1136,7 @@ fn build_program_with(
     diags.extend(fold_faults);
 
     let lowered = reachable.iter().map(|&i| manifest.modules[i].id.clone()).collect();
-    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered, symbols, expansions }
+    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered, symbols, layouts, expansions }
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME

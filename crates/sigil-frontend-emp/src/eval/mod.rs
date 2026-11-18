@@ -88,7 +88,7 @@ pub struct Evaluator<'a> {
     /// recursion-cycle reporting in later tasks.
     pub call_stack: Vec<(String, Span)>,
     /// File-level `const` decls, indexed by name (empty in the no-file mode).
-    consts: HashMap<&'a str, &'a ast::ConstDecl>,
+    pub(crate) consts: HashMap<&'a str, &'a ast::ConstDecl>,
     /// File-level `equ` decls, indexed by name (empty in the no-file mode).
     /// Resolved through the SAME lazy/memoized/cycle-guarded path as
     /// [`consts`](Self::consts) (R-T0.2 — an equ's value is a comptime
@@ -1269,7 +1269,7 @@ impl<'a> Evaluator<'a> {
     ///
     /// Callers must only invoke this for a `name` known to be in `self.consts`
     /// or `self.equs`.
-    fn resolve_const(&mut self, name: &str, ref_span: Span) -> Value {
+    pub(crate) fn resolve_const(&mut self, name: &str, ref_span: Span) -> Value {
         if let Some(v) = self.const_memo.get(name) {
             return v.clone();
         }

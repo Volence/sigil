@@ -1837,6 +1837,8 @@ pub struct EmpProgram {
     /// The lowering's symbol side table (module, procedure extent, `pub`) for the
     /// build export.
     pub symbols: sigil_frontend_emp::export_side::ProgramSymbols,
+    /// The lowering's layout and constant registry for the build export.
+    pub layouts: sigil_frontend_emp::export_side::ProgramLayouts,
 }
 
 /// The shape `profile` builds, as the module-root gates read it.
@@ -2031,7 +2033,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // root-relative path would then join onto the module dir and resolve one level deep.
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
-    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, expansions } =
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
         resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
     // The helper imports `normalize_helper_imports` removed, checked above against
     // the pre-rewrite tree, reported for the modules this build contains.
@@ -2090,7 +2092,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     let warnings =
         collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
 
-    Ok(EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols })
+    Ok(EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols, layouts })
 }
 
 /// Location-resolve and deduplicate every non-error diagnostic in `sources`,
@@ -3862,6 +3864,8 @@ struct ChainedResolve {
     registry: Vec<ModuleSpec>,
     /// The `.emp` lowering's symbol side table.
     emp_symbols: sigil_frontend_emp::export_side::ProgramSymbols,
+    /// The `.emp` lowering's layout and constant registry.
+    emp_layouts: sigil_frontend_emp::export_side::ProgramLayouts,
     /// The names the AS residual defined, taken before its sections joined the
     /// `.emp` ones.
     as_symbols: sigil_frontend_as::export_side::AsSymbols,
@@ -3982,7 +3986,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     }
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
-    let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols } =
+    let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } =
         build_emp(aeon, profile)?;
     // The AS front end's side table, while its sections are still its own.
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
@@ -4075,7 +4079,7 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
     let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
-    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, as_symbols, as_code })
+    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, emp_layouts, as_symbols, as_code })
 }
 
 /// What a check-only run reports: the guard census and the warn tier.
@@ -4107,7 +4111,7 @@ pub fn build_rom_chained_with_listing(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<RomBuild, String> {
-    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, as_symbols, as_code } =
+    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, emp_layouts, as_symbols, as_code } =
         resolve_chained(aeon, profile)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
@@ -4166,7 +4170,11 @@ pub fn build_rom_chained_with_listing(
     // The instruction fragments both front ends marked, for the line table's `code` rows.
     let mut code = emp_symbols.code.clone();
     code.extend(as_code);
-    let side = SideTables { symbols, code, ..SideTables::default() };
+    // The `.emp` front end's resolved layouts and constants (spec 4.5). The AS residual
+    // declares none, so these are the whole tables.
+    let layouts = crate::export_layouts::export_layouts(&emp_layouts).map_err(|e| format!("build export: {e}"))?;
+    let consts = crate::export_layouts::export_consts(&emp_layouts).map_err(|e| format!("build export: {e}"))?;
+    let side = SideTables { symbols, layouts, consts, code, ..SideTables::default() };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side };
     Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
 }

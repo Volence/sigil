@@ -61,7 +61,7 @@ pub(crate) fn is_hidden_name(s: &str) -> bool {
 }
 
 /// Split a [`hidden_name`] back into `(def_id, name)`. `None` for a plain name.
-fn split_hidden(s: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_hidden(s: &str) -> Option<(&str, &str)> {
     s.strip_prefix('$')?.split_once('$')
 }
 

@@ -111,6 +111,15 @@ pub enum ExportError {
     DuplicateFile { root: &'static str, path: String },
     /// A front end's instruction mark that names no single placed `Data` run.
     CodeMark { section: String, why: String },
+    /// One `(module, name)` resolved to two different layouts (A4's hazard): the export
+    /// would state two answers to one question, so it states none.
+    TwoLayouts { module: String, name: String },
+    /// One `(module, name)` resolved to two different constants.
+    TwoConsts { module: String, name: String },
+    /// An exported constant whose value does not fit `i64` (never dropped, never wrapped).
+    ConstOutOfRange { module: String, name: String, value: String },
+    /// A layout the record cannot state (a size past `u32`, an overlay with no unique base).
+    Layout { module: String, name: String, why: String },
     /// An exporter invariant that does not hold (a bug, not data).
     Internal(String),
 }
@@ -138,6 +147,18 @@ impl std::fmt::Display for ExportError {
             ExportError::CodeMark { section, why } => {
                 write!(f, "line table: an instruction mark for section `{section}` cannot be placed: {why}")
             }
+            ExportError::TwoLayouts { module, name } => write!(
+                f,
+                "layouts: `{module}::{name}` resolved to two different layouts, so the export cannot state one"
+            ),
+            ExportError::TwoConsts { module, name } => write!(
+                f,
+                "consts: `{module}::{name}` resolved to two different values, so the export cannot state one"
+            ),
+            ExportError::ConstOutOfRange { module, name, value } => {
+                write!(f, "consts: `{module}::{name}` = {value} does not fit a signed 64-bit integer")
+            }
+            ExportError::Layout { module, name, why } => write!(f, "layouts: `{module}::{name}`: {why}"),
             ExportError::Internal(m) => write!(f, "build export internal error: {m}"),
         }
     }
