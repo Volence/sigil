@@ -34,7 +34,9 @@ fn tree() -> Option<PathBuf> {
 }
 
 /// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical.
-fn shapes() -> Vec<(&'static str, fn() -> GameProfile)> {
+type Shape = (&'static str, fn() -> GameProfile);
+
+fn shapes() -> Vec<Shape> {
     vec![
         ("plain", || native::sonic4_profile(false)),
         ("debug", || native::sonic4_profile(true)),
