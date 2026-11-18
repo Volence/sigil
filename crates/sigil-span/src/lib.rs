@@ -681,6 +681,56 @@ mod tests {
         assert_eq!(map.label(at(&map, i, 3, 2)).as_deref(), Some("q6_three.asm(14) outer(1) mid(3) inner(2):2"));
     }
 
+    /// `outermost` on a NESTED expansion (a macro invoked inside a macro, inside a third)
+    /// lands on the line a person wrote, in the file that holds the outermost call: the
+    /// same `(file, line)` that prefixes `label` for the same span. The body lives in a
+    /// second file, so a walk that stopped at the body's own file or line would differ in
+    /// both halves.
+    #[test]
+    fn outermost_of_a_nested_expansion_is_labels_file_and_line() {
+        let mut map = SourceMap::new();
+        let body = "inner macro\n\tnop\n\tbogus_inner\n\tendm\nmid macro\n\tnop\n\tnop\n\tinner\n\tendm\nouter macro\n\tmid\n\tendm\n";
+        let inc = map.add_named("q6_macros.inc".into(), body.into());
+        let root_text = "\tcpu 68000\n\tinclude \"q6_macros.inc\"\n\tnop\n\touter\n";
+        let root = map.add_named("q6_root.asm".into(), root_text.into());
+        let o = map.add_expansion(inc, line_start(body, 11), at(&map, root, 4, 2), Frame::Macro("outer".into()));
+        let m = map.add_expansion(inc, line_start(body, 6), at(&map, o, 11, 2), Frame::Macro("mid".into()));
+        let i = map.add_expansion(inc, line_start(body, 2), at(&map, m, 8, 2), Frame::Macro("inner".into()));
+        let span = at(&map, i, 3, 2);
+        let label = map.label(span).expect("a named nested span labels");
+        assert_eq!(label, "q6_root.asm(4) outer(1) mid(3) inner(2):2");
+        let (file, line) = map.outermost(span).expect("a named nested span has an outermost line");
+        assert_eq!((file, line), (root, 4));
+        // The same answer, read off the label's own prefix.
+        let prefix = format!("{}({})", map.name(file), line);
+        assert!(label.starts_with(&format!("{prefix} ")), "label {label} does not start with {prefix}");
+        // Every intermediate run answers the same outermost line as well.
+        assert_eq!(map.outermost(at(&map, m, 8, 2)), Some((root, 4)));
+        assert_eq!(map.outermost(at(&map, o, 11, 2)), Some((root, 4)));
+        // A plain file span is its own outermost line.
+        assert_eq!(map.outermost(at(&map, inc, 3, 2)), Some((inc, 3)));
+    }
+
+    /// The bound: a span this map never issued answers `None`, never a guess. An unknown
+    /// expansion id, a file id past the map, the no-source sentinel and an unnamed file.
+    #[test]
+    fn outermost_of_a_foreign_or_unknown_span_is_none() {
+        let mut map = SourceMap::new();
+        let f = map.add_named("f.asm".into(), "nop\nnop\n".into());
+        let anon = map.add("nop\n".into());
+        let run = map.add_expansion(f, 0, Span { source: f, start: 4, end: 5 }, Frame::Rept(1));
+        assert_eq!(map.outermost(Span { source: run, start: 0, end: 0 }), Some((f, 2)));
+        let none = |source| map.outermost(Span { source, start: 0, end: 0 });
+        assert_eq!(none(SourceId(EXPANSION_BIT | 7)), None, "an expansion id this map never issued");
+        assert_eq!(none(SourceId(run.0 + 1)), None, "the next expansion id, not yet issued");
+        assert_eq!(none(SourceId(2)), None, "a file id past the map");
+        assert_eq!(none(SourceId(u32::MAX)), None, "the no-source sentinel");
+        assert_eq!(none(anon), None, "an unnamed file");
+        // A run whose call names an unnamed file is no source either.
+        let lost = map.add_expansion(f, 0, Span { source: anon, start: 0, end: 0 }, Frame::Rept(1));
+        assert_eq!(map.outermost(Span { source: lost, start: 0, end: 0 }), None, "a call chain ending in an unnamed file");
+    }
+
     /// The four loop spellings, each against the asl line it was read from.
     #[test]
     fn loop_frames_spell_rept_while_irp_and_irpc_as_asl_does() {
