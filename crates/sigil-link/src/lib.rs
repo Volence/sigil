@@ -33,6 +33,8 @@ pub use code_file::{
     asl_cpu_id, code_file_records, decode_code_file, encode_code_file, CodeRecord, CODE_FILE_MAGIC, MAX_RECORD,
 };
 
+pub mod export;
+
 mod map_load;
 pub use map_load::load_map;
 

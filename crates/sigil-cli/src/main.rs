@@ -3526,7 +3526,96 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     }
+    // SPIKE (G0a Task 1, replaced by the real sidecar in Task 3): measure the export's
+    // size and load time. Strictly opt-in; unset, nothing here runs and no byte moves.
+    if std::env::var_os("SIGIL_EXPORT_SPIKE").is_some_and(|v| v == "1") {
+        if let Some(out_path) = &opts.output {
+            export_spike(aeon, opts, out_path, &full, &listing);
+        }
+    }
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
+}
+
+/// The Task-1 spike: `rom`, `tool`, `shape`, symbols from the listing (kind
+/// `Label`/`Equ`, no space) and line rows at section granularity (the one ROM section
+/// split at label addresses; the resolved sections are not visible from here), written
+/// to `<output>.spike.json`.
+fn export_spike(
+    aeon: &std::path::Path,
+    opts: &BuildOpts,
+    out_path: &str,
+    full: &[u8],
+    listing: &[sigil_link::ListingSymbol],
+) {
+    use sigil_link::export::*;
+    let (target, game) = digest_target(&opts.target);
+    let (_, profile) = opts.target.label_and_profile();
+    let shape = if profile.debug { format!("{target}.debug") } else { target.to_string() };
+    let defines = match sigil_harness::native::shape_defines(&profile, aeon) {
+        Ok(d) => d.into_iter().filter_map(|(k, v)| i64::try_from(v).ok().map(|v| (k, v))).collect(),
+        Err(err) => {
+            eprintln!("error: export spike: {err}");
+            process::exit(1);
+        }
+    };
+    let symbols: Vec<SymbolRecord> = listing
+        .iter()
+        .map(|l| SymbolRecord {
+            name: l.name.clone(),
+            demangled: None,
+            space: None,
+            vma: l.value,
+            lma: l.lma,
+            kind: if l.is_equate { SymbolKind::Equ } else { SymbolKind::Label },
+            size: None,
+            module: None,
+            public: false,
+        })
+        .collect();
+    let mut starts: Vec<u32> =
+        listing.iter().filter(|l| !l.is_equate && (l.value as usize) < full.len()).map(|l| l.value).collect();
+    starts.sort_unstable();
+    starts.dedup();
+    let rows: Vec<LineRow> = starts
+        .iter()
+        .enumerate()
+        .map(|(i, &vma)| {
+            let end = starts.get(i + 1).copied().unwrap_or(full.len() as u32);
+            LineRow { vma, lma: vma, len: end - vma, file: 0, line: 0, kind: RowKind::Data }
+        })
+        .collect();
+    let export = BuildExport {
+        rom: RomRecord {
+            path: std::path::Path::new(out_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            size: full.len() as u64,
+            sha256: sha256_of(full),
+        },
+        inputs_sha256: [0; 32],
+        tool: ToolRecord {
+            name: "sigil".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            revision: env!("SIGIL_REVISION").into(),
+            tree: env!("SIGIL_TREE_STATE").into(),
+        },
+        shape: ShapeRecord { game: game.into(), shape, defines },
+        spaces: vec![
+            SpaceRecord { id: Space::M68k, addr_bits: 24 },
+            SpaceRecord { id: Space::Z80, addr_bits: 16 },
+        ],
+        files: vec![],
+        symbols,
+        layouts: vec![],
+        consts: vec![],
+        lines: LineTable { sections: vec![LineSection { name: "rom".into(), space: Space::M68k, rows }] },
+    };
+    let path = format!("{out_path}.spike.json");
+    if let Err(err) = install_artifact(&path, to_json(&export).as_bytes()) {
+        eprintln!("error: cannot write {path}: {err}");
+        process::exit(1);
+    }
 }
 
 /// The `.lst` source digest for this build: the read set the recorder captured, the
