@@ -16,13 +16,20 @@
 //!  * a fill or org-gap row covers uniform bytes (padding, not code mislabelled);
 //!  * a source row names a `files` row and a line from 1; a no-source row names neither;
 //!  * a row's `vma` equals its `lma` unless its section is phased (a listing `PHASE`
-//!    label lies in it), and one section has one `vma - lma` offset;
+//!    label lies in it) or is stated in `space: z80` (its `vma` is a Z80 address, at most
+//!    `$FFFF`), and one section has one `vma - lma` offset;
 //!  * a `code` row sits in a placed 68000 section (not `(image)`) at an even address
 //!    with an even length, as every 68000 instruction does; s4 plain has code rows;
 //!  * ATTRIBUTION, against the listing and the source text (see [`attribution`]): the
 //!    row that starts at a listing label is on a line at or after a declaration of that
-//!    label in the same file. Plus the header's declaring lines and the Z80 driver blob
-//!    row (`boot_data.emp`'s `Z80_Sound_Start`, the size of the generated blob).
+//!    label in the same file. The resident Z80 driver's labels are not in the listing (it
+//!    is linked by seam 1, not by the ROM link), so for its rows the label source is the
+//!    export's own z80 symbols; the check is the same, against the same source text. Plus
+//!    the header's declaring lines;
+//!  * the Z80 BRIDGE (spec 4.4): over exactly the generated blob's bytes at the listing's
+//!    `Z80_Sound_Start`, the rows are the driver's (`space: z80`, more than one, none on
+//!    the embedding `boot_data.emp`), and each row's `vma` is its offset into the blob
+//!    (the blob loads at Z80 `$0000`).
 //!
 //! Loud on unmeasurable: a sidecar with no rows, a listing without `EndOfRom`, or a ROM
 //! too short for a header fails the gate rather than passing it.
@@ -225,10 +232,17 @@ fn gate2(rom: &[u8], end_of_rom: u64, phased: &[u64], export: &serde_json::Value
     for r in rows {
         by_section.entry(r.section.as_str()).or_default().push(r);
     }
+    let space_of = |sec: &str| -> String { export["lines"]["sections"][sec]["space"].as_str().unwrap_or("?").to_string() };
     for (sec, rs) in &by_section {
         let delta = |r: &Row| r.vma.wrapping_sub(r.lma);
         if rs.iter().any(|r| delta(r) != delta(rs[0])) {
             bad.push(format!("section {sec}: rows disagree on vma - lma"));
+        }
+        if space_of(sec) == "z80" {
+            if let Some(r) = rs.iter().find(|r| r.vma + r.len > 0x1_0000) {
+                bad.push(format!("section {sec} is z80 but a row runs past $FFFF: {r:?}"));
+            }
+            continue;
         }
         let is_phased = rs.iter().any(|r| phased.iter().any(|p| (r.lma..r.lma + r.len).contains(p)));
         if !is_phased && rs.iter().any(|r| r.vma != r.lma) {
@@ -305,6 +319,8 @@ fn source_path(tree: &Path, f: &serde_json::Value) -> Option<PathBuf> {
 fn declared_name(line: &str) -> Option<&str> {
     let mut s = line.split("//").next()?.trim_start();
     s = s.strip_prefix("pub ").map_or(s, str::trim_start);
+    // The Z80 driver exports a proc-local label: `export .fetch:`.
+    s = s.strip_prefix("export ").map_or(s, str::trim_start);
     for kw in ["proc ", "data ", "table ", "dispatch ", "script ", "offsets ", "region "] {
         if let Some(rest) = s.strip_prefix(kw) {
             s = rest.trim_start();
@@ -378,6 +394,12 @@ struct Attribution {
 /// is inside the template body while their row is, correctly, the splice line). The
 /// exclusion is bounded: [`ATTRIBUTION_FLOOR_PCT`] of the label addresses must be
 /// checked, per shape.
+///
+/// The Z80 driver's labels are not in the listing (seam 1 links it, the ROM only embeds
+/// the blob), so every export symbol in `space: z80` that carries an `lma` joins the label
+/// set at that load address. They come from the export rather than the listing; what the
+/// check holds them to, a declaration in the row's own file at or before the row's line,
+/// is still the source text.
 fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[Row]) -> Attribution {
     let files = export["files"].as_array().cloned().unwrap_or_default();
     let texts: Vec<Vec<String>> = files
@@ -415,6 +437,14 @@ fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[R
         if let Some((name, hex)) = l.strip_prefix(' ').and_then(|b| b.strip_suffix(" C |")?.split_once(" : ")) {
             if let Ok(a) = u64::from_str_radix(hex.trim(), 16) {
                 at.entry(phase.get(name).copied().unwrap_or(a)).or_default().push(name);
+            }
+        }
+    }
+    for s in export["symbols"].as_array().into_iter().flatten().filter(|s| s["space"] == "z80") {
+        if let (Some(lma), Some(name)) = (s["lma"].as_u64(), s["name"].as_str()) {
+            let names = at.entry(lma).or_default();
+            if !names.contains(&name) {
+                names.push(name);
             }
         }
     }
@@ -542,16 +572,32 @@ fn every_rom_byte_is_covered_once() {
             );
             // Instruction rows exist: the front ends' marks reached the table.
             assert!(count("code") > 0, "s4 plain has no code rows");
-            // The Z80 driver blob: one data row on its including line, the blob's size.
+            // The Z80 bridge: over exactly the generated blob's bytes, the driver's own rows
+            // replace the embedding line's single data row.
             let blob = std::fs::metadata(tree.join("engine/sound/generated/z80_sound_blob.bin")).expect("the blob").len();
-            let z = row_at_label(&b.listing, &rows, "Z80_Sound_Start").expect("a row at Z80_Sound_Start");
-            let zpath = b.export["files"][z.file as usize]["path"].as_str().unwrap_or("");
+            let start = b
+                .listing
+                .lines()
+                .find_map(|l| l.strip_prefix(" Z80_Sound_Start : ")?.strip_suffix(" C |"))
+                .and_then(|h| u64::from_str_radix(h.trim(), 16).ok())
+                .expect("the listing places Z80_Sound_Start");
+            let z80 = |r: &Row| b.export["lines"]["sections"][&r.section]["space"] == "z80";
+            let inside: Vec<&Row> = rows.iter().filter(|r| r.lma < start + blob && r.lma + r.len > start).collect();
+            let tiled = inside.first().map(|r| r.lma) == Some(start)
+                && inside.windows(2).all(|w| w[0].lma + w[0].len == w[1].lma)
+                && inside.last().map(|r| r.lma + r.len) == Some(start + blob);
+            let on_embed = inside
+                .iter()
+                .filter(|r| b.export["files"][r.file as usize]["path"].as_str() == Some("system/boot_data.emp"))
+                .count();
+            let offsets = inside.iter().all(|r| r.vma == r.lma - start);
             assert!(
-                zpath == "system/boot_data.emp"
-                    && z.kind == "data"
-                    && z.len == blob
-                    && line_text(&tree, &b.export, z).contains("data Z80_Sound_Start"),
-                "the Z80 blob row {z:?} ({zpath}) is not boot_data.emp's Z80_Sound_Start line over {blob} bytes"
+                inside.len() > 1 && tiled && inside.iter().all(|r| z80(r)) && on_embed == 0 && offsets,
+                "the Z80 blob [{start:#X}, +{blob}) is not the bridge's driver rows: {} rows, tiled={tiled}, \
+                 all z80={}, {on_embed} on boot_data.emp, vma = blob offset: {offsets}; first {:?}",
+                inside.len(),
+                inside.iter().all(|r| z80(r)),
+                inside.first()
             );
             // Controls: the gate is not blind to the defects it exists to catch.
             // (1) Drop one row.

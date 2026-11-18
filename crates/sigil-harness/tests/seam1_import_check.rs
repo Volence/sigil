@@ -126,3 +126,28 @@ fn an_unread_resident_import_of_a_real_pub_name_is_accepted() {
     let (text, _) = driver_with_use(&aeon, "use engine.sound_constants.{DAC_SAMPLE_COUNT}");
     blob_with_driver(&aeon, &text).unwrap_or_else(|e| panic!("a valid import must lower: {e}"));
 }
+
+/// The same refusal planted in the LAST resident module (`sound_psg`, source id 4):
+/// located in its own file. Each module is parsed under its own source id (G0a Task 9),
+/// so the import verdict renders through one register of all five files.
+#[test]
+fn a_resident_import_refusal_in_a_later_module_is_located_in_its_own_file() {
+    const PSG: &str = "engine/sound/sound_psg.emp";
+    let Some(aeon) = sound_tree() else { return };
+    let src = std::fs::read_to_string(aeon.join(PSG)).expect("read sound_psg");
+    let header = src
+        .lines()
+        .position(|l| l.starts_with("module "))
+        .unwrap_or_else(|| panic!("{PSG} has no `module` header line; re-point this gate"));
+    let mut lines: Vec<&str> = src.lines().collect();
+    lines.insert(header + 1, "use engine.sound_fm.{NO_SUCH_ITEM_UNUSED_IMPORT}");
+    let text = lines.join("\n") + "\n";
+    let err = with_resident_source_override(PSG, &text, || native_blob_checked(&aeon, false, None))
+        .expect_err("a missing name must not lower");
+    let want = format!(
+        "{PSG}:{}:1: [Error] module `engine.sound_fm` has no `pub` name `NO_SUCH_ITEM_UNUSED_IMPORT`",
+        header + 2
+    );
+    assert!(err.contains(&want), "want `{want}` in:\n{err}");
+    assert_eq!(err.matches("[Error]").count(), 1, "{err}");
+}

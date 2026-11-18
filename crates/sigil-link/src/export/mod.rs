@@ -15,7 +15,7 @@ pub use entry::{build_export, ExportInputs, FileKey, SideTables, Z80Bridge};
 pub use inputs::{inputs_sha256, inputs_text, InputRead, ToolExe};
 pub use json::{sha256_hex, sha256_of, to_json, ExportError};
 pub use lines::{walk_lines, NoSourceRange, IMAGE_SECTION};
-pub use placed::{PlacedLabel, PlacedSymbols};
+pub use placed::{section_space, PlacedLabel, PlacedSymbols, Z80Window};
 
 /// Everything the export file holds. Field order is the JSON key order of §4.6.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -132,6 +132,7 @@ pub mod export_files;
 /// The build export's symbol table, from the front ends' side tables (G0a Task 5).
 pub mod export_layouts;
 pub mod export_symbols;
+pub mod export_z80;
 
 use sigil_link::LinkedImage;
 

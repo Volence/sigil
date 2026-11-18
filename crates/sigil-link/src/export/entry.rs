@@ -4,18 +4,39 @@
 //! locator and its side tables; nothing here knows a front end.
 
 use super::lines::{check_image_coverage, merge_adjacent, walk_lines, NoSourceRange};
-use super::locate::SpanLocator;
+use super::locate::{FileRef, SpanLocator};
+use super::placed::Z80Window;
 use super::{
-    BuildExport, ConstRecord, ExportError, FileRecord, LayoutRecord, LineTable, RomRecord, RootName, RowKind,
-    ShapeRecord, Space, SpaceRecord, SymbolRecord, ToolRecord,
+    BuildExport, ConstRecord, ExportError, FileRecord, LayoutRecord, LineRow, LineSection, LineTable, RomRecord,
+    RootName, RowKind, ShapeRecord, Space, SpaceRecord, SymbolRecord, ToolRecord,
 };
 use sigil_ir::Section;
 use std::collections::HashMap;
 
-/// The Z80 sound driver's bridge facts (bank windows). Empty until the task that
-/// fills it (G0a Task 9).
+/// The Z80 sound driver as the export states it (spec 4.4, "The Z80"). Seam 1 links
+/// the driver on its own and the ROM embeds the result as ONE data fragment, so the
+/// placed sections know the blob only as bytes on its embedding line. The driver (the
+/// harness) hands over what seam 1 knew in process: the driver's own symbols and line
+/// rows, in `space: z80`, already rebased to the ROM. [`build_export`] puts the rows in
+/// place of the embedding line's row over exactly the blob's bytes, so the completeness
+/// check covers them like any other row.
+///
+/// When the driver becomes ordinary sections (G0c), its rows come from the same walk and
+/// this bridge is deleted.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Z80Bridge {}
+pub struct Z80Bridge {
+    /// Where the ROM embeds the blob: the load address of its first byte.
+    pub blob_lma: u32,
+    /// The driver's source files as seam 1 opened them. A bridge row's `file` is an
+    /// index into this (not into the main locator), mapped to its `files` row by
+    /// [`build_export`] through the same [`FileKey`].
+    pub files: Vec<FileRef>,
+    /// The driver's symbols: `space: z80`, `vma` the Z80 address, `lma` the ROM byte.
+    pub symbols: Vec<SymbolRecord>,
+    /// The driver's line sections: `space: z80`, rows rebased to ROM load addresses,
+    /// covering `[blob_lma, blob_lma + blob length)` exactly once.
+    pub sections: Vec<LineSection>,
+}
 
 /// Tables the front ends know and the placed sections do not. Empty fields are legal
 /// until the tasks that fill them land.
@@ -37,6 +58,9 @@ pub struct ExportInputs {
     /// Maps those sections' spans to source lines.
     pub locator: Box<dyn SpanLocator + Send>,
     pub side: SideTables,
+    /// The shape's Z80 bank windows, from its memory map: they decide the space of a
+    /// section phased into one ([`super::placed::section_space`]).
+    pub z80_windows: Vec<Z80Window>,
 }
 
 /// The root-relative key of a source file, given the name its front end opened it
@@ -72,8 +96,16 @@ pub fn build_export(
             return Err(ExportError::DuplicateFile { root: w[0].root.as_str(), path: w[0].path.clone() });
         }
     }
-    let mut lines = walk_lines(&inputs.sections, &*inputs.locator, post_link, &inputs.side.code)?;
-    map_files(&mut lines, &*inputs.locator, &files, file_key)?;
+    let mut lines =
+        walk_lines(&inputs.sections, &*inputs.locator, post_link, &inputs.side.code, &inputs.z80_windows)?;
+    map_files(&mut lines, &|id| Some(inputs.locator.file(id)), &files, file_key)?;
+    let mut symbols = inputs.side.symbols.clone();
+    if let Some(z) = &inputs.side.z80 {
+        let mut driver = LineTable { sections: z.sections.clone() };
+        map_files(&mut driver, &|id| z.files.get(id as usize), &files, file_key)?;
+        splice_z80(&mut lines, driver, z.blob_lma)?;
+        symbols.extend(z.symbols.iter().cloned());
+    }
     merge_adjacent(&mut lines);
     check_image_coverage(&lines, rom.size)?;
     Ok(BuildExport {
@@ -86,18 +118,90 @@ pub fn build_export(
             SpaceRecord { id: Space::Z80, addr_bits: 16 },
         ],
         files,
-        symbols: inputs.side.symbols.clone(),
+        symbols,
         layouts: inputs.side.layouts.clone(),
         consts: inputs.side.consts.clone(),
         lines,
     })
 }
 
+/// Put the Z80 bridge's rows (`driver`, files already mapped) in place of the embedding
+/// line's row over the blob's bytes.
+///
+/// Refused, never patched over: driver rows that are not `space: z80`, that do not tile
+/// one contiguous range from `blob_lma`, or a range the placed sections do not cover
+/// with `data` rows of ONE source line lying wholly inside it (the embedding line). Any
+/// of those means the bridge and the ROM disagree about where the blob is.
+fn splice_z80(lines: &mut LineTable, driver: LineTable, blob_lma: u32) -> Result<(), ExportError> {
+    let bad = |m: String| Err(ExportError::Z80Bridge(m));
+    let mut rows: Vec<&LineRow> = Vec::new();
+    for s in &driver.sections {
+        if s.space != Space::Z80 {
+            return bad(format!("driver section `{}` is stated in {}, not z80", s.name, s.space.as_str()));
+        }
+        rows.extend(s.rows.iter());
+    }
+    rows.sort_by_key(|r| r.lma);
+    let mut end = blob_lma as u64;
+    for r in &rows {
+        if r.lma as u64 != end {
+            return bad(format!("driver rows do not tile the blob: a row starts at ${:X}, the previous ends at ${end:X}", r.lma));
+        }
+        end += r.len as u64;
+    }
+    if end == blob_lma as u64 {
+        return bad("the bridge carries no driver rows".into());
+    }
+    let (start, end) = (blob_lma as u64, end);
+    let mut embedding: Option<(u32, u32)> = None;
+    let mut covered = 0u64;
+    for s in &mut lines.sections {
+        let mut kept = Vec::with_capacity(s.rows.len());
+        for r in s.rows.drain(..) {
+            let (a, b) = (r.lma as u64, r.lma as u64 + r.len as u64);
+            if b <= start || a >= end {
+                kept.push(r);
+                continue;
+            }
+            if a < start || b > end {
+                return bad(format!(
+                    "the row [${a:X}, ${b:X}) of section `{}` crosses the blob's edge [${start:X}, ${end:X})",
+                    s.name
+                ));
+            }
+            if r.kind != RowKind::Data {
+                return bad(format!("the blob's bytes at ${a:X} are a `{}` row, not embedded data", r.kind.as_str()));
+            }
+            match embedding {
+                None => embedding = Some((r.file, r.line)),
+                Some(at) if at != (r.file, r.line) => {
+                    return bad(format!("the blob's bytes come from two source lines ({at:?} and {:?})", (r.file, r.line)))
+                }
+                Some(_) => {}
+            }
+            covered += r.len as u64;
+        }
+        s.rows = kept;
+    }
+    if covered != end - start {
+        return bad(format!(
+            "the embedding line covers {covered} of the blob's {} bytes at ${start:X}",
+            end - start
+        ));
+    }
+    lines.sections.retain(|s| !s.rows.is_empty());
+    lines.sections.extend(driver.sections);
+    Ok(())
+}
+
 /// Rewrite every source row's `file` from the locator's file id to its index in the
 /// sorted `files`.
-fn map_files(
+///
+/// `file_of` names the file a row's id stands for (the main locator's, or the Z80
+/// bridge's own list); an id it does not know is an internal error, never row 0.
+fn map_files<'f>(
     lines: &mut LineTable,
-    loc: &dyn SpanLocator,
+    file_of: &dyn Fn(u32) -> Option<&'f FileRef>,
     files: &[FileRecord],
     file_key: FileKey<'_>,
 ) -> Result<(), ExportError> {
@@ -110,7 +214,9 @@ fn map_files(
             row.file = r;
             continue;
         }
-        let path = &loc.file(row.file).path;
+        let path = &file_of(row.file)
+            .ok_or_else(|| ExportError::Internal(format!("a line row names file id {}, which no file list issued", row.file)))?
+            .path;
         let (root, rel) =
             file_key(path).map_err(|why| ExportError::FileNotInTable { path: path.clone(), why })?;
         let r = files
@@ -171,6 +277,7 @@ mod tests {
             sections: vec![sec],
             locator: Box::new(Loc(paths.iter().map(|p| FileRef { path: p.to_string() }).collect())),
             side: SideTables::default(),
+            z80_windows: vec![],
         }
     }
 
@@ -220,6 +327,79 @@ mod tests {
         let i = inputs(&["/elsewhere/q.emp"], vec![data(2, 0, 3)]);
         let err = build(&i, 2, vec![row(RootName::Engine, "z.emp")], &[]).unwrap_err();
         assert!(matches!(&err, ExportError::FileNotInTable { path, .. } if path == "/elsewhere/q.emp"), "{err:?}");
+    }
+
+    /// A Z80 bridge whose blob is embedded at `blob_lma`: one section `drv` of `rows`
+    /// `(vma, lma, len, line)`, every row in file 0 (`/abs/engine/sound/drv.emp`).
+    fn bridge(blob_lma: u32, space: Space, rows: &[(u32, u32, u32, u32)]) -> Z80Bridge {
+        let rows = rows
+            .iter()
+            .map(|&(vma, lma, len, line)| LineRow { vma, lma, len, file: 0, line, kind: RowKind::Code })
+            .collect();
+        Z80Bridge {
+            blob_lma,
+            files: vec![FileRef { path: "/abs/engine/sound/drv.emp".into() }],
+            symbols: vec![SymbolRecord {
+                name: "Drv".into(),
+                demangled: None,
+                space: Some(Space::Z80),
+                vma: 0,
+                lma: Some(blob_lma),
+                kind: super::super::SymbolKind::Proc,
+                size: Some(1),
+                module: Some("engine.drv".into()),
+                public: true,
+            }],
+            sections: vec![LineSection { name: "drv".into(), space, rows }],
+        }
+    }
+
+    /// `(a.emp line 3: 2 B) (a.emp line 7: the 4-byte blob) (a.emp line 9: 2 B)`.
+    fn embedding() -> ExportInputs {
+        inputs(&["/abs/engine/a.emp"], vec![data(2, 0, 3), data(4, 0, 7), data(2, 0, 9)])
+    }
+
+    fn files() -> Vec<FileRecord> {
+        vec![row(RootName::Engine, "sound/drv.emp"), row(RootName::Engine, "a.emp")]
+    }
+
+    #[test]
+    fn the_z80_bridge_replaces_the_embedding_row_over_the_blob() {
+        let mut i = embedding();
+        i.side.z80 = Some(bridge(2, Space::Z80, &[(0, 2, 3, 5), (3, 5, 1, 6)]));
+        let e = build(&i, 8, files(), &[]).unwrap();
+        let s = e.lines.sections.iter().find(|s| s.name == "s").unwrap();
+        assert_eq!(s.rows.iter().map(|r| (r.lma, r.len, r.line)).collect::<Vec<_>>(), vec![(0, 2, 3), (6, 2, 9)]);
+        let d = e.lines.sections.iter().find(|s| s.name == "drv").unwrap();
+        assert_eq!(d.space, Space::Z80);
+        // Files are sorted: `a.emp` (0), `sound/drv.emp` (1); the bridge's file 0 is row 1.
+        assert_eq!(
+            d.rows.iter().map(|r| (r.vma, r.lma, r.len, r.file, r.line)).collect::<Vec<_>>(),
+            vec![(0, 2, 3, 1, 5), (3, 5, 1, 1, 6)]
+        );
+        assert!(e.symbols.iter().any(|s| s.name == "Drv" && s.space == Some(Space::Z80) && s.lma == Some(2)));
+    }
+
+    #[test]
+    fn a_bridge_that_disagrees_with_the_embedding_is_refused() {
+        let refused = |z: Z80Bridge| {
+            let mut i = embedding();
+            i.side.z80 = Some(z);
+            match build(&i, 8, files(), &[]) {
+                Err(ExportError::Z80Bridge(m)) => m,
+                other => panic!("not refused: {other:?}"),
+            }
+        };
+        // Wider than the embedding line: its bytes come from two lines.
+        assert!(refused(bridge(0, Space::Z80, &[(0, 0, 6, 5)])).contains("two source lines"));
+        // Starting inside a row: that row crosses the blob's edge.
+        assert!(refused(bridge(1, Space::Z80, &[(0, 1, 2, 5)])).contains("crosses"));
+        // Shorter than the embedding line: the embedding row runs past the blob's end.
+        assert!(refused(bridge(2, Space::Z80, &[(0, 2, 3, 5)])).contains("crosses"));
+        // Rows that leave a hole.
+        assert!(refused(bridge(2, Space::Z80, &[(0, 2, 1, 5), (2, 4, 2, 6)])).contains("do not tile"));
+        // Rows in the wrong space.
+        assert!(refused(bridge(2, Space::M68k, &[(0, 2, 4, 5)])).contains("not z80"));
     }
 
     #[test]

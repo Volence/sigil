@@ -65,7 +65,7 @@ fn build(text: &str) -> (Vec<Row>, BuiltProgram, ChainSources) {
         s.lma = lma;
         lma += s.image_len();
     }
-    let table = walk_lines(&sections, &chain, &[], &built.symbols.code).expect("the walk");
+    let table = walk_lines(&sections, &chain, &[], &built.symbols.code, &[]).expect("the walk");
     let mut rows = Vec::new();
     for s in &table.sections {
         for r in &s.rows {

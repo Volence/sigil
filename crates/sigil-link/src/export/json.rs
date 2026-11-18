@@ -122,6 +122,8 @@ pub enum ExportError {
     Const { module: String, name: String, why: String },
     /// A layout the record cannot state (a size past `u32`, an overlay with no unique base).
     Layout { module: String, name: String, why: String },
+    /// The Z80 bridge and the placed sections disagree about the embedded driver blob.
+    Z80Bridge(String),
     /// An exporter invariant that does not hold (a bug, not data).
     Internal(String),
 }
@@ -162,6 +164,7 @@ impl std::fmt::Display for ExportError {
             }
             ExportError::Const { module, name, why } => write!(f, "consts: `{module}::{name}`: {why}"),
             ExportError::Layout { module, name, why } => write!(f, "layouts: `{module}::{name}`: {why}"),
+            ExportError::Z80Bridge(m) => write!(f, "line table: the Z80 driver bridge: {m}"),
             ExportError::Internal(m) => write!(f, "build export internal error: {m}"),
         }
     }

@@ -2,9 +2,9 @@
 //!
 //! The five sound `.emp` files (z80_sound_driver / sound_sequencer / sound_sfx /
 //! sound_fm / sound_psg) link as ONE native Z80 module set at VMA `$0000` / LMA
-//! `$3DE` (plain) / `$3E2` (debug), blob order driver→sequencer→sfx→fm→psg. The 47
-//! intra-blob cross-file `extern proc` references resolve INTERNALLY against the
-//! sibling sections' `pub proc` exports.
+//! `$3DE` (plain) / `$3E4` (debug; `pins::Z80_SOUND_START`), blob order
+//! driver→sequencer→sfx→fm→psg. The 47 intra-blob cross-file `extern proc`
+//! references resolve INTERNALLY against the sibling sections' `pub proc` exports.
 //!
 //! Two consumers share this machinery: the whole-ROM gates
 //! (`seam1_native_link.rs`) and the `emit_sound_blob` bin that produces the
@@ -19,9 +19,10 @@ use std::path::{Path, PathBuf};
 
 use sigil_frontend_emp::ast;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
-use sigil_frontend_emp::parse_str;
+use sigil_frontend_emp::{parse_file, parse_str};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
+use sigil_span::SourceId;
 
 /// The plain-shape resident blob length: **6228 B** (`$1854`).
 ///
@@ -228,13 +229,23 @@ fn resident_source(aeon: &Path, rel_path: &str) -> Result<String, String> {
     sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))
 }
 
-/// Parse one resident `.emp` file, returning its AST + its directory (the include
-/// root). Panics on a parse error — the blob is a hard build dependency.
-fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
+/// The source id resident module `k` (its index in [`file_specs`], blob order) is
+/// parsed under. Each file has its OWN id, so a span says which file it is in: the
+/// line rows the Z80 bridge exports ([`crate::export_z80`]) locate through it, and the
+/// verdicts render every module's diagnostics through one register
+/// ([`resident_texts`]) that numbers the files the same way.
+fn resident_source_id(k: usize) -> SourceId {
+    SourceId(k as u32)
+}
+
+/// Parse resident module `k` (`spec`, its [`file_specs`] entry), returning its AST +
+/// its directory (the include root). Panics on a parse error — the blob is a hard
+/// build dependency.
+fn parse_one(aeon: &Path, k: usize, spec: &FileSpec) -> (ast::File, PathBuf) {
     let path = aeon.join(spec.rel_path);
     let dir = path.parent().expect("file has a parent dir").to_path_buf();
     let src = resident_source(aeon, spec.rel_path).unwrap_or_else(|e| panic!("{e}"));
-    let (file, pdiags) = parse_str(&src);
+    let (file, pdiags) = parse_file(&src, resident_source_id(k));
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{} parse errors: {pdiags:?}",
@@ -264,8 +275,8 @@ fn module_invariant_reglist(file: &ast::File) -> Vec<(String, Option<String>)> {
 /// hazard structurally). Emits nothing — an `extern proc` is a byte-neutral decl.
 fn import_stub_table(aeon: &Path) -> BTreeMap<String, ast::ExternProcDecl> {
     let mut out = BTreeMap::new();
-    for spec in &file_specs() {
-        let (file, _dir) = parse_one(aeon, spec);
+    for (k, spec) in file_specs().iter().enumerate() {
+        let (file, _dir) = parse_one(aeon, k, spec);
         let inv = module_invariant_reglist(&file);
         collect_pub_proc_stubs(&file.items, &inv, &mut out);
     }
@@ -389,13 +400,16 @@ fn use_import_stubs(
 /// out of the chain. Empty for every real emit.
 fn lower_one(
     aeon: &Path,
+    k: usize,
     spec: &FileSpec,
     debug: bool,
     doctor: Option<(&str, i64)>,
     table: &BTreeMap<String, ast::ExternProcDecl>,
     presets: &[(&'static str, i64)],
-) -> (Section, Vec<LinkAssert>) {
-    let (file, dir) = parse_one(aeon, spec);
+) -> LoweredResident {
+    let (file, dir) = parse_one(aeon, k, spec);
+    let module_id = file.module.path.segments.join(".");
+    let pub_names = sigil_frontend_emp::export_side::pub_item_names(&file);
     let mut imported: Vec<ast::Item> = Vec::new();
     use_import_stubs(&file.items, table, &mut imported);
     let file = if imported.is_empty() {
@@ -432,12 +446,49 @@ fn lower_one(
         spec.rel_path,
         ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
     );
-    let sigil_ir::Module { sections, link_asserts, .. } = module;
-    let section = sections
-        .into_iter()
-        .find(|s| s.name == spec.section)
+    let sigil_ir::Module { sections, link_asserts, procs, code, .. } = module;
+    let at = sections
+        .iter()
+        .position(|s| s.name == spec.section)
         .unwrap_or_else(|| panic!("{} did not emit section {}", spec.rel_path, spec.section));
-    (section, link_asserts)
+    let section = sections.into_iter().nth(at).expect("found above");
+    // The export side of the ONE section seam 1 keeps: its procedures and its
+    // instruction marks (inert: nothing the link reads).
+    let procs = procs.into_iter().filter(|p| section.labels.iter().any(|l| l.name == p.name)).collect();
+    let code = code
+        .into_iter()
+        .filter(|c| c.section == at)
+        .map(|c| sigil_ir::CodeMark { section: 0, ..c })
+        .collect();
+    LoweredResident { section, asserts: link_asserts, procs, code, pub_names, module_id }
+}
+
+/// One resident module as [`lower_one`] lowered it: its section, its deferred link
+/// asserts, and what the build export reads of it (its procedures, its instruction
+/// marks with `section` 0 naming `section`, its `pub` names and its module id).
+#[derive(Clone)]
+struct LoweredResident {
+    section: Section,
+    asserts: Vec<LinkAssert>,
+    procs: Vec<sigil_ir::ProcMark>,
+    code: Vec<sigil_ir::CodeMark>,
+    pub_names: std::collections::HashSet<String>,
+    module_id: String,
+}
+
+impl LoweredResident {
+    /// Record this module's symbols and instruction marks into `out`, as the program
+    /// build records a module ([`sigil_frontend_emp::export_side::ProgramSymbols`]).
+    fn record(&self, out: &mut sigil_frontend_emp::export_side::ProgramSymbols) {
+        let module = sigil_ir::Module {
+            sections: vec![self.section.clone()],
+            link_asserts: Vec::new(),
+            comptime_guards: 0,
+            procs: self.procs.clone(),
+            code: self.code.clone(),
+        };
+        out.record_module(&self.module_id, &module, &self.pub_names);
+    }
 }
 
 /// The STANDALONE native-linked blob: bytes + the exported-symbol contract. Used by
@@ -576,7 +627,7 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
     let seq_idx =
         specs.iter().position(|s| s.section == "sound_sequencer").expect("sequencer spec");
-    let (sections, bases, _spans, _asserts) =
+    let PlacedResident { sections, bases, .. } =
         place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS, &banked_carrier_size_probes());
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (handler symbols) failed: {d:?}"));
@@ -640,12 +691,25 @@ fn stamp_cursor_bases(modules: &mut [Section], spans: &[u32], debug: bool) -> Ve
     bases
 }
 
+/// What [`place_resident_sections`] returns.
+struct PlacedResident {
+    /// The five modules (blob order) at their derived bases, then the carriers.
+    sections: Vec<Section>,
+    /// Each module's base VMA, blob order.
+    bases: Vec<u32>,
+    /// Each module's emitted span, blob order.
+    spans: Vec<u32>,
+    /// Each module's deferred link asserts, blob order.
+    asserts: Vec<Vec<LinkAssert>>,
+    /// Each module's lowering as [`lower_one`] returned it, blob order: what the build
+    /// export reads of it.
+    lowered: Vec<LoweredResident>,
+}
+
 /// The five resident modules, LOWERED and PLACED at DERIVED bases (a running
 /// cursor: module N starts where module N-1 ended), plus the banked `carriers`
 /// (the derived [`banked_carriers`] on every emit path, the
-/// [`banked_carrier_size_probes`] on the size-only path).
-/// Returns `(sections, base VMAs, emitted spans, each module's link asserts)`, the
-/// last three in blob order.
+/// [`banked_carrier_size_probes`] on the size-only path). See [`PlacedResident`].
 ///
 /// TWO PASSES, AND ONE SIZING PASS IS ENOUGH. Z80 section sizes are
 /// BASE-INDEPENDENT: the only length-variable Z80 fragment sigil emits is the
@@ -661,12 +725,17 @@ fn place_resident_sections(
     doctor: Option<(&str, i64)>,
     presets: &[(&'static str, i64)],
     carriers: &[(&'static str, i64)],
-) -> (Vec<Section>, Vec<u32>, Vec<u32>, Vec<Vec<LinkAssert>>) {
+) -> PlacedResident {
     let specs = file_specs();
     resident_import_verdict(aeon, &specs).unwrap_or_else(|e| panic!("{e}"));
     let table = import_stub_table(aeon);
-    let (lowered, asserts): (Vec<Section>, Vec<Vec<LinkAssert>>) =
-        specs.iter().map(|spec| lower_one(aeon, spec, debug, doctor, &table, presets)).unzip();
+    let modules: Vec<LoweredResident> = specs
+        .iter()
+        .enumerate()
+        .map(|(k, spec)| lower_one(aeon, k, spec, debug, doctor, &table, presets))
+        .collect();
+    let lowered: Vec<Section> = modules.iter().map(|m| m.section.clone()).collect();
+    let asserts: Vec<Vec<LinkAssert>> = modules.iter().map(|m| m.asserts.clone()).collect();
 
     // --- sizing pass: placeholder bases, measured spans ---------------------
     let upper: Vec<u32> = lowered.iter().map(|s| s.placement_span()).collect();
@@ -692,14 +761,14 @@ fn place_resident_sections(
     let mut sections = lowered;
     let bases = stamp_cursor_bases(&mut sections, &spans, debug);
     sections.extend(carrier_sections(carriers, doctor));
-    (sections, bases, spans, asserts)
+    PlacedResident { sections, bases, spans, asserts, lowered: modules }
 }
 
 /// The DERIVED base VMA of each resident module, in blob order
 /// (driver→sequencer→sfx→fm→psg).
 fn module_base_vmas(aeon: &Path, debug: bool, presets: &[(&'static str, i64)]) -> Vec<u32> {
     let carriers = banked_carriers(aeon, None).unwrap_or_else(|e| panic!("{e}"));
-    place_resident_sections(aeon, debug, None, presets, &carriers).1
+    place_resident_sections(aeon, debug, None, presets, &carriers).bases
 }
 
 /// The DERIVED base VMA of each resident module, in blob order, as
@@ -738,8 +807,9 @@ pub fn resident_sound_modules(
 ) -> Vec<ResidentSoundModule> {
     file_specs()
         .iter()
-        .map(|spec| {
-            let (file, _dir) = parse_one(aeon, spec);
+        .enumerate()
+        .map(|(k, spec)| {
+            let (file, _dir) = parse_one(aeon, k, spec);
             let mut defines: Vec<(String, i128)> =
                 resolve_consts(aeon, (spec.const_names)(), &[])
                     .into_iter()
@@ -783,11 +853,39 @@ pub fn native_blob_checked_in(
     debug: bool,
     doctor: Option<(&str, i64)>,
 ) -> Result<Vec<u8>, String> {
+    resident_link_checked_in(aeon, ov, debug, doctor).map(|l| l.bytes)
+}
+
+/// The linked resident blob AND what seam 1 knew while linking it, kept in process for
+/// the build export's Z80 bridge (G0a spec 4.4, [`crate::export_z80`]): the blob is
+/// written to disk and re-enters the ROM as embedded bytes, so this is the only place
+/// the driver's sections, symbols and source files are still known.
+pub struct ResidentLink {
+    /// The flattened blob bytes, exactly what [`native_blob_checked_in`] returns.
+    pub bytes: Vec<u8>,
+    /// The five modules at their final placement (post-`resolve_layout`), blob order,
+    /// VMA = offset into the blob. The banked carriers are not here: they are the
+    /// 68000 build's symbols.
+    pub sections: Vec<Section>,
+    /// Each module's symbols and instruction marks, as the program build records them.
+    pub symbols: sigil_frontend_emp::export_side::ProgramSymbols,
+    /// The five source files, `(path, text)`: file `k` is the one parsed under
+    /// source id `k`.
+    pub files: Vec<(PathBuf, String)>,
+}
+
+/// [`native_blob_checked_in`] keeping the link ([`ResidentLink`]).
+pub fn resident_link_checked_in(
+    aeon: &Path,
+    ov: Option<&crate::map_placement::AnchorOverlay>,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+) -> Result<ResidentLink, String> {
     let specs = file_specs();
     resident_import_verdict(aeon, &specs)?;
     let presets = overlay_presets(aeon, ov)?;
     let carriers = banked_carriers(aeon, ov)?;
-    let (sections, _bases, spans, asserts) =
+    let PlacedResident { sections, spans, asserts, lowered, .. } =
         place_resident_sections(aeon, debug, doctor, &presets, &carriers);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
@@ -820,7 +918,44 @@ pub fn native_blob_checked_in(
         );
         out.extend(bytes);
     }
-    Ok(out)
+    let modules: Vec<Section> = specs
+        .iter()
+        .map(|spec| {
+            resolved
+                .iter()
+                .find(|s| s.name == spec.section)
+                .unwrap_or_else(|| panic!("resolved image missing section {}", spec.section))
+                .clone()
+        })
+        .collect();
+    let mut symbols = sigil_frontend_emp::export_side::ProgramSymbols::default();
+    for m in &lowered {
+        m.record(&mut symbols);
+    }
+    let files = specs
+        .iter()
+        .map(|spec| Ok((aeon.join(spec.rel_path), resident_source(aeon, spec.rel_path)?)))
+        .collect::<Result<_, String>>()?;
+    Ok(ResidentLink { bytes: out, sections: modules, symbols, files })
+}
+
+/// Every resident module's text in one register, file `k` at source id `k` (the id
+/// [`parse_one`] parses it under), named by its tree-relative path. The verdicts render
+/// through this, so a diagnostic in any module is located in its own file.
+fn resident_texts(aeon: &Path, specs: &[FileSpec]) -> Result<crate::diag_render::SourceTexts, String> {
+    let mut texts = crate::diag_render::SourceTexts::new();
+    for (k, spec) in specs.iter().enumerate() {
+        let src = resident_source(aeon, spec.rel_path)?;
+        let id = texts.add(Path::new(spec.rel_path), &src);
+        if id != resident_source_id(k) {
+            return Err(format!(
+                "internal: resident module {} registered as {id:?}, but it is parsed as {:?}",
+                spec.rel_path,
+                resident_source_id(k)
+            ));
+        }
+    }
+    Ok(texts)
 }
 
 /// The import rule over the five resident modules, which seam 1 lowers with no
@@ -829,31 +964,28 @@ pub fn native_blob_checked_in(
 /// stubs it can derive and skips every other name, so without this a resident
 /// `use` naming nothing that exists lowered clean whenever nothing read it.
 fn resident_import_verdict(aeon: &Path, specs: &[FileSpec]) -> Result<(), String> {
-    let parsed: Vec<ast::File> = specs.iter().map(|spec| parse_one(aeon, spec).0).collect();
+    let parsed: Vec<ast::File> = specs.iter().enumerate().map(|(k, spec)| parse_one(aeon, k, spec).0).collect();
     let files: Vec<&ast::File> = parsed.iter().collect();
     let errors = crate::import_check::standalone_import_errors(aeon, &files);
     if errors.is_empty() {
         return Ok(());
     }
+    let texts = resident_texts(aeon, specs)?;
     let mut failures = Vec::new();
-    for (i, spec) in specs.iter().enumerate() {
+    for (i, _spec) in specs.iter().enumerate() {
         let mine: Vec<&sigil_span::Diagnostic> =
             errors.iter().filter(|(f, _)| *f == i).map(|(_, d)| d).collect();
         if mine.is_empty() {
             continue;
         }
-        let src = resident_source(aeon, spec.rel_path)?;
-        let mut texts = crate::diag_render::SourceTexts::new();
-        texts.add(Path::new(spec.rel_path), &src);
         failures.push(crate::diag_render::render_diag_lines(&mine, &|s| texts.locate(s)));
     }
     Err(format!("resident sound modules: import check failed:\n{}", failures.join("\n")))
 }
 
 /// Decide each resident module's link asserts against the linked blob, one module
-/// at a time so each failure is located in its own file (every resident module is
-/// parsed as `SourceId(0)`, so a module's spans only mean something against its
-/// own text).
+/// at a time, each failure located in its own file through [`resident_texts`] (every
+/// resident module is parsed under its own source id).
 fn resident_link_verdict(
     aeon: &Path,
     specs: &[FileSpec],
@@ -862,16 +994,18 @@ fn resident_link_verdict(
     debug: bool,
 ) -> Result<(), String> {
     let mut failures = Vec::new();
-    for (spec, module_asserts) in specs.iter().zip(asserts) {
+    let mut texts: Option<crate::diag_render::SourceTexts> = None;
+    for module_asserts in asserts {
         let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), module_asserts);
         let errors: Vec<&sigil_span::Diagnostic> =
             diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
         if errors.is_empty() {
             continue;
         }
-        let src = resident_source(aeon, spec.rel_path)?;
-        let mut texts = crate::diag_render::SourceTexts::new();
-        texts.add(Path::new(spec.rel_path), &src);
+        if texts.is_none() {
+            texts = Some(resident_texts(aeon, specs)?);
+        }
+        let texts = texts.as_ref().expect("set above");
         failures.push(crate::diag_render::render_diag_lines(&errors, &|s| texts.locate(s)));
     }
     if failures.is_empty() {
@@ -899,15 +1033,16 @@ fn resident_link_verdict(
 /// SND_STATE_BASE` at the ROM link, so an overrun fails that build rather than
 /// this emit.
 pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    emit_sound_blob_in(aeon, None, out_dir)
+    emit_sound_blob_in(aeon, None, out_dir).map(|_| ())
 }
 
-/// [`emit_sound_blob`] under an anchor overlay.
+/// [`emit_sound_blob`] under an anchor overlay, returning both links it wrote
+/// ([`ResidentBlobs`]) for the build export's Z80 bridge.
 pub fn emit_sound_blob_in(
     aeon: &Path,
     ov: Option<&crate::map_placement::AnchorOverlay>,
     out_dir: &Path,
-) -> Result<(), String> {
+) -> Result<ResidentBlobs, String> {
     // Before anything is created: `out_dir` lives under `aeon` in every build, so an
     // eager mkdir inside an absent reference tree would manufacture that tree's root
     // and flip the suite's root-probing skip guards. Validate, then read, then create.
@@ -917,8 +1052,8 @@ pub fn emit_sound_blob_in(
     resident_import_verdict(aeon, &file_specs())?;
     let out_dir: PathBuf = out_dir.to_path_buf();
 
-    let plain = native_sound_blob_checked_in(aeon, ov, false)?;
-    let debug = native_sound_blob_checked_in(aeon, ov, true)?;
+    let plain = resident_link_checked_in(aeon, ov, false, None)?;
+    let debug = resident_link_checked_in(aeon, ov, true, None)?;
 
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
@@ -927,7 +1062,24 @@ pub fn emit_sound_blob_in(
     };
     write("z80_sound_blob.bin", &plain.bytes)?;
     write("z80_sound_blob_debug.bin", &debug.bytes)?;
-    Ok(())
+    Ok(ResidentBlobs { plain, debug })
+}
+
+/// Both shapes' resident links, as [`emit_sound_blob_in`] wrote them.
+pub struct ResidentBlobs {
+    pub plain: ResidentLink,
+    pub debug: ResidentLink,
+}
+
+impl ResidentBlobs {
+    /// The link the `debug` (or plain) shape embeds.
+    pub fn for_shape(self, debug: bool) -> ResidentLink {
+        if debug {
+            self.debug
+        } else {
+            self.plain
+        }
+    }
 }
 
 /// The resident blob's bank-id operands, as [`blob_bank_id_sites`] finds them.
@@ -1074,8 +1226,8 @@ pub fn z80_clobbers_report_doctored(
     let mut counter: u32 = 0;
     let mut dropped = 0usize;
     let carriers = banked_carriers(aeon, None).unwrap_or_else(|e| panic!("{e}"));
-    for spec in &file_specs() {
-        let (file, _dir) = parse_one(aeon, spec);
+    for (k, spec) in file_specs().iter().enumerate() {
+        let (file, _dir) = parse_one(aeon, k, spec);
         let inv_units = module_invariant_units(&file);
         let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)(), &[])
             .into_iter()

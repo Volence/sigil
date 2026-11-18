@@ -848,20 +848,26 @@ fn publicize_helper_comptime(manifest: &mut resolve::manifest::Manifest, helpers
 /// same exit status (1) every other build error uses. A panic would exit 101,
 /// which is a crash to any lane reading the status.
 pub fn emit_generated(aeon: &Path) -> Result<(), String> {
-    emit_generated_in(aeon, None)
+    emit_generated_in(aeon, None).map(|_| ())
 }
 
 /// [`emit_generated`] under an anchor overlay: every artifact whose bytes derive from
 /// the bank anchors is emitted from the overlaid ones. The seq-opcode table reads no
 /// anchor (its cells are resident handler VMAs), so it has no overlay variant.
+///
+/// Returns seam 1's two resident links ([`seam1::ResidentBlobs`]): the blob leaves this
+/// process as a file and re-enters the ROM as embedded bytes, so the driver's symbols
+/// and line rows reach the build export only through this return (G0a spec 4.4,
+/// [`crate::export_z80`]).
 pub fn emit_generated_in(
     aeon: &Path,
     ov: Option<&crate::map_placement::AnchorOverlay>,
-) -> Result<(), String> {
+) -> Result<seam1::ResidentBlobs, String> {
     seam2::require_reference_tree(aeon)
         .map_err(|e| format!("ensure_generated writes into the reference tree: {e}"))?;
     let gen = aeon.join("engine/sound/generated");
-    seam1::emit_sound_blob_in(aeon, ov, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
+    let resident =
+        seam1::emit_sound_blob_in(aeon, ov, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
     seam2::emit_dac_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
     seam2::emit_mt_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
     seam2::emit_sfx_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
@@ -871,7 +877,7 @@ pub fn emit_generated_in(
         .map_err(|e| format!("emit_sound_tables_artifacts: {e}"))?;
     seam2::emit_pitchtable_artifacts_in(aeon, ov, &gen)
         .map_err(|e| format!("emit_pitchtable_artifacts: {e}"))?;
-    Ok(())
+    Ok(resident)
 }
 
 /// [`emit_generated`] for a TEST that wants a failure to be its own failure: the
@@ -3888,6 +3894,9 @@ struct ChainedResolve {
     /// The AS front end's instruction fragments ([`sigil_ir::Module::code`]), by
     /// section name, taken while its module is still whole.
     as_code: Vec<(String, std::ops::Range<usize>)>,
+    /// Seam 1's link of the resident driver this shape embeds (sound-on shapes only):
+    /// the build export's Z80 bridge reads it.
+    resident: Option<seam1::ResidentLink>,
 }
 
 /// How many guards a resolve decided, by family. Every figure is OBSERVED at the
@@ -3997,9 +4006,11 @@ fn render_declared_chain(what: &str, d: &[sigil_span::Diagnostic], sources: &Cha
 }
 
 fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
-    if profile.sound_on {
-        emit_generated_in(aeon, profile.anchor_overlay.as_ref())?;
-    }
+    let resident = if profile.sound_on {
+        Some(emit_generated_in(aeon, profile.anchor_overlay.as_ref())?.for_shape(profile.debug))
+    } else {
+        None
+    };
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } =
@@ -4095,7 +4106,21 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
     let inapplicable = declared_chain_drift_verdict(&adiags, &|span| sources.locate(span))?;
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
     let guards = GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable)?;
-    Ok(ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards, registry, emp_symbols, emp_layouts, as_symbols, as_code })
+    Ok(ChainedResolve {
+        resolved,
+        stubs,
+        warnings,
+        sources,
+        map,
+        pmap,
+        guards,
+        registry,
+        emp_symbols,
+        emp_layouts,
+        as_symbols,
+        as_code,
+        resident,
+    })
 }
 
 /// What a check-only run reports: the guard census and the warn tier.
@@ -4127,8 +4152,21 @@ pub fn build_rom_chained_with_listing(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<RomBuild, String> {
-    let ChainedResolve { resolved, stubs, warnings, sources, map, pmap, guards: _, registry, emp_symbols, emp_layouts, as_symbols, as_code } =
-        resolve_chained(aeon, profile)?;
+    let ChainedResolve {
+        resolved,
+        stubs,
+        warnings,
+        sources,
+        map,
+        pmap,
+        guards: _,
+        registry,
+        emp_symbols,
+        emp_layouts,
+        as_symbols,
+        as_code,
+        resident,
+    } = resolve_chained(aeon, profile)?;
 
     // Sigil-canonical listing from the resolved image: one `C` row per label VMA
     // plus one `-` row per folded equate, plus one `-` row per COMMAND-LINE define.
@@ -4155,7 +4193,9 @@ pub fn build_rom_chained_with_listing(
     };
     // The export's symbols, from the front ends' side tables (spec 4.5), placed
     // against the same resolved sections the listing reads.
-    let symbols = crate::export_symbols::export_symbols(&emp_symbols, &as_symbols, &define_rows, &resolved, &stubs)?;
+    let z80_windows = z80_windows(&map, &resolved)?;
+    let symbols =
+        crate::export_symbols::export_symbols(&emp_symbols, &as_symbols, &define_rows, &resolved, &stubs, &z80_windows)?;
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| render_declared_chain("link", &d, &sources))?;
@@ -4190,9 +4230,54 @@ pub fn build_rom_chained_with_listing(
     // declares none, so these are the whole tables.
     let layouts = crate::export_layouts::export_layouts(&emp_layouts).map_err(|e| format!("build export: {e}"))?;
     let consts = crate::export_layouts::export_consts(&emp_layouts).map_err(|e| format!("build export: {e}"))?;
-    let side = SideTables { symbols, layouts, consts, code, ..SideTables::default() };
-    let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side };
+    // The Z80 bridge (spec 4.4): the resident driver's symbols and rows, placed where
+    // the ROM embeds the blob seam 1 linked in this process.
+    let z80 = match resident {
+        Some(link) => {
+            let lma = crate::export_z80::embed_site(&resolved, &link.bytes).map_err(|e| format!("build export: {e}"))?;
+            let at = lma as usize..lma as usize + link.bytes.len();
+            if rom.get(at.clone()) != Some(&link.bytes[..]) {
+                return Err(format!(
+                    "build export: the ROM's bytes at {:#X}..{:#X} are not the resident driver blob seam 1 linked",
+                    at.start, at.end
+                ));
+            }
+            Some(crate::export_z80::z80_bridge(&link, lma)?)
+        }
+        None => None,
+    };
+    let side = SideTables { symbols, layouts, consts, code, z80 };
+    let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side, z80_windows };
     Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
+}
+
+/// The shape's Z80 bank windows, from its memory map (the `z80_bank` regions in force,
+/// each where its anchor placed it): what decides the space of a section phased into
+/// one ([`sigil_link::export::section_space`]). A window the map gives no VMA cannot
+/// say what a phased section in it maps to, so one holding a phased section is refused
+/// rather than left to state that section in `m68k`.
+fn z80_windows(
+    map: &sigil_ir::map::MemoryMap,
+    resolved: &[Section],
+) -> Result<Vec<sigil_link::export::Z80Window>, String> {
+    let mut out = Vec::new();
+    for r in map.regions.iter().filter(|r| r.kind == sigil_ir::map::RegionKind::Z80Bank) {
+        match r.vma_base {
+            Some(vma) => out.push(sigil_link::export::Z80Window { lma: r.lma_base, vma, size: r.size }),
+            None => {
+                if let Some(s) =
+                    resolved.iter().find(|s| r.contains(s.lma) && s.vma_origin() != s.lma && s.image_len() > 0)
+                {
+                    return Err(format!(
+                        "build export: z80_bank region `{}` declares no vma, so the space of section `{}`, \
+                         phased into it, cannot be stated",
+                        r.name, s.name
+                    ));
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical

@@ -123,3 +123,29 @@ fn a_defined_extern_in_a_resident_module_resolves_and_its_guard_is_decided() {
         assert!(err.contains(&want), "debug={debug}: want `{want}` in:\n{err}");
     }
 }
+
+/// The last resident module (`sound_psg`, source id 4 in blob order), whose refusal must
+/// be located in its OWN file. Every resident module is parsed under its own source id
+/// (G0a Task 9: the Z80 bridge's line rows locate through it), so the verdict renders
+/// through one register of all five files; a register holding only the failing file
+/// would leave this span unlocated (the driver-only gates above cannot see that: the
+/// driver is id 0 either way).
+#[test]
+fn a_refusal_in_a_later_resident_module_is_located_in_its_own_file() {
+    const PSG: &str = "engine/sound/sound_psg.emp";
+    let Some(aeon) = sound_tree() else { return };
+    let src = std::fs::read_to_string(aeon.join(PSG)).expect("read sound_psg");
+    let header = src
+        .lines()
+        .position(|l| l.starts_with("module "))
+        .unwrap_or_else(|| panic!("{PSG} has no `module` header line; re-point this gate"));
+    let mut lines: Vec<&str> = src.lines().collect();
+    let probe = format!("ensure(extern(\"{UNKNOWN}\") == 1, \"psg item-position probe\")");
+    lines.insert(header + 1, &probe);
+    let text = lines.join("\n") + "\n";
+    let col = probe.find("extern(").unwrap() + 1;
+    let want = format!("{PSG}:{}:{col}: [Error] [extern.unknown]", header + 2);
+    let err = with_resident_source_override(PSG, &text, || native_blob_checked(&aeon, false, None))
+        .expect_err("an unknown name must not link");
+    assert!(err.contains(&want), "want `{want}` in:\n{err}");
+}

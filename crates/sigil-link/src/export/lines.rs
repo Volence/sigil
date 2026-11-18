@@ -52,7 +52,8 @@
 
 use super::locate::SpanLocator;
 use super::{ExportError, LineRow, LineSection, LineTable, NoSourceKind, RowKind, Space};
-use sigil_ir::{AddressSpace, Cpu, Fragment, Section};
+use super::placed::{section_space, Z80Window};
+use sigil_ir::{AddressSpace, Fragment, Section};
 
 /// The line section that holds the no-source rows outside every placed section (fill
 /// between sections, the deb2 appendix). Parentheses keep it apart from every section
@@ -123,15 +124,6 @@ fn code_fragments(
         }
     }
     Ok(out)
-}
-
-/// The address space a section's rows are stated in: its CPU's, as the symbol table
-/// states it ([`super::placed`]).
-fn space_of(sec: &Section) -> Space {
-    match sec.cpu {
-        Cpu::Z80 => Space::Z80,
-        _ => Space::M68k,
-    }
 }
 
 /// Replay `sec`'s write cursor, recording the last writer of every image byte. The
@@ -220,14 +212,16 @@ fn rows_of(sec: &Section, own: &[Owner]) -> Result<Vec<LineRow>, ExportError> {
 /// The line table of `sections`. `no_source` declares the image bytes written after
 /// the link by no source line (the deb2 appendix, the folded checksum; see the module
 /// doc for which ranges may land on section bytes); fill between sections is derived
-/// here. `code` is the front ends' instruction marks, by section name. Row `file`
-/// values are the LOCATOR's file ids; [`super::entry::build_export`] maps them to rows
-/// of `files`.
+/// here. `code` is the front ends' instruction marks, by section name. `windows` are
+/// the shape's Z80 bank windows: a section's rows are stated in the space the symbol
+/// table states its labels in ([`section_space`], the one rule). Row `file` values are
+/// the LOCATOR's file ids; [`super::entry::build_export`] maps them to rows of `files`.
 pub fn walk_lines(
     sections: &[Section],
     loc: &dyn SpanLocator,
     no_source: &[NoSourceRange],
     code: &[(String, std::ops::Range<usize>)],
+    windows: &[Z80Window],
 ) -> Result<LineTable, ExportError> {
     let code = code_fragments(sections, code)?;
     // (section index, image owners) for every section that stores a byte.
@@ -300,7 +294,11 @@ pub fn walk_lines(
     let mut table = LineTable::default();
     for (k, own) in &placed {
         let sec = &sections[*k];
-        table.sections.push(LineSection { name: sec.name.clone(), space: space_of(sec), rows: rows_of(sec, own)? });
+        table.sections.push(LineSection {
+            name: sec.name.clone(),
+            space: section_space(sec, windows),
+            rows: rows_of(sec, own)?,
+        });
     }
     if !outside.is_empty() {
         let rows = outside
@@ -382,7 +380,7 @@ pub fn check_image_coverage(table: &LineTable, len: u64) -> Result<(), ExportErr
 mod tests {
     use super::super::locate::{FileRef, SourcePos};
     use super::*;
-    use sigil_ir::{DataFragment, SectionPlacement};
+    use sigil_ir::{Cpu, DataFragment, SectionPlacement};
     use sigil_span::{SourceId, Span};
 
     /// A locator where a span's source id is its file and its `start` is its line;
@@ -443,14 +441,14 @@ mod tests {
     fn org_backpatch_last_writer_wins() {
         // data 4 B at 0 from line 10, org to 1, data 1 B from line 20, org to 4.
         let s = sec("s", 0, vec![data(4, 10), org(1), data(1, 20), org(4)]);
-        let t = walk_lines(&[s], &loc(), &[], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[], &[]).unwrap();
         assert_eq!(rows(&t, "s"), vec![(0, 1, 10, D), (1, 1, 20, D), (2, 2, 10, D)]);
     }
 
     #[test]
     fn forward_org_makes_a_gap_row() {
         let s = sec("s", 0x100, vec![data(2, 5), org(6), data(2, 7)]);
-        let t = walk_lines(&[s], &loc(), &[], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[], &[]).unwrap();
         assert_eq!(
             rows(&t, "s"),
             vec![(0x100, 2, 5, D), (0x102, 4, 0, RowKind::NoSource(NoSourceKind::OrgGap)), (0x106, 2, 7, D)]
@@ -466,7 +464,7 @@ mod tests {
         });
         let s = sec("s", 0x200, vec![data(2, 5), lost, data(1, 6)]);
         assert_eq!(
-            walk_lines(&[s], &loc(), &[], &[]),
+            walk_lines(&[s], &loc(), &[], &[], &[]),
             Err(ExportError::Uncovered { section: "s".into(), lma: 0x202, len: 3 })
         );
     }
@@ -474,7 +472,7 @@ mod tests {
     #[test]
     fn adjacent_rows_of_one_line_merge_and_others_do_not() {
         let s = sec("s", 0, vec![data(2, 5), data(2, 5), data(2, 6), data(2, 5)]);
-        let t = walk_lines(&[s], &loc(), &[], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[], &[]).unwrap();
         assert_eq!(rows(&t, "s"), vec![(0, 4, 5, D), (4, 2, 6, D), (6, 2, 5, D)]);
     }
 
@@ -482,7 +480,7 @@ mod tests {
     fn a_phased_section_states_both_addresses() {
         let mut s = sec("s", 0x4000, vec![data(2, 5), data(3, 6)]);
         s.vma_base = Some(0x8000);
-        let t = walk_lines(&[s], &loc(), &[], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[], &[]).unwrap();
         let r = &t.sections[0].rows;
         assert_eq!((r[1].vma, r[1].lma, r[1].len), (0x8002, 0x4002, 3));
     }
@@ -492,7 +490,7 @@ mod tests {
         let pad = Fragment::Fill { value: 0, count: 2, span: at(9) };
         let res = Fragment::Reserve { count: 3, span: at(9) };
         let s = sec("s", 0, vec![data(2, 5), pad, res, data(1, 6)]);
-        let t = walk_lines(&[s], &loc(), &[], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[], &[]).unwrap();
         let f = RowKind::NoSource(NoSourceKind::Fill);
         assert_eq!(rows(&t, "s"), vec![(0, 2, 5, D), (2, 5, 0, f), (7, 1, 6, D)]);
     }
@@ -501,7 +499,7 @@ mod tests {
     fn the_checksum_fold_takes_over_its_source_line() {
         let s = sec("hdr", 0x180, vec![data(0xE, 3), data(2, 4), data(0x70, 5)]);
         let ck = NoSourceRange { lma: 0x18E, len: 2, kind: NoSourceKind::HeaderChecksum };
-        let t = walk_lines(&[s], &loc(), &[ck], &[]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[ck], &[], &[]).unwrap();
         assert_eq!(
             rows(&t, "hdr"),
             vec![(0x180, 0xE, 3, D), (0x18E, 2, 0, RowKind::NoSource(NoSourceKind::HeaderChecksum)), (0x190, 0x70, 5, D)]
@@ -512,7 +510,7 @@ mod tests {
     fn a_non_checksum_range_on_section_bytes_is_an_overlap() {
         let s = sec("s", 0x100, vec![data(4, 3)]);
         let fill = NoSourceRange { lma: 0xFE, len: 4, kind: NoSourceKind::Fill };
-        assert_eq!(walk_lines(&[s], &loc(), &[fill], &[]), Err(ExportError::Overlap { lma: 0x100 }));
+        assert_eq!(walk_lines(&[s], &loc(), &[fill], &[], &[]), Err(ExportError::Overlap { lma: 0x100 }));
     }
 
     #[test]
@@ -521,7 +519,7 @@ mod tests {
         let b = sec("b", 8, vec![data(4, 4)]);
         // The gap [4, 8) between the sections is fill, derived by the walk.
         let ns = vec![NoSourceRange { lma: 12, len: 4, kind: NoSourceKind::Deb2Appendix }];
-        let t = walk_lines(&[a, b], &loc(), &ns, &[]).unwrap();
+        let t = walk_lines(&[a, b], &loc(), &ns, &[], &[]).unwrap();
         assert_eq!(
             rows(&t, IMAGE_SECTION),
             vec![(4, 4, 0, RowKind::NoSource(NoSourceKind::Fill)), (12, 4, 0, RowKind::NoSource(NoSourceKind::Deb2Appendix))]
@@ -553,7 +551,7 @@ mod tests {
     fn marked_fragments_are_code_rows_and_unmarked_are_data() {
         // instr(2, line 5), instr(2, line 5), dc(2, line 6), instr(2, line 7)
         let s = sec("s", 0, vec![data(2, 5), data(2, 5), data(2, 6), data(2, 7)]);
-        let t = walk_lines(&[s], &loc(), &[], &[mark("s", 0..2), mark("s", 3..4)]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[mark("s", 0..2), mark("s", 3..4)], &[]).unwrap();
         let c = RowKind::Code;
         assert_eq!(rows(&t, "s"), vec![(0, 4, 5, c), (4, 2, 6, D), (6, 2, 7, c)]);
     }
@@ -561,7 +559,7 @@ mod tests {
     #[test]
     fn a_code_and_a_data_row_of_one_line_do_not_merge() {
         let s = sec("s", 0, vec![data(2, 5), data(2, 5)]);
-        let t = walk_lines(&[s], &loc(), &[], &[mark("s", 0..1)]).unwrap();
+        let t = walk_lines(&[s], &loc(), &[], &[mark("s", 0..1)], &[]).unwrap();
         assert_eq!(rows(&t, "s"), vec![(0, 2, 5, RowKind::Code), (2, 2, 5, D)]);
     }
 
@@ -570,7 +568,7 @@ mod tests {
         let s = sec("s", 0, vec![data(2, 5), org(2)]);
         // Past the end, on a non-Data fragment, and in a section that is not there.
         for m in [mark("s", 0..3), mark("s", 1..2), mark("t", 0..1)] {
-            let err = walk_lines(std::slice::from_ref(&s), &loc(), &[], std::slice::from_ref(&m)).unwrap_err();
+            let err = walk_lines(std::slice::from_ref(&s), &loc(), &[], std::slice::from_ref(&m), &[]).unwrap_err();
             assert!(matches!(&err, ExportError::CodeMark { section, .. } if *section == m.0), "{m:?}: {err:?}");
         }
     }
@@ -579,11 +577,11 @@ mod tests {
     fn a_mark_two_same_named_sections_could_hold_is_refused() {
         let a = sec("s", 0, vec![data(2, 5)]);
         let b = sec("s", 2, vec![data(2, 6)]);
-        let err = walk_lines(&[a.clone(), b], &loc(), &[], &[mark("s", 0..1)]).unwrap_err();
+        let err = walk_lines(&[a.clone(), b], &loc(), &[], &[mark("s", 0..1)], &[]).unwrap_err();
         assert!(matches!(err, ExportError::CodeMark { .. }), "{err:?}");
         // One that only one of them can hold is placed there.
         let c = sec("s", 2, vec![org(0)]);
-        let t = walk_lines(&[a, c], &loc(), &[], &[mark("s", 0..1)]).unwrap();
+        let t = walk_lines(&[a, c], &loc(), &[], &[mark("s", 0..1)], &[]).unwrap();
         assert_eq!(rows(&t, "s"), vec![(0, 2, 5, RowKind::Code)]);
     }
 
@@ -591,6 +589,6 @@ mod tests {
     fn an_unlowered_fragment_is_refused() {
         let j = Fragment::JmpJsrSym { is_jsr: true, target: sigil_ir::Expr::Int(0), span: at(1) };
         let s = sec("s", 0, vec![j]);
-        assert_eq!(walk_lines(&[s], &loc(), &[], &[]), Err(ExportError::Unlowered { section: "s".into() }));
+        assert_eq!(walk_lines(&[s], &loc(), &[], &[], &[]), Err(ExportError::Unlowered { section: "s".into() }));
     }
 }

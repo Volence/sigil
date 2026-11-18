@@ -6,10 +6,53 @@
 //! defines a name owns it, its VMA is `vma_at(offset)`, and it carries an `lma` only
 //! when its section is genuinely phased (a VMA origin that differs from the LMA, over
 //! bytes actually stored).
+//!
+//! # The space rule, stated once
+//!
+//! A section's `space` is [`section_space`]: `z80` for a Z80-CPU section, and `z80` for
+//! a section of any CPU that is PHASED INTO A Z80 BANK WINDOW the build's memory map
+//! declares ([`Z80Window`], from a `z80_bank` region): its first byte lies in the
+//! window's ROM range and its VMA origin is the address the window maps that byte to.
+//! Such a section's VMA is a Z80 window address (`$8000` is the head of the bank, not
+//! ROM `$8000`), so stating it in `m68k` would name the wrong byte to a 68000 lookup
+//! (queue row `G0A-SOUND-BANK-LABEL-SPACE`). The 68000 CPU tag those sections carry
+//! says which front end lowered them, not who reads the address. Everything else is
+//! `m68k`. The symbol table here and the line walk ([`super::lines`]) both read this one
+//! function, so a symbol and the row under it never disagree on their space.
 
 use super::{Space, SymbolKind, SymbolRecord};
 use sigil_ir::{Cpu, Fragment, Section, SymbolTable};
 use std::collections::HashMap;
+
+/// A Z80 bank window as the build's memory map declares it (a `z80_bank` region): the
+/// ROM bytes `[lma, lma + size)` the Z80 reads at `[vma, vma + size)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Z80Window {
+    pub lma: u32,
+    pub vma: u32,
+    pub size: u32,
+}
+
+impl Z80Window {
+    fn holds(&self, lma: u32) -> bool {
+        lma >= self.lma && lma - self.lma < self.size
+    }
+}
+
+/// THE space rule (see the module doc): the address space `sec`'s VMAs are stated in.
+pub fn section_space(sec: &Section, windows: &[Z80Window]) -> Space {
+    if sec.cpu == Cpu::Z80 {
+        return Space::Z80;
+    }
+    let vma = sec.vma_at(0);
+    let phased = vma != sec.lma && sec.image_len() > 0;
+    let in_window = |w: &Z80Window| w.holds(sec.lma) && vma == w.vma.wrapping_add(sec.lma - w.lma);
+    if phased && windows.iter().any(in_window) {
+        Space::Z80
+    } else {
+        Space::M68k
+    }
+}
 
 /// One label at its final placement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,15 +83,14 @@ fn reserve_only(sec: &Section) -> bool {
 
 impl<'a> PlacedSymbols<'a> {
     /// Index `sections` (post-`resolve_layout`). `stubs` is the external table the
-    /// link saw, so an equate folds exactly as the link folds it.
-    pub fn new(sections: &'a [Section], stubs: &SymbolTable) -> PlacedSymbols<'a> {
+    /// link saw, so an equate folds exactly as the link folds it. `windows` are the
+    /// shape's Z80 bank windows, which decide a phased section's space
+    /// ([`section_space`]).
+    pub fn new(sections: &'a [Section], stubs: &SymbolTable, windows: &[Z80Window]) -> PlacedSymbols<'a> {
         let mut labels = HashMap::new();
         for (i, sec) in sections.iter().enumerate() {
             let phased = sec.vma_origin() != sec.lma && sec.image_len() > 0;
-            let space = match sec.cpu {
-                Cpu::Z80 => Space::Z80,
-                _ => Space::M68k,
-            };
+            let space = section_space(sec, windows);
             let ram = reserve_only(sec);
             for l in &sec.labels {
                 let vma = sec.vma_at(l.offset);
@@ -205,7 +247,7 @@ mod tests {
         // pad(2) | proc A: 4 + 6 | align fill(2) after the body | proc B: 4
         let pad = Fragment::Fill { value: 0, count: 2, span: span() };
         let s = vec![sec(vec![pad.clone(), data(4), data(6), pad, data(4)], vec![("A", 2), ("B", 14)])];
-        let p = PlacedSymbols::new(&s, &SymbolTable::new());
+        let p = PlacedSymbols::new(&s, &SymbolTable::new(), &[]);
         let a = p.label("A").unwrap();
         assert_eq!(a.vma, 0x1002);
         assert_eq!(p.extent(&a, 1, 3), Ok(10));
@@ -221,7 +263,7 @@ mod tests {
         let eq = |name: &str, v: i64| sigil_ir::EquSym { name: name.into(), expr: sigil_ir::Expr::Int(v), span: span() };
         s.equ_syms = vec![eq("NEG", -2), eq("WIDE", 0x1_0000_0005)];
         let secs = vec![s];
-        let p = PlacedSymbols::new(&secs, &SymbolTable::new());
+        let p = PlacedSymbols::new(&secs, &SymbolTable::new(), &[]);
         // The listing's row for each: `ListingSymbol { value: v as u32 }`.
         for (name, v) in [("NEG", -2i64), ("WIDE", 0x1_0000_0005)] {
             let r = p.equ_record(name, None, false).unwrap();
@@ -238,12 +280,44 @@ mod tests {
         assert_eq!(p.equ_record("NEG", None, false).unwrap().vma, 0xFFFF_FFFE);
     }
 
+    /// G0A-SOUND-BANK-LABEL-SPACE: a 68000-CPU section phased into a declared Z80 bank
+    /// window is stated in z80, with its load address; nothing else moves.
+    #[test]
+    fn a_section_phased_into_a_z80_bank_window_is_z80_space() {
+        let win = [Z80Window { lma: 0xB_8000, vma: 0x8000, size: 0x8000 }];
+        let at = |lma: u32, vma: Option<u32>| {
+            let mut s = sec(vec![data(4)], vec![("L", 2)]);
+            (s.lma, s.vma_base) = (lma, vma);
+            s
+        };
+        let space = |s: Section, w: &[Z80Window]| {
+            let secs = vec![s];
+            let p = PlacedSymbols::new(&secs, &SymbolTable::new(), w);
+            let r = p.label_record("L", SymbolKind::Label, None, false).unwrap();
+            (r.space, r.vma, r.lma)
+        };
+        // In the window, at the VMA the window maps its first byte to: z80, with lma.
+        assert_eq!(space(at(0xB_8100, Some(0x8100)), &win), (Some(Space::Z80), 0x8102, Some(0xB_8102)));
+        // The same section with no window declared: the CPU's space.
+        assert_eq!(space(at(0xB_8100, Some(0x8100)), &[]), (Some(Space::M68k), 0x8102, Some(0xB_8102)));
+        // Phased, in the window's ROM range, but not to the window's mapping.
+        assert_eq!(space(at(0xB_8100, Some(0x9000)), &win).0, Some(Space::M68k));
+        // In the window but not phased (the bank's unphased data, VMA = ROM address).
+        assert_eq!(space(at(0xB_8100, None), &win).0, Some(Space::M68k));
+        // Phased to $8000, but its bytes are outside every window.
+        assert_eq!(space(at(0xC_0000, Some(0x8000)), &win).0, Some(Space::M68k));
+        // A Z80-CPU section is z80 whatever the windows say.
+        let mut z = at(0x400, Some(0x10));
+        z.cpu = Cpu::Z80;
+        assert_eq!(space(z, &[]).0, Some(Space::Z80));
+    }
+
     #[test]
     fn first_section_wins_and_reserve_only_is_ram() {
         let mut ram = sec(vec![Fragment::Reserve { count: 4, span: span() }], vec![("R", 0), ("A", 0)]);
         ram.vma_base = Some(0xFFFF_8000);
         let s = vec![ram, sec(vec![data(2)], vec![("A", 0)])];
-        let p = PlacedSymbols::new(&s, &SymbolTable::new());
+        let p = PlacedSymbols::new(&s, &SymbolTable::new(), &[]);
         let r = p.label_record("R", SymbolKind::Label, None, false).unwrap();
         assert_eq!((r.kind, r.space, r.vma, r.lma), (SymbolKind::Ram, Some(Space::M68k), 0xFFFF_8000, None));
         assert_eq!(p.label("A").unwrap().section, 0);

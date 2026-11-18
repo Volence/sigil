@@ -11,7 +11,7 @@
 use sigil_frontend_as::export_side::AsSymbols;
 use sigil_frontend_emp::export_side::{EmpSymbolKind, ProgramSymbols};
 use sigil_ir::{Section, SymbolTable};
-use sigil_link::export::{PlacedSymbols, SymbolKind, SymbolRecord};
+use sigil_link::export::{PlacedSymbols, SymbolKind, SymbolRecord, Z80Window};
 use std::collections::HashSet;
 
 /// The `.emp` program's symbols at their final placement. A procedure is `kind: proc`
@@ -66,15 +66,18 @@ pub fn as_symbols(table: &AsSymbols, placed: &PlacedSymbols) -> Result<Vec<Symbo
 /// the build-supplied defines, which no front end defines (they come from the shape,
 /// `game_defines::define_listing_rows`). A name two populations both claim is kept
 /// once, from the first; its address comes from the one placed index either way, so
-/// the choice never moves an address.
+/// the choice never moves an address. `windows` are the shape's Z80 bank windows: a
+/// section phased into one states its labels in `z80`
+/// ([`sigil_link::export::section_space`]).
 pub fn export_symbols(
     emp: &ProgramSymbols,
     as_side: &AsSymbols,
     defines: &[sigil_link::ListingSymbol],
     resolved: &[Section],
     stubs: &SymbolTable,
+    windows: &[Z80Window],
 ) -> Result<Vec<SymbolRecord>, String> {
-    let placed = PlacedSymbols::new(resolved, stubs);
+    let placed = PlacedSymbols::new(resolved, stubs, windows);
     let mut out = emp_symbols(emp, &placed).map_err(|e| format!("build export: {e}"))?;
     let mut seen: HashSet<String> = out.iter().map(|s| s.name.clone()).collect();
     let as_recs = as_symbols(as_side, &placed).map_err(|e| format!("build export: {e}"))?;
