@@ -13,7 +13,7 @@ use sigil_frontend_emp::export_side::{
 };
 use sigil_link::export::{ConstRecord, ExportError, FieldRecord, LayoutKind, LayoutRecord, OverlayRecord};
 
-fn error(e: EmpExportError) -> ExportError {
+pub(crate) fn error(e: EmpExportError) -> ExportError {
     match e {
         EmpExportError::TwoLayouts { module, name } => ExportError::TwoLayouts { module, name },
         EmpExportError::TwoConsts { module, name } => ExportError::TwoConsts { module, name },
@@ -21,6 +21,7 @@ fn error(e: EmpExportError) -> ExportError {
             ExportError::ConstOutOfRange { module, name, value: value.to_string() }
         }
         EmpExportError::Layout { module, name, why } => ExportError::Layout { module, name, why },
+        EmpExportError::Const { module, name, why } => ExportError::Const { module, name, why },
     }
 }
 
@@ -75,7 +76,8 @@ mod tests {
     use super::*;
     use sigil_frontend_emp::export_side::{EmpLayout, EmpLayoutKind};
     use sigil_frontend_emp::lower::LowerOptions;
-    use sigil_frontend_emp::resolve::{build_program_recorded, manifest::Manifest};
+    use sigil_frontend_emp::export_side::LayoutPass;
+    use sigil_frontend_emp::resolve::{build_program_recorded_with_layouts, manifest::Manifest};
 
     fn layout(size: u32) -> EmpLayout {
         EmpLayout {
@@ -86,6 +88,27 @@ mod tests {
             fields: Vec::new(),
             overlays: Vec::new(),
         }
+    }
+
+    #[test]
+    fn every_front_end_refusal_maps_to_its_own_export_error() {
+        let (m, n) = ("m".to_string(), "N".to_string());
+        assert_eq!(
+            error(EmpExportError::TwoConsts { module: m.clone(), name: n.clone() }),
+            ExportError::TwoConsts { module: m.clone(), name: n.clone() }
+        );
+        assert_eq!(
+            error(EmpExportError::TwoLayouts { module: m.clone(), name: n.clone() }),
+            ExportError::TwoLayouts { module: m.clone(), name: n.clone() }
+        );
+        assert_eq!(
+            error(EmpExportError::Const { module: m.clone(), name: n.clone(), why: "w".into() }),
+            ExportError::Const { module: m.clone(), name: n.clone(), why: "w".into() }
+        );
+        assert_eq!(
+            error(EmpExportError::Layout { module: m.clone(), name: n.clone(), why: "w".into() }),
+            ExportError::Layout { module: m, name: n, why: "w".into() }
+        );
     }
 
     #[test]
@@ -118,7 +141,7 @@ mod tests {
             embed_base: None,
             defines: vec![],
         };
-        let built = build_program_recorded(&manifest, "app.main", None, &opts);
+        let built = build_program_recorded_with_layouts(&manifest, "app.main", None, &opts, LayoutPass::Owner);
         let err = export_consts(&built.layouts).unwrap_err();
         assert_eq!(
             err,

@@ -118,6 +118,8 @@ pub enum ExportError {
     TwoConsts { module: String, name: String },
     /// An exported constant whose value does not fit `i64` (never dropped, never wrapped).
     ConstOutOfRange { module: String, name: String, value: String },
+    /// A `pub const` that did not evaluate in its own module.
+    Const { module: String, name: String, why: String },
     /// A layout the record cannot state (a size past `u32`, an overlay with no unique base).
     Layout { module: String, name: String, why: String },
     /// An exporter invariant that does not hold (a bug, not data).
@@ -158,6 +160,7 @@ impl std::fmt::Display for ExportError {
             ExportError::ConstOutOfRange { module, name, value } => {
                 write!(f, "consts: `{module}::{name}` = {value} does not fit a signed 64-bit integer")
             }
+            ExportError::Const { module, name, why } => write!(f, "consts: `{module}::{name}`: {why}"),
             ExportError::Layout { module, name, why } => write!(f, "layouts: `{module}::{name}`: {why}"),
             ExportError::Internal(m) => write!(f, "build export internal error: {m}"),
         }

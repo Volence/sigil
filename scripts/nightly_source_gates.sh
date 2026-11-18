@@ -247,6 +247,10 @@ SOURCE_GATES=(
     # the sidecar validated against the vendored schema. Source only: no committed
     # artifact, golden, ROM or listing is read
     build_export_layouts
+    # the layout/constant CROSS-CHECK over the 7 shapes (A4's two-layouts detector half):
+    # every importer's view of every item must agree, and a planted disagreement must be
+    # refused. Source only, no artifact
+    build_export_layouts_crosscheck
     subcommands
     # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
     # wide as the spelling it matches on, and 29 announced early returns spelled it

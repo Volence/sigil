@@ -167,6 +167,26 @@ use crate::resolve::hygiene::split_hidden;
 use sigil_span::SourceId;
 use std::collections::BTreeMap;
 
+/// How much of the layout/constant registry a build computes (G0a spec 4.5).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LayoutPass {
+    /// Nothing: no registry, no evaluator, no cost. A build that writes no sidecar
+    /// (`--no-build-json`, `--check`, no `-o`) and every gate or test build.
+    #[default]
+    Off,
+    /// The export: each item evaluated once, in its OWNER's view (the module that
+    /// declares it), and only in a module that declares one.
+    Owner,
+    /// The cross-check, A4's detector half: every importer's view of every item it
+    /// can see, so an item two modules resolved differently is refused. Run by the
+    /// `build_export_layouts_crosscheck` gate over the 7 shapes, not by a build.
+    Full,
+    /// [`Full`](Self::Full) with a planted disagreement (a non-owner view's struct is
+    /// 2 bytes larger, its constants 1 larger): the gate's control, proving the
+    /// cross-check is not blind. Never used by a build.
+    FullSkewedForTest,
+}
+
 /// One field of a layout, an overlay or an enum (see the units above).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmpField {
@@ -181,6 +201,8 @@ pub struct EmpField {
 pub struct EmpOverlay {
     pub name: String,
     pub base: String,
+    /// The module that declares the base struct (the overlay's own module is the key).
+    pub base_module: String,
     pub offset: u32,
     pub size: u32,
     pub fields: Vec<EmpField>,
@@ -223,6 +245,9 @@ pub enum EmpExportError {
     TwoConsts { module: String, name: String },
     /// An exported constant's value does not fit `i64`.
     ConstOutOfRange { module: String, name: String, value: i128 },
+    /// A `pub const` of its own module that did not evaluate (it poisoned): the export
+    /// does not silently omit it.
+    Const { module: String, name: String, why: String },
     /// A layout the record cannot state (a size or offset past `u32`, an overlay whose
     /// base struct is not exported or not unique).
     Layout { module: String, name: String, why: String },
@@ -368,8 +393,21 @@ impl ProgramLayouts {
         defines: &[(String, i128)],
         contracts: &crate::contract::InterfaceEnv,
         include_root: Option<&std::path::Path>,
+        pass: LayoutPass,
     ) {
-        let seen = crate::eval::run_on_eval_stack(|| resolve_importer(file, home, defines, contracts, include_root));
+        if pass == LayoutPass::Off {
+            return;
+        }
+        // The default export reads only the items this module declares; a module that
+        // declares none of the kinds below costs a scan of its item list and nothing else.
+        let owner_only = pass == LayoutPass::Owner;
+        if owner_only && !declares_exportable(file) {
+            return;
+        }
+        let skew = pass == LayoutPass::FullSkewedForTest;
+        let seen = crate::eval::run_on_eval_stack(|| {
+            resolve_importer(file, home, defines, contracts, include_root, owner_only, skew)
+        });
         for s in seen {
             match s {
                 Seen::Layout(l) => self.record_layout(l),
@@ -411,12 +449,30 @@ impl ProgramLayouts {
 /// An importer's view: every layout-bearing item and `pub const` in `file`, keyed to the
 /// module that declares it. Items whose resolution reported a problem in this view are
 /// left out (a build error elsewhere says so).
+/// Whether `file` itself (not the clones injected into it) declares a struct, bitfield,
+/// plain enum, named overlay or `pub const`.
+fn declares_exportable(file: &ast::File) -> bool {
+    let mut items = Vec::new();
+    collect_items(&file.items, &mut items);
+    let own = file.module.span.source;
+    items.into_iter().any(|it| match it {
+        ast::Item::Struct(d) => d.span.source == own,
+        ast::Item::Bitfield(d) => d.span.source == own,
+        ast::Item::Enum(d) => d.span.source == own && !d.comptime,
+        ast::Item::Vars(d) => d.span.source == own && d.name.is_some(),
+        ast::Item::Const(d) => d.span.source == own && d.public,
+        _ => false,
+    })
+}
+
 fn resolve_importer(
     file: &ast::File,
     home: &HashMap<SourceId, String>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
     include_root: Option<&std::path::Path>,
+    owner_only: bool,
+    skew: bool,
 ) -> Vec<Seen> {
     use crate::eval::Evaluator;
     let mut out = Vec::new();
@@ -443,6 +499,9 @@ fn resolve_importer(
                     continue;
                 }
                 let Some((module, name, owner)) = key(s.span, &s.name) else { continue };
+                if owner_only && !owner {
+                    continue;
+                }
                 let l = ev.layout_of_struct(&s.name, s.span);
                 if l.fields.len() != s.fields.len() || l.fields.iter().any(|f| has_poison(&f.ty)) {
                     unresolved(&mut out, owner, module, name, "struct");
@@ -463,7 +522,7 @@ fn resolve_importer(
                         name,
                         module,
                         kind: EmpLayoutKind::Struct,
-                        size,
+                        size: if skew && !owner { size + 2 } else { size },
                         fields,
                         overlays: Vec::new(),
                     })),
@@ -479,6 +538,9 @@ fn resolve_importer(
                     continue;
                 }
                 let Some((module, name, owner)) = key(b.span, &b.name) else { continue };
+                if owner_only && !owner {
+                    continue;
+                }
                 let l = ev.layout_of_bitfield(&b.name, b.span);
                 if l.fields.len() != b.fields.len() {
                     unresolved(&mut out, owner, module, name, "bitfield");
@@ -502,7 +564,10 @@ fn resolve_importer(
                 if !ev.enums.get(e.name.as_str()).is_some_and(|d| std::ptr::eq(*d, e)) {
                     continue;
                 }
-                let Some((module, name, _)) = key(e.span, &e.name) else { continue };
+                let Some((module, name, owner)) = key(e.span, &e.name) else { continue };
+                if owner_only && !owner {
+                    continue;
+                }
                 let width = match e.repr.as_ref().map(|r| ev.resolve_type(r)) {
                     Some(Ty::Prim { width, .. }) => u32::from(width),
                     _ => 1,
@@ -542,6 +607,9 @@ fn resolve_importer(
                     continue;
                 }
                 let Some((module, name, owner)) = key(v.span, oname) else { continue };
+                if owner_only && !owner {
+                    continue;
+                }
                 let info = ev.overlay_layout(oname, v.span);
                 if info.poisoned || info.fields.len() != v.fields.len() {
                     unresolved(&mut out, owner, module, name, "overlay");
@@ -555,15 +623,29 @@ fn resolve_importer(
                     .zip(tys)
                     .map(|((n, off, size), ty)| Some(EmpField { name: n.clone(), offset: conv(*off)?, size: conv(*size)?, ty }))
                     .collect();
-                match (fields, conv(info.window_offset), conv(info.window_size)) {
-                    (Some(fields), Some(offset), Some(size)) => out.push(Seen::Overlay {
+                // The base struct as THIS module's scope names it: its declaration says which
+                // module declares it, so two modules' same-named structs stay apart.
+                let base_module = ev
+                    .structs
+                    .get(info.base_struct.as_str())
+                    .and_then(|d| key(d.span, &info.base_struct))
+                    .map(|(m, _, _)| m);
+                match (fields, conv(info.window_offset), conv(info.window_size), base_module) {
+                    (Some(fields), Some(offset), Some(size), Some(base_module)) => out.push(Seen::Overlay {
                         module,
-                        overlay: EmpOverlay { name, base: demangle(&info.base_struct).to_string(), offset, size, fields },
+                        overlay: EmpOverlay {
+                            name,
+                            base: demangle(&info.base_struct).to_string(),
+                            base_module,
+                            offset,
+                            size,
+                            fields,
+                        },
                     }),
                     _ => out.push(Seen::Fault(EmpExportError::Layout {
                         module,
                         name,
-                        why: "an overlay offset or size past u32".into(),
+                        why: "an overlay offset or size past u32, or a base struct no module declares".into(),
                     })),
                 }
             }
@@ -572,15 +654,27 @@ fn resolve_importer(
                     continue;
                 }
                 let Some((module, name, owner)) = key(c.span, &c.name) else { continue };
+                if owner_only && !owner {
+                    continue;
+                }
                 let v = ev.resolve_const(&c.name, c.span);
                 let shape = match v {
-                    crate::value::Value::Poison => continue,
+                    crate::value::Value::Poison => {
+                        if owner {
+                            out.push(Seen::Fault(EmpExportError::Const {
+                                module,
+                                name,
+                                why: "the constant did not evaluate in its own module".into(),
+                            }));
+                        }
+                        continue;
+                    }
                     crate::value::Value::Int(n) => {
                         let ty = match &c.ty {
                             Some(t) => type_spelling(&ev.resolve_type(t)),
                             None => "int".to_string(),
                         };
-                        ConstShape::Exported { ty, value: n }
+                        ConstShape::Exported { ty, value: if skew && !owner { n + 1 } else { n } }
                     }
                     crate::value::Value::Bool(b) => ConstShape::Exported { ty: "bool".into(), value: i128::from(b) },
                     crate::value::Value::Typed { ty, val } => match val.as_stored_int() {
@@ -594,7 +688,16 @@ fn resolve_importer(
                                 let values = ev.enum_variant_values(d);
                                 match d.variants.iter().position(|x| x.name == variant).and_then(|i| values[i]) {
                                     Some(n) => ConstShape::Exported { ty: demangle(&ty_name).to_string(), value: n },
-                                    None => continue,
+                                    None => {
+                                        if owner {
+                                            out.push(Seen::Fault(EmpExportError::Const {
+                                                module,
+                                                name,
+                                                why: "the enum variant has no discriminant".into(),
+                                            }));
+                                        }
+                                        continue;
+                                    }
                                 }
                             }
                             _ => ConstShape::Skipped("comptime-enum"),
@@ -632,7 +735,7 @@ pub fn emp_layouts(reg: &ProgramLayouts) -> Result<Vec<EmpLayout>, EmpExportErro
         let cands: Vec<usize> = out
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.kind == EmpLayoutKind::Struct && l.name == ov.base)
+            .filter(|(_, l)| l.kind == EmpLayoutKind::Struct && l.name == ov.base && l.module == ov.base_module)
             .map(|(i, _)| i)
             .collect();
         match cands.as_slice() {
@@ -641,7 +744,12 @@ pub fn emp_layouts(reg: &ProgramLayouts) -> Result<Vec<EmpLayout>, EmpExportErro
                 return Err(EmpExportError::Layout {
                     module: module.clone(),
                     name: ov.name.clone(),
-                    why: format!("its base struct `{}` matches {} exported layouts, expected one", ov.base, other.len()),
+                    why: format!(
+                        "its base struct `{}::{}` matches {} exported layouts, expected one",
+                        ov.base_module,
+                        ov.base,
+                        other.len()
+                    ),
                 })
             }
         }
@@ -653,7 +761,7 @@ pub fn emp_layouts(reg: &ProgramLayouts) -> Result<Vec<EmpLayout>, EmpExportErro
 /// integer, boolean or enum. Refuses a `(module, name)` that resolved to two values
 /// ([`EmpExportError::TwoConsts`]) and a value past `i64` ([`EmpExportError::ConstOutOfRange`]).
 pub fn emp_consts(reg: &ProgramLayouts) -> Result<Vec<EmpConst>, EmpExportError> {
-    if let Some(f) = reg.faults.iter().find(|f| matches!(f, EmpExportError::TwoConsts { .. } | EmpExportError::ConstOutOfRange { .. })) {
+    if let Some(f) = reg.faults.iter().find(|f| matches!(f, EmpExportError::TwoConsts { .. } | EmpExportError::ConstOutOfRange { .. } | EmpExportError::Const { .. })) {
         return Err(f.clone());
     }
     let mut out = Vec::new();

@@ -170,6 +170,11 @@ pub struct GameProfile {
     /// build adds it as an invocation's addition to the sonic4 shape. The contract is
     /// `docs/superpowers/notes/2026-09-25-clip-overlay-contract.md`.
     pub anchor_overlay: Option<crate::map_placement::AnchorOverlay>,
+    /// How much of the build export's layout/constant registry the `.emp` lowering
+    /// computes (G0a spec 4.5). `Off` in every shipping profile: only a build that will
+    /// write a sidecar asks for `Owner` (`sigil build -o` without `--no-build-json`),
+    /// and the cross-check gate asks for `Full`.
+    pub layout_pass: sigil_frontend_emp::export_side::LayoutPass,
 }
 
 impl GameProfile {
@@ -186,6 +191,12 @@ impl GameProfile {
         S: Into<String>,
     {
         self.extra_entries = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// This profile with `pass` as its [`layout_pass`](Self::layout_pass).
+    pub fn with_layout_pass(mut self, pass: sigil_frontend_emp::export_side::LayoutPass) -> GameProfile {
+        self.layout_pass = pass;
         self
     }
 
@@ -352,6 +363,7 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
         fixture_placement: false,
         extra_entries: Vec::new(),
         anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
     }
 }
 
@@ -399,6 +411,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         fixture_placement: false,
         extra_entries: Vec::new(),
         anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
     }
 }
 
@@ -439,6 +452,7 @@ pub fn config_b_profile() -> GameProfile {
         fixture_placement: false,
         extra_entries: Vec::new(),
         anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
     }
 }
 
@@ -487,6 +501,7 @@ pub fn config_a_profile() -> GameProfile {
         fixture_placement: false,
         extra_entries: Vec::new(),
         anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
     }
 }
 
@@ -539,6 +554,7 @@ pub fn lean_profile() -> GameProfile {
         fixture_placement: false,
         extra_entries: Vec::new(),
         anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
     }
 }
 
@@ -2034,7 +2050,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
     let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
-        resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
+        resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, profile.layout_pass, &embed_base_for);
     // The helper imports `normalize_helper_imports` removed, checked above against
     // the pre-rewrite tree, reported for the modules this build contains.
     bdiags.extend(helper_import_errors_in(&manifest, &removed_import_errors, &lowered, &bdiags));
@@ -4422,7 +4438,16 @@ pub fn build_native_rom_with_listing(aeon: &Path, debug: bool) -> Result<RomBuil
     // Canonical placement is COMPUTED (packed from live sizes over the map's declared
     // order/anchors), so the canonical build routes through the chained driver — one
     // placement authority for all seven targets.
-    build_rom_chained_with_listing(aeon, &sonic4_profile(debug))
+    build_native_rom_with_listing_pass(aeon, debug, sigil_frontend_emp::export_side::LayoutPass::Off)
+}
+
+/// [`build_native_rom_with_listing`] with the build export's layout pass.
+pub fn build_native_rom_with_listing_pass(
+    aeon: &Path,
+    debug: bool,
+    pass: sigil_frontend_emp::export_side::LayoutPass,
+) -> Result<RomBuild, String> {
+    build_rom_chained_with_listing(aeon, &sonic4_profile(debug).with_layout_pass(pass))
 }
 
 /// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
@@ -6188,7 +6213,7 @@ mod helper_import_tests {
             defines: vec![],
         };
         let resolve::BuiltProgram { mut diags, lowered, .. } =
-            resolve::build_program_open_embed_counted(&manifest, entry, None, &opts, &|_| None);
+            resolve::build_program_open_embed_counted(&manifest, entry, None, &opts, sigil_frontend_emp::export_side::LayoutPass::Off, &|_| None);
         let extra = helper_import_errors_in(&manifest, &removed, &lowered, &diags);
         diags.extend(extra);
         diags

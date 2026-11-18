@@ -52,7 +52,7 @@ fn build(text: &str) -> (Vec<Row>, BuiltProgram, ChainSources) {
         embed_base: None,
         defines: Vec::new(),
     };
-    let mut built = build_program_open_embed_counted(&manifest, "m", None, &opts, &|_| None);
+    let mut built = build_program_open_embed_counted(&manifest, "m", None, &opts, sigil_frontend_emp::export_side::LayoutPass::Off, &|_| None);
     let errs: Vec<_> = built.diags.iter().filter(|d| d.level == Level::Error).collect();
     assert!(errs.is_empty(), "build: {errs:?}");
     let index = SourceIndex::with_expansions(&manifest, &built.expansions);
@@ -270,7 +270,7 @@ fn a_diagnostic_inside_a_spliced_template_names_the_written_line() {
         embed_base: None,
         defines: Vec::new(),
     };
-    let built = build_program_open_embed_counted(&manifest, "m", None, &opts, &|_| None);
+    let built = build_program_open_embed_counted(&manifest, "m", None, &opts, sigil_frontend_emp::export_side::LayoutPass::Off, &|_| None);
     assert_eq!(built.expansions.expansion_count(), 2, "both splices recorded an expansion");
     assert!(built.diags.iter().all(|d| !d.primary.source.is_expansion() || d.primary.source.0 == u32::MAX), "{:?}", built.diags);
     let index = SourceIndex::with_expansions(&manifest, &built.expansions);

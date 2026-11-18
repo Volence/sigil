@@ -3413,7 +3413,10 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // through the chainer (which is what that driver delegates to for a `Frozen`
     // size source anyway) when an extra entry has to reach `build_emp`.
     let extra = &opts.extra_entries;
-    let with_extra = |p: native::GameProfile| p.with_extra_entries(extra.iter().cloned());
+    // The export's layout registry is computed only for a build that will write a sidecar.
+    let pass = layout_pass_for(opts);
+    let with_extra =
+        |p: native::GameProfile| p.with_extra_entries(extra.iter().cloned()).with_layout_pass(pass);
     // `--anchor-overlay` also rides the profile. Parse-time refusals keep it to the
     // `--game` shapes, the only arms that apply it; with it, canonical sonic4 leaves
     // its own entry point for the chainer, as with an extra entry.
@@ -3426,7 +3429,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         BuildTarget::Sonic4 { debug } if extra.is_empty() && opts.anchor_overlay.is_none() => (
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_native_rom_with_listing(aeon, *debug),
+            native::build_native_rom_with_listing_pass(aeon, *debug, pass),
         ),
         BuildTarget::Sonic4 { debug } => (
             *debug,
@@ -3536,8 +3539,8 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         None => None,
     };
     // The build-data export, stated before anything is written (see `ExportParts`).
-    let export_parts = match (&opts.output, opts.no_build_json) {
-        (Some(_), false) => match prepare_export(aeon, opts) {
+    let export_parts = match (&opts.output, writes_sidecar(opts)) {
+        (Some(_), true) => match prepare_export(aeon, opts) {
             Ok(parts) => Some(parts),
             Err(err) => {
                 eprintln!("error: native build ({label}) build export: {err}");
@@ -3606,6 +3609,22 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
 /// final extension replaced by `build.json`, so `s4.bin` is described by `s4.build.json`
 /// and `s4.debug.bin` by `s4.debug.build.json`. A ROM with no extension gains one
 /// (`rom` becomes `rom.build.json`).
+/// Whether this build writes a `<stem>.build.json`: with `-o`, unless `--no-build-json`.
+fn writes_sidecar(opts: &BuildOpts) -> bool {
+    opts.output.is_some() && !opts.no_build_json
+}
+
+/// How much of the export's layout registry the build computes: the owner-view export
+/// when a sidecar is written, nothing at all otherwise.
+fn layout_pass_for(opts: &BuildOpts) -> sigil_frontend_emp::export_side::LayoutPass {
+    use sigil_frontend_emp::export_side::LayoutPass;
+    if writes_sidecar(opts) {
+        LayoutPass::Owner
+    } else {
+        LayoutPass::Off
+    }
+}
+
 fn sidecar_path(rom_out: &std::path::Path) -> std::path::PathBuf {
     rom_out.with_extension("build.json")
 }
@@ -4612,5 +4631,26 @@ mod tests {
         assert_eq!(WarningView::parse(Some("OFF")), WarningView::Summary);
         assert_eq!(WarningView::parse(Some("")), WarningView::Summary);
         assert_eq!(WarningView::parse(None), WarningView::Summary);
+    }
+}
+
+#[cfg(test)]
+mod layout_pass_gates {
+    //! The export's layout registry is computed only for a build that writes a sidecar.
+    use super::{layout_pass_for, parse_build_args};
+    use sigil_frontend_emp::export_side::LayoutPass;
+
+    fn pass(args: &[&str]) -> LayoutPass {
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let opts = parse_build_args(&args).unwrap_or_else(|e| panic!("{e}"));
+        layout_pass_for(&opts)
+    }
+
+    #[test]
+    fn only_a_build_that_writes_a_sidecar_computes_the_layout_registry() {
+        assert_eq!(pass(&["--aeon", "a", "-o", "r.bin"]), LayoutPass::Owner);
+        assert_eq!(pass(&["--aeon", "a", "-o", "r.bin", "--no-build-json"]), LayoutPass::Off);
+        assert_eq!(pass(&["--aeon", "a"]), LayoutPass::Off);
+        assert_eq!(pass(&["--aeon", "a", "--emit-lst", "r.lst"]), LayoutPass::Off);
     }
 }

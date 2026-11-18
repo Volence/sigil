@@ -630,6 +630,7 @@ pub fn build_program(
         true,
         true,
         false,
+        crate::export_side::LayoutPass::Off,
         &|_| opts.embed_base.clone(),
     );
     (sections, link_asserts, diags)
@@ -646,7 +647,29 @@ pub fn build_program_recorded(
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> BuiltProgram {
-    build_program_with(manifest, entry_id, prelude_id, opts, true, true, true, &|_| opts.embed_base.clone())
+    build_program_with(
+        manifest,
+        entry_id,
+        prelude_id,
+        opts,
+        true,
+        true,
+        true,
+        crate::export_side::LayoutPass::Off,
+        &|_| opts.embed_base.clone(),
+    )
+}
+
+/// [`build_program_recorded`] with a layout/constant registry pass
+/// ([`crate::export_side::LayoutPass`]); `Off` is exactly `build_program_recorded`.
+pub fn build_program_recorded_with_layouts(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+    layout_pass: crate::export_side::LayoutPass,
+) -> BuiltProgram {
+    build_program_with(manifest, entry_id, prelude_id, opts, true, true, true, layout_pass, &|_| opts.embed_base.clone())
 }
 
 /// [`build_program`] for an OPEN program — one whose `.emp` modules reference
@@ -671,6 +694,7 @@ pub fn build_program_open(
         false,
         true,
         false,
+        crate::export_side::LayoutPass::Off,
         &|_| opts.embed_base.clone(),
     );
     (sections, link_asserts, diags)
@@ -707,7 +731,17 @@ pub fn build_program_open_embed(
     // Not `_counted`: that one records expansions, and this drops them (see
     // `build_program`).
     let BuiltProgram { sections, link_asserts, diags, .. } =
-        build_program_with(manifest, entry_id, prelude_id, opts, false, false, false, embed_base_for);
+        build_program_with(
+            manifest,
+            entry_id,
+            prelude_id,
+            opts,
+            false,
+            false,
+            false,
+            crate::export_side::LayoutPass::Off,
+            embed_base_for,
+        );
     (sections, link_asserts, diags)
 }
 
@@ -715,15 +749,18 @@ pub fn build_program_open_embed(
 /// deferred asserts AND how many `ensure` evaluations the reachable modules
 /// decided at comptime. The check-only build reads both counts so a run that
 /// decided zero of a family says so. Records template expansions
-/// ([`BuiltProgram::expansions`]); the caller locates through them.
+/// ([`BuiltProgram::expansions`]); the caller locates through them. `layout_pass` says
+/// how much of the export's layout registry to compute (`Off` for a build that writes
+/// no sidecar).
 pub fn build_program_open_embed_counted(
     manifest: &Manifest,
     entry_id: &str,
     prelude_id: Option<&str>,
     opts: &LowerOptions,
+    layout_pass: crate::export_side::LayoutPass,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> BuiltProgram {
-    build_program_with(manifest, entry_id, prelude_id, opts, false, false, true, embed_base_for)
+    build_program_with(manifest, entry_id, prelude_id, opts, false, false, true, layout_pass, embed_base_for)
 }
 
 /// A built multi-module program: its placed-to-be sections, the deferred link
@@ -775,6 +812,7 @@ fn build_program_with(
     closed: bool,
     rename: bool,
     record: bool,
+    layout_pass: crate::export_side::LayoutPass,
     embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
 ) -> BuiltProgram {
     let mut diags = Vec::new();
@@ -792,9 +830,10 @@ fn build_program_with(
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
     let mut symbols = crate::export_side::ProgramSymbols::default();
     // The layout/constant registry (G0a spec 4.5), read-only and inert: filled only when
-    // `record`, from a separate evaluator per module, after the module is lowered.
+    // `layout_pass` is not `Off`, from a separate evaluator per module, after the module
+    // is lowered.
     let mut layouts = crate::export_side::ProgramLayouts::default();
-    let source_home: HashMap<sigil_span::SourceId, String> = if record {
+    let source_home: HashMap<sigil_span::SourceId, String> = if layout_pass != crate::export_side::LayoutPass::Off {
         manifest.modules.iter().map(|pm| (pm.file.module.span.source, pm.id.clone())).collect()
     } else {
         HashMap::new()
@@ -1058,9 +1097,7 @@ fn build_program_with(
         // Zero-clone common path when nothing is injected; `region_ends` is empty for
         // region-free builds.
         let (mut module, ldiags) = lower_one(view, &mut expansions);
-        if record {
-            layouts.record_importer(view, &source_home, &opts.defines, &iface_env, opts.include_root.as_deref());
-        }
+        layouts.record_importer(view, &source_home, &opts.defines, &iface_env, opts.include_root.as_deref(), layout_pass);
         // A diagnostic about a spliced line names the line as WRITTEN, the template
         // body, exactly as before splices recorded expansions: the expansion ids are
         // for the build export's line table, and they never reach the diagnostics
