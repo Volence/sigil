@@ -242,6 +242,11 @@ SOURCE_GATES=(
     # with every overlay derived from the tree's own map.toml; judged by the placed
     # labels, the post-link checks and the emit binary's output, never a golden
     anchor_overlay
+    # the build export's layouts and constants (G0a Task 8): a real `sigil build` over a
+    # scratch copy of the tree, the sidecar's `Sst` held to the `.emp` that declares it and
+    # the sidecar validated against the vendored schema. Source only: no committed
+    # artifact, golden, ROM or listing is read
+    build_export_layouts
     subcommands
     # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
     # wide as the spelling it matches on, and 29 announced early returns spelled it
