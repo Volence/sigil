@@ -41,8 +41,7 @@ fn tree() -> Option<(MutexGuard<'static, ()>, PathBuf)> {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let tree = dir.join("tree");
-        let st = Command::new("cp").arg("-a").arg(&aeon).arg(&tree).status().expect("cp");
-        assert!(st.success());
+        sigil_harness::test_support::copy_tree(&aeon, &tree);
         Some(tree.canonicalize().unwrap())
     });
     path.clone().map(|p| (guard, p))

@@ -2887,3 +2887,41 @@ mod strict_witness_tests {
         }
     }
 }
+
+/// Validate the JSON file `instance` against the vendored build-export schema
+/// (`contract/build/empyrean.build-1.schema.json`) with python3 + jsonschema, returning
+/// the first few errors as `/path message` lines (empty = valid). The schema path is
+/// resolved from THIS crate, so every caller shares one validator.
+///
+/// A missing python3 or jsonschema FAILS (panics); it never skips and never reads as valid.
+pub fn schema_errors(instance: &std::path::Path) -> Vec<String> {
+    let schema = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/build/empyrean.build-1.schema.json");
+    let script = "import json,sys\nfrom jsonschema import Draft202012Validator as V\n\
+        s=json.load(open(sys.argv[1]));i=json.load(open(sys.argv[2]))\n\
+        errs=sorted(V(s).iter_errors(i),key=lambda e:list(e.path))\n\
+        [print('/'+'/'.join(map(str,e.path)),e.message[:200]) for e in errs[:10]]\n\
+        sys.exit(1 if errs else 0)\n";
+    let out = std::process::Command::new("python3")
+        .args(["-I", "-c", script])
+        .arg(schema)
+        .arg(instance)
+        .output()
+        .expect("python3 is required for the schema gate and was not found");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("ModuleNotFoundError") && !stderr.contains("ImportError"),
+        "python3 `jsonschema` is required: {stderr}"
+    );
+    match out.status.code() {
+        Some(0) => Vec::new(),
+        Some(1) => String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect(),
+        _ => panic!("schema validator could not run: {stderr}"),
+    }
+}
+
+/// `cp -a from to`: a copy of a reference tree that keeps modes and mtimes, for the gates
+/// that run `sigil build` (which rewrites files inside the tree it builds).
+pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    let st = std::process::Command::new("cp").arg("-a").arg(from).arg(to).status().expect("cp");
+    assert!(st.success(), "cp -a {} {}", from.display(), to.display());
+}

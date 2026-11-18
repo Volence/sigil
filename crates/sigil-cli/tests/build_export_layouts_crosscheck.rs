@@ -19,7 +19,6 @@
 use sigil_frontend_emp::export_side::{emp_consts, emp_layouts, EmpExportError, LayoutPass};
 use sigil_harness::native::{self, GameProfile};
 use std::path::PathBuf;
-use std::process::Command;
 
 fn tree() -> Option<PathBuf> {
     let profile = native::sonic4_profile(false);
@@ -28,8 +27,7 @@ fn tree() -> Option<PathBuf> {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let tree = dir.join("tree");
-    let st = Command::new("cp").arg("-a").arg(&aeon).arg(&tree).status().expect("cp");
-    assert!(st.success());
+    sigil_harness::test_support::copy_tree(&aeon, &tree);
     Some(tree.canonicalize().unwrap())
 }
 

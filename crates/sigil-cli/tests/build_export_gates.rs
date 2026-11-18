@@ -30,6 +30,7 @@ use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde_json::{json, Value};
+use sigil_harness::test_support::{copy_tree, schema_errors};
 
 static LOCK: Mutex<()> = Mutex::new(());
 static AEON: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -49,8 +50,11 @@ const SHAPES: [(&str, &[&str]); 7] = [
 /// Builds per shape in gate 7.
 const BUILDS: usize = 5;
 
-fn skip() {
-    eprintln!("{}no aeon reference tree", sigil_harness::test_support::SKIP_MARKER);
+/// The most shapes gate 7 builds at once.
+const MAX_PARALLEL: usize = 3;
+
+fn skip(why: &str) {
+    eprintln!("{}{why}", sigil_harness::test_support::SKIP_MARKER);
 }
 
 fn scratch(what: &str) -> PathBuf {
@@ -72,14 +76,9 @@ fn lock() -> MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn copy_tree(from: &Path, to: &Path) {
-    let st = Command::new("cp").arg("-a").arg(from).arg(to).status().expect("cp");
-    assert!(st.success(), "cp -a {} {}", from.display(), to.display());
-}
-
-/// One `sigil build` of `flags` over `tree`, ROM written to `rom`. Returns the sidecar
-/// bytes and the ROM bytes.
-fn build(tree: &Path, flags: &[&str], rom: &Path) -> (Vec<u8>, Vec<u8>) {
+/// One `sigil build` of `flags` over `tree`, ROM written to `rom`, run with `cwd` as its
+/// working directory. Returns the sidecar bytes and the ROM bytes.
+fn build(tree: &Path, flags: &[&str], rom: &Path, cwd: &Path) -> (Vec<u8>, Vec<u8>) {
     std::fs::create_dir_all(rom.parent().unwrap()).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
         .args(["build", "--aeon"])
@@ -87,6 +86,7 @@ fn build(tree: &Path, flags: &[&str], rom: &Path) -> (Vec<u8>, Vec<u8>) {
         .args(flags)
         .arg("-o")
         .arg(rom)
+        .current_dir(cwd)
         .output()
         .expect("spawn sigil");
     assert!(out.status.success(), "build {flags:?} failed:\n{}", String::from_utf8_lossy(&out.stderr));
@@ -114,40 +114,13 @@ fn built() -> Option<(MutexGuard<'static, ()>, &'static [Built])> {
             .iter()
             .map(|(name, flags)| {
                 let rom = dir.join("out").join(format!("{name}.bin"));
-                let (sidecar, _) = build(&tree, flags, &rom);
+                let (sidecar, _) = build(&tree, flags, &rom, &dir);
                 let export: Value = serde_json::from_slice(&sidecar).expect("the sidecar is JSON");
                 Built { name, sidecar_path: rom.with_extension("build.json"), export }
             })
             .collect()
     });
     Some((guard, all.as_slice()))
-}
-
-/// Validate `instance` against the vendored schema with python3 + jsonschema. A missing
-/// python3 or jsonschema FAILS the test; it never skips.
-fn schema_errors(instance: &Path) -> Vec<String> {
-    let schema = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/build/empyrean.build-1.schema.json");
-    let script = "import json,sys\nfrom jsonschema import Draft202012Validator as V\n\
-        s=json.load(open(sys.argv[1]));i=json.load(open(sys.argv[2]))\n\
-        errs=sorted(V(s).iter_errors(i),key=lambda e:list(e.path))\n\
-        [print('/'+'/'.join(map(str,e.path)),e.message[:200]) for e in errs[:10]]\n\
-        sys.exit(1 if errs else 0)\n";
-    let out = Command::new("python3")
-        .args(["-I", "-c", script])
-        .arg(schema)
-        .arg(instance)
-        .output()
-        .expect("python3 is required for the schema gate and was not found");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !stderr.contains("ModuleNotFoundError") && !stderr.contains("ImportError"),
-        "python3 `jsonschema` is required: {stderr}"
-    );
-    match out.status.code() {
-        Some(0) => Vec::new(),
-        Some(1) => String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect(),
-        _ => panic!("schema validator could not run: {stderr}"),
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -158,7 +131,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn every_export_validates_against_the_vendored_schema() {
-    let Some((_g, all)) = built() else { return skip() };
+    let Some((_g, all)) = built() else { return skip("no aeon reference tree") };
     assert_eq!(all.len(), SHAPES.len());
     let mut bad = Vec::new();
     for b in all {
@@ -176,7 +149,7 @@ fn every_export_validates_against_the_vendored_schema() {
 /// validator that accepts everything cannot stand in for the gate.
 #[test]
 fn a_corrupted_sidecar_is_refused_by_the_validator() {
-    let Some((_g, all)) = built() else { return skip() };
+    let Some((_g, all)) = built() else { return skip("no aeon reference tree") };
     let dir = scratch("corrupt");
     for (what, path, value) in [
         ("rom.sha256 short", "/rom/sha256", json!("abc")),
@@ -196,7 +169,7 @@ fn a_corrupted_sidecar_is_refused_by_the_validator() {
 #[test]
 fn five_builds_one_export_hash_per_shape() {
     let _g = lock();
-    let Some(aeon) = aeon() else { return skip() };
+    let Some(aeon) = aeon() else { return skip("no aeon reference tree") };
     let base = scratch("det");
     let pid = std::process::id();
     // Five directory shapes per build: different names, different depths, different
@@ -208,8 +181,13 @@ fn five_builds_one_export_hash_per_shape() {
         }
         p.join(format!("{shape}_{}", "w".repeat(k * 3)))
     };
-    let results: Vec<(String, Vec<Vec<u8>>, Vec<String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = SHAPES
+    // At most MAX_PARALLEL shapes at once (each holds one 150 MB tree copy and one build),
+    // so a small runner is not asked for seven copies and seven assemblers together.
+    let par = std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, MAX_PARALLEL);
+    let mut results: Vec<(String, Vec<Vec<u8>>, Vec<String>)> = Vec::new();
+    for chunk in SHAPES.chunks(par) {
+        results.extend(std::thread::scope(|s| {
+        let handles: Vec<_> = chunk
             .iter()
             .map(|(name, flags)| {
                 let dir_for = &dir_for;
@@ -224,7 +202,20 @@ fn five_builds_one_export_hash_per_shape() {
                         let tree = tree.canonicalize().unwrap();
                         // Same ROM FILE NAME in every build (it is `rom.path` in the
                         // export), a different directory.
-                        let (sidecar, rom) = build(&tree, flags, &dir.join("out").join(format!("{name}.bin")));
+                        // A distinct mtime on every file of the copy, so a leaked
+                        // timestamp breaks the hash; and a distinct working directory.
+                        let stamp = 1_000_000_000 + k as u64 * 3_187_001 + u64::from(pid) % 997;
+                        let st = Command::new("find")
+                            .arg(&tree)
+                            .args(["-exec", "touch", "-h", "-d"])
+                            .arg(format!("@{stamp}"))
+                            .args(["{}", "+"])
+                            .status()
+                            .expect("find/touch");
+                        assert!(st.success(), "touch of the copy failed");
+                        let cwd = dir.join(format!("cwd_{name}_{k}"));
+                        std::fs::create_dir_all(&cwd).unwrap();
+                        let (sidecar, rom) = build(&tree, flags, &dir.join("out").join(format!("{name}.bin")), &cwd);
                         let v: Value = serde_json::from_slice(&sidecar).unwrap();
                         assert_eq!(v["rom"]["sha256"], json!(hex(&rom)), "shape {name} build {k}: rom.sha256 is not the ROM file's hash");
                         roms.push(v["rom"]["sha256"].as_str().unwrap().to_string());
@@ -235,8 +226,9 @@ fn five_builds_one_export_hash_per_shape() {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("a shape's builds panicked")).collect()
-    });
+        handles.into_iter().map(|h| h.join().expect("a shape's builds panicked")).collect::<Vec<_>>()
+        }));
+    }
     let mut bad = Vec::new();
     for (name, sidecars, roms) in &results {
         let hashes: Vec<String> = sidecars.iter().map(|s| hex(s)).collect();
@@ -264,30 +256,68 @@ fn is_engine(module: &str) -> bool {
     module == "engine" || module.starts_with("engine.")
 }
 
-/// Every record whose module is `engine.*` (symbols, layouts, consts) that names a
-/// `games.sonic4` item: by the mangled spelling `games.sonic4` inside its name, by the
-/// word `sonic4`, or by a name some `games.sonic4.*` symbol of `sonic4_items` carries.
+/// Every string reachable in `v`, object keys and values both.
+fn strings_of<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+    match v {
+        Value::String(t) => out.push(t),
+        Value::Array(a) => a.iter().for_each(|x| strings_of(x, out)),
+        Value::Object(o) => {
+            for (k, x) in o {
+                out.push(k);
+                strings_of(x, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Why `text` names a `games.sonic4` item, if it does: it spells `games.sonic4` or the
+/// word `sonic4`, or one of its identifier tokens is the name of a sonic4 item.
+fn names_sonic4(text: &str, sonic4_items: &BTreeSet<String>) -> Option<String> {
+    if text.contains("games.sonic4") || text.to_ascii_lowercase().contains("sonic4") {
+        return Some("spells sonic4".into());
+    }
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+        .find(|t| sonic4_items.contains(*t))
+        .map(|t| format!("names the sonic4 item `{t}`"))
+}
+
+/// Every record of `symbols`, `layouts` and `consts` whose module is `engine.*` and in
+/// which ANY string (name, demangled, kind, const type, layout field type, overlay base,
+/// overlay fields and their types) names a `games.sonic4` item.
 fn engine_records_naming_sonic4(export: &Value, sonic4_items: &BTreeSet<String>) -> Vec<String> {
     let mut bad = Vec::new();
-    for (coll, key) in [("symbols", "name"), ("layouts", "name"), ("consts", "name")] {
+    for coll in ["symbols", "layouts", "consts"] {
         for r in export[coll].as_array().map_or(&[][..], |a| a.as_slice()) {
             if !is_engine(sym_field(r, "module")) {
                 continue;
             }
-            let name = sym_field(r, key);
-            let shown = format!("{coll} `{name}` (module {})", sym_field(r, "module"));
-            let mut spellings = vec![name.to_string()];
-            if coll == "symbols" {
-                spellings.push(sym_field(r, "demangled").to_string());
-            }
-            if spellings.iter().any(|s| s.contains("games.sonic4") || s.to_ascii_lowercase().contains("sonic4")) {
-                bad.push(format!("{shown} spells sonic4"));
-            } else if sonic4_items.contains(name) {
-                bad.push(format!("{shown} is named like a games.sonic4 item"));
+            let mut strs = Vec::new();
+            strings_of(r, &mut strs);
+            for t in strs {
+                if let Some(why) = names_sonic4(t, sonic4_items) {
+                    bad.push(format!("{coll} `{}` (module {}): `{t}` {why}", sym_field(r, "name"), sym_field(r, "module")));
+                }
             }
         }
     }
     bad
+}
+
+/// Symbols with no `module`. These are legitimate only as AS-side equates: the `.emp`
+/// front end attributes every label/data/ram/proc symbol (and every z80 symbol) to its
+/// module, while an equate a `.asm` file defines has no `.emp` module to name. Measured:
+/// 543 on demo, 675 on sonic4 plain, all `equ`, non-public, no space. Anything else
+/// without a module is returned as a problem, so `is_engine` cannot silently skip it.
+fn unattributed_symbol_problems(export: &Value) -> Vec<String> {
+    export["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s.get("module").is_none())
+        .filter(|s| s["kind"] != "equ" || s["public"] != false || s.get("space").is_some())
+        .map(|s| format!("symbol `{}` has no module but is not a plain AS equate: {s}", sym_field(s, "name")))
+        .collect()
 }
 
 /// The names of every `games.sonic4.*` symbol in `export`.
@@ -315,12 +345,19 @@ fn demo_problems(demo: &Value, sonic4_items: &BTreeSet<String>) -> Vec<String> {
         }
     }
     bad.extend(engine_records_naming_sonic4(demo, sonic4_items));
+    bad.extend(unattributed_symbol_problems(demo));
+    // The demo has no sonic4 half, so an unattributed equate must not name one either.
+    for s in demo["symbols"].as_array().unwrap().iter().filter(|s| s.get("module").is_none()) {
+        if let Some(why) = names_sonic4(sym_field(s, "name"), sonic4_items) {
+            bad.push(format!("unattributed equate `{}` {why}", sym_field(s, "name")));
+        }
+    }
     bad
 }
 
 #[test]
 fn demo_export_validates_and_has_no_sonic_symbol_in_engine_records() {
-    let Some((_g, all)) = built() else { return skip() };
+    let Some((_g, all)) = built() else { return skip("no aeon reference tree") };
     let get = |n: &str| all.iter().find(|b| b.name == n).unwrap();
     let items = sonic4_item_names(&get("plain").export);
     assert!(items.len() > 100, "only {} games.sonic4 items in the sonic4 export: nothing to hold the demo to", items.len());
@@ -344,7 +381,8 @@ fn demo_export_validates_and_has_no_sonic_symbol_in_engine_records() {
         let own = sonic4_item_names(&b.export);
         let engine_syms = b.export["symbols"].as_array().unwrap().iter().filter(|s| is_engine(sym_field(s, "module"))).count();
         assert!(engine_syms > 100 && !own.is_empty(), "{name}: nothing to measure");
-        let bad = engine_records_naming_sonic4(&b.export, &own);
+        let mut bad = engine_records_naming_sonic4(&b.export, &own);
+        bad.extend(unattributed_symbol_problems(&b.export));
         eprintln!("G8 shape={name} engine_symbols={engine_syms} sonic4_items={} problems={}", own.len(), bad.len());
         assert!(bad.is_empty(), "{name}: {bad:?}");
     }
@@ -354,7 +392,7 @@ fn demo_export_validates_and_has_no_sonic_symbol_in_engine_records() {
 /// and an engine-module row that spells it, are both refused.
 #[test]
 fn a_sonic4_symbol_injected_into_a_demo_export_is_refused() {
-    let Some((_g, all)) = built() else { return skip() };
+    let Some((_g, all)) = built() else { return skip("no aeon reference tree") };
     let items = sonic4_item_names(&all.iter().find(|b| b.name == "plain").unwrap().export);
     let demo = &all.iter().find(|b| b.name == "demo").unwrap().export;
     assert!(demo_problems(demo, &items).is_empty(), "the pristine demo export is not clean");
@@ -369,6 +407,33 @@ fn a_sonic4_symbol_injected_into_a_demo_export_is_refused() {
         mutated["symbols"].as_array_mut().unwrap().push(injected);
         assert!(!demo_problems(&mutated, &items).is_empty(), "gate 8 accepted {what}");
     }
+
+    // The non-name fields of an engine record: a const's type, a layout field's type, an
+    // overlay's base and field types, a symbol's kind.
+    let some_item = items.iter().next().unwrap().clone();
+    let first_engine = |coll: &str| {
+        demo[coll].as_array().unwrap().iter().position(|r| is_engine(sym_field(r, "module"))).expect("an engine record")
+    };
+    type Mutation = Box<dyn Fn(&mut Value)>;
+    let cases: [(&str, &str, Mutation); 5] = [
+        ("an engine const typed games.sonic4.Foo", "consts", Box::new(|r| r["type"] = json!("games.sonic4.Foo"))),
+        ("an engine const typed with a sonic4 item", "consts", { let it = some_item.clone(); Box::new(move |r| r["type"] = json!(format!("ptr<{it}>"))) }),
+        ("an engine layout field typed games.sonic4.Foo", "layouts", Box::new(|r| r["fields"][0]["type"] = json!("games.sonic4.Foo"))),
+        ("an engine layout field typed with a sonic4 item", "layouts", { let it = some_item.clone(); Box::new(move |r| r["fields"][0]["type"] = json!(it.clone())) }),
+        ("an engine layout overlay based on a sonic4 type", "layouts", Box::new(|r| {
+            r["overlays"] = json!([{"name": "o", "offset": 0, "base": "games.sonic4.Foo", "fields": []}])
+        })),
+    ];
+    for (what, coll, mutate) in cases {
+        let mut mutated = demo.clone();
+        let at = first_engine(coll);
+        mutate(&mut mutated[coll][at]);
+        assert!(!demo_problems(&mutated, &items).is_empty(), "gate 8 accepted {what}");
+    }
+    // A moduleless symbol that is not a plain equate is refused, not skipped.
+    let mut mutated = demo.clone();
+    mutated["symbols"].as_array_mut().unwrap().push(json!({"name": "Orphan", "vma": 4, "kind": "label", "public": true}));
+    assert!(!demo_problems(&mutated, &items).is_empty(), "gate 8 accepted a moduleless label");
 }
 
 // ---------------------------------------------------------------- tool.revision
@@ -379,7 +444,7 @@ fn a_sonic4_symbol_injected_into_a_demo_export_is_refused() {
 /// HEAD, or the honest `unknown` (a build outside a git checkout).
 #[test]
 fn tool_revision_names_the_checkout_head() {
-    let Some((_g, all)) = built() else { return skip() };
+    let Some((_g, all)) = built() else { return skip("no aeon reference tree") };
     let rev = all[0].export["tool"]["revision"].as_str().expect("tool.revision").to_string();
     for b in all {
         assert_eq!(b.export["tool"]["revision"], json!(rev), "shape {}: tool.revision differs between shapes", b.name);
@@ -398,7 +463,13 @@ fn tool_revision_names_the_checkout_head() {
                 assert_eq!(rev, head, "STALE tool.revision: the binary was built from {rev} but the checkout is at {head}; its build script did not re-run");
                 eprintln!("T10 tool.revision {rev} == checkout HEAD");
             }
-            _ => panic!("tool.revision is {rev} but `git rev-parse HEAD` cannot be asked in {}: cannot verify it", root.display()),
+            _ => {
+                let why = format!("tool.revision is {rev} but `git rev-parse HEAD` cannot be asked in {}: cannot verify it", root.display());
+                // A source tree that moved or has no git is an honest skip; a strict run
+                // (the landing bar) must measure.
+                assert!(!sigil_harness::test_support::strict_gate(), "{why}");
+                skip(&why);
+            }
         }
     } else {
         eprintln!("T10 tool.revision is the honest `unknown`");

@@ -25,8 +25,7 @@ fn tree() -> Option<(MutexGuard<'static, ()>, PathBuf)> {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let tree = dir.join("tree");
-        let st = Command::new("cp").arg("-a").arg(&aeon).arg(&tree).status().expect("cp");
-        assert!(st.success());
+        sigil_harness::test_support::copy_tree(&aeon, &tree);
         Some(tree.canonicalize().unwrap())
     });
     path.clone().map(|p| (guard, p))
@@ -180,39 +179,12 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Validate `instance` against the vendored schema with python3 + jsonschema. A missing
-/// python3 or jsonschema FAILS the test; it never skips.
-fn schema_errors(instance: &Path) -> Vec<String> {
-    let schema = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/build/empyrean.build-1.schema.json");
-    let script = "import json,sys\nfrom jsonschema import Draft202012Validator as V\n\
-        s=json.load(open(sys.argv[1]));i=json.load(open(sys.argv[2]))\n\
-        errs=sorted(V(s).iter_errors(i),key=lambda e:list(e.path))\n\
-        [print('/'+'/'.join(map(str,e.path)),e.message[:200]) for e in errs[:10]]\n\
-        sys.exit(1 if errs else 0)\n";
-    let out = Command::new("python3")
-        .args(["-I", "-c", script])
-        .arg(schema)
-        .arg(instance)
-        .output()
-        .expect("python3 is required for the schema gate and was not found");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !stderr.contains("ModuleNotFoundError") && !stderr.contains("ImportError"),
-        "python3 `jsonschema` is required: {stderr}"
-    );
-    match out.status.code() {
-        Some(0) => Vec::new(),
-        Some(1) => String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect(),
-        _ => panic!("schema validator could not run: {stderr}"),
-    }
-}
-
 #[test]
 fn the_real_sidecar_with_layouts_and_consts_validates() {
     let Some((_g, tree)) = tree() else { return skip() };
     let export = build_plain(&tree);
     let sidecar = tree.parent().unwrap().join("out/plain.build.json");
-    let errs = schema_errors(&sidecar);
+    let errs = sigil_harness::test_support::schema_errors(&sidecar);
     assert!(errs.is_empty(), "the sidecar does not validate: {errs:?}");
     let layouts = export["layouts"].as_array().unwrap();
     let consts = export["consts"].as_array().unwrap();
