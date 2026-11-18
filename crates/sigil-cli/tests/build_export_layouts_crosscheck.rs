@@ -33,6 +33,13 @@ fn tree() -> Option<PathBuf> {
     Some(tree.canonicalize().unwrap())
 }
 
+/// The announced no-op for a missing reference tree: the marker the landing bar and the
+/// nightly lane count, so a cross-check that could not run is a counted skip, never a
+/// silent green (`SIGIL_STRICT_GATE` turns a missing tree into a hard failure).
+fn skip() {
+    eprintln!("{}no aeon reference tree", sigil_harness::test_support::SKIP_MARKER);
+}
+
 /// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical.
 type Shape = (&'static str, fn() -> GameProfile);
 
@@ -50,10 +57,7 @@ fn shapes() -> Vec<Shape> {
 
 #[test]
 fn no_two_views_disagree_in_any_shape_and_the_control_is_not_blind() {
-    let Some(tree) = tree() else {
-        eprintln!("{}no aeon reference tree", sigil_harness::test_support::SKIP_MARKER);
-        return;
-    };
+    let Some(tree) = tree() else { return skip() };
     let mut census = Vec::new();
     for (name, profile) in shapes() {
         let build = |pass| native::build_emp(&tree, &profile().with_layout_pass(pass)).unwrap_or_else(|e| panic!("{name}: {e}")).layouts;
