@@ -2107,3 +2107,10 @@ until its row is removed.
 - Still true, unchanged: the header's ROM-end field (`$1A4`) is re-written after the link in appendix shapes
   (`append_deb2_appendix`) but stays attributed to its declaring line (`rom_end:` in `header.emp`). Only the checksum
   is a declared no-source range, per spec §4.4.
+
+- Found in G0a Task 10. `tool.revision` is `env!("SIGIL_REVISION")`, baked by `crates/sigil-cli/build.rs`, whose
+  rerun triggers (git HEAD, refs, packed-refs, closure sources) DO re-capture on a commit: probed with two empty commits
+  on a scratch branch, `cargo build` and `cargo test --no-run` both re-stamped. The stale `9b75e609` Task 6 saw was a
+  binary no cargo invocation had rebuilt since the commit moved. Not reproduced as a build-script defect, so no build
+  change; instead `build_export_gates::tool_revision_names_the_checkout_head` refuses a `tool.revision` that is not
+  `unknown` or the checkout's HEAD, so a stale stamp is red in the landing bar rather than silently exported.

@@ -251,6 +251,12 @@ SOURCE_GATES=(
     # every importer's view of every item must agree, and a planted disagreement must be
     # refused. Source only, no artifact
     build_export_layouts_crosscheck
+    # the build export's landing-bar gates (G0a Task 10): all 7 shapes validate against the
+    # vendored schema, 5 builds of each shape (each in its own copy of the tree at its own
+    # path) give one export hash, and the demo export carries no sonic4 symbol in engine
+    # records. Source only: real builds over scratch copies, no committed artifact, golden,
+    # ROM or listing is read
+    build_export_gates
     subcommands
     # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
     # wide as the spelling it matches on, and 29 announced early returns spelled it
