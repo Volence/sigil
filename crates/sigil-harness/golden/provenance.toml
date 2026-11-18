@@ -11823,3 +11823,62 @@ demo_debug = "64717bac/106981"
 lean = "60a3552b/798202"
 s4 = "193507d9/850296"
 s4_debug = "ce326232/870560"
+
+[entry.superseded]
+by = "pin-advance-99cb963d"
+reason = "936439fa lacks the wave-3 pair (A5 Z80 computed-dispatch annotations, A4 palette_dsl use lines), so wave-3 sigil refuses it by design; aeon 99cb963d carries the pair and moves no byte"
+
+[[entry]]
+name = "pin-advance-99cb963d"
+ab = "step-0 wave-3 pair landing: sigil-side corpus pin advance 936439fa to 99cb963d (aeon merge of parcel/step0-soundness-pair); all four build.sh shapes reproduce aeon's own figures"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+note = "goldens byte-identical to `pin-advance-step0`, this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. advances the reference pin to the aeon revision that merges the step-0 wave-3 pair; byte-neutral, every shape equals pin-advance-step0"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "6be62db3"
+full_size = 870972
+anchor_crc = "be66c04c"
+anchor_end = 0xc5c8a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d888a312"
+full_size = 617813
+anchor_crc = "13690654"
+anchor_end = 0x8b634
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2f9e2d4c"
+full_size = 99994
+anchor_crc = "f3be0fa8"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "64717bac"
+full_size = 106981
+anchor_crc = "276b7c7e"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "60a3552b"
+full_size = 798202
+anchor_crc = "1a446df8"
+anchor_end = 0xc2dfa
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "193507d9"
+full_size = 850296
+anchor_crc = "9fc8172d"
+anchor_end = 0xc3e7c
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ce326232"
+full_size = 870560
+anchor_crc = "c4936a69"
+anchor_end = 0xc5c8a
