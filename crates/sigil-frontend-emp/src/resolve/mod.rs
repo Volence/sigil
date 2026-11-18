@@ -1003,8 +1003,13 @@ fn build_program_with(
         if rename {
             rename::rename_module(&mut module, env.rename_map());
         }
-        let pub_equs: HashSet<String> = imports::pub_equ_names(&pm.file).into_iter().collect();
-        symbols.record_module(&pm.id, &module, &pub_equs);
+        // `pub` names as the labels now spell them: through the rename map when
+        // this build module-qualifies (a pure `.emp` program), verbatim otherwise.
+        let pub_names: HashSet<String> = crate::export_side::pub_item_names(&pm.file)
+            .into_iter()
+            .map(|n| if rename { rename::canonicalize_name(&n, env.rename_map()).unwrap_or(n) } else { n })
+            .collect();
+        symbols.record_module(&pm.id, &module, &pub_names);
         sections.extend(module.sections);
         link_asserts.extend(module.link_asserts);
         comptime_guards += module.comptime_guards;

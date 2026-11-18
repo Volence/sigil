@@ -131,8 +131,9 @@ fn parse_listing(text: &str) -> Result<Listing, String> {
     if n_syms != l.addrs.len() {
         return Err(format!("the listing says {n_syms} symbols, {} rows parsed", l.addrs.len()));
     }
-    if n_equs.unwrap_or(0) != l.equs.len() {
-        return Err(format!("the listing says {n_equs:?} equates, {} rows parsed", l.equs.len()));
+    let n_equs = n_equs.ok_or("the listing has no `<n> equates` trailer")?;
+    if n_equs != l.equs.len() {
+        return Err(format!("the listing says {n_equs} equates, {} rows parsed", l.equs.len()));
     }
     let n_phase = n_phase.ok_or("the listing has no PHASE-COUNT line")?;
     if n_phase != l.phases.len() {
@@ -279,4 +280,22 @@ fn equates_have_no_space() {
         assert_eq!(s["space"], "m68k", "{s}");
         assert!(s["vma"].as_u64().unwrap() >= 0xFF_0000, "{s}");
     }
+}
+
+#[test]
+fn pub_data_exports_public_and_private_data_does_not() {
+    let Some((_g, tree)) = tree() else { return skip() };
+    let (_, export) = build_shape(&tree, "demo", &["--game", "demo"]);
+    let syms = export["symbols"].as_array().unwrap();
+    let find = |n: &str| syms.iter().find(|s| s["name"] == n).unwrap_or_else(|| panic!("{n} not exported"));
+    // `pub data ObjDef_DemoBox` and `data DemoObjectList_Term` (games/demo).
+    let pub_data = find("ObjDef_DemoBox");
+    assert_eq!(pub_data["public"], true, "{pub_data}");
+    assert_eq!(pub_data["kind"], "label", "{pub_data}");
+    let priv_data = find("DemoObjectList_Term");
+    assert_eq!(priv_data["public"], false, "{priv_data}");
+    assert_eq!(priv_data["kind"], "label", "{priv_data}");
+    // Both carry their module, so the pair is a statement about `pub`, not about
+    // whether the `.emp` side table saw the symbol at all.
+    assert!(pub_data["module"].is_string() && priv_data["module"].is_string());
 }

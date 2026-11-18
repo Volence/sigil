@@ -509,6 +509,9 @@ pub struct Module {
 /// because relaxation changes lengths and never the fragment sequence (`resolve_layout`
 /// lowers each relaxable fragment in place), so the post-resolve extent is the
 /// replayed cursor over `[start_fragment, end_fragment)` of the same section.
+///
+/// INVARIANT: these positions stay valid only because the rebuild in
+/// `sigil-link/src/relax.rs` maps fragments 1:1 (one lowered fragment per input).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcMark {
     /// The procedure's label, as the section's `labels` spell it.

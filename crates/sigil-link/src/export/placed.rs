@@ -155,6 +155,10 @@ impl<'a> PlacedSymbols<'a> {
             name: name.to_string(),
             demangled: None,
             space: None,
+            // WRAPPED to 32 bits on purpose: the listing renders an equate's i64 value
+            // the same way (`sigil-harness` `listing_from_resolved`, `value as u32`,
+            // printed `EQU NAME = $%08X`), so a negative or wide equate here names the
+            // same number the listing names, which is what gate 5 compares.
             vma: v as u32,
             lma: None,
             kind: SymbolKind::Equ,
@@ -209,6 +213,29 @@ mod tests {
         assert_eq!(p.extent(&b, 4, 5), Ok(4));
         // Indices that do not start at the label are refused, not measured.
         assert!(p.extent(&a, 0, 3).is_err());
+    }
+
+    #[test]
+    fn an_equate_outside_u32_wraps_as_the_listing_renders_it() {
+        let mut s = sec(vec![data(2)], vec![("A", 0)]);
+        let eq = |name: &str, v: i64| sigil_ir::EquSym { name: name.into(), expr: sigil_ir::Expr::Int(v), span: span() };
+        s.equ_syms = vec![eq("NEG", -2), eq("WIDE", 0x1_0000_0005)];
+        let secs = vec![s];
+        let p = PlacedSymbols::new(&secs, &SymbolTable::new());
+        // The listing's row for each: `ListingSymbol { value: v as u32 }`.
+        for (name, v) in [("NEG", -2i64), ("WIDE", 0x1_0000_0005)] {
+            let r = p.equ_record(name, None, false).unwrap();
+            assert_eq!(r.vma, v as u32, "{name}");
+            let row = crate::emit_listing(&[crate::ListingSymbol {
+                name: name.into(),
+                value: v as u32,
+                is_equate: true,
+                unused: false,
+                lma: None,
+            }]);
+            assert!(row.contains(&format!("EQU {name} = ${:08X}", r.vma)), "{row}");
+        }
+        assert_eq!(p.equ_record("NEG", None, false).unwrap().vma, 0xFFFF_FFFE);
     }
 
     #[test]
