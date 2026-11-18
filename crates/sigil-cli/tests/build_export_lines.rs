@@ -556,6 +556,12 @@ fn every_rom_byte_is_covered_once() {
             v.vma += 2;
             let red = gate2(&b.rom, eor, &phased, &b.export, &moved);
             assert!(red.iter().any(|m| m.contains("vma")), "a vma moved off its lma passed gate 2: {red:?}");
+            // (7) A row outside every placed section relabelled code (the appendix).
+            let mut stray = rows.clone();
+            let v = stray.iter_mut().find(|r| r.kind == "deb2").unwrap();
+            (v.kind, v.file, v.line) = ("code".into(), 0, 1);
+            let red = gate2(&b.rom, eor, &phased, &b.export, &stray);
+            assert!(red.iter().any(|m| m.contains("outside a CPU section")), "code in (image) passed gate 2: {red:?}");
             // (6) Attribution shifted by one row: each row takes the previous row's line.
             let mut shifted = rows.clone();
             for i in (1..shifted.len()).rev() {
