@@ -1501,6 +1501,9 @@ points at it rather than restating it, so there is one copy to keep true.
   entry `pin-advance-step0`, chain len 208; s4 and s4.debug equal aeon's figures. `repin.toml` unchanged.
   The tip `pin-advance-s2` was attested first (passed vs 1ee78b88), because the freeze refused to append on an
   unattested tip. Baseline 67 failed; after the freeze 3; after the repairs 0 (final gate in the note).
+- 2026-11-18 (`parcel/pin-advance-99cb963d`, wave-3 checklist step 7): SUPERSEDED by entry #209
+  `pin-advance-99cb963d` at aeon `99cb963d`. #208's strict run recorded RED at sigil `b674ed34` (`ea6195a3`):
+  wave-3 sigil refuses the unpaired `936439fa` by design. Byte-neutral; see the step-0 note, step 7.
 
 ### PORT-TESTS-MUSIC-NAMES-AT-TIP
 
@@ -1709,6 +1712,7 @@ points at it rather than restating it, so there is one copy to keep true.
   `d888a312/617813`). Step 3, aeon renames and lands, is theirs; tell them the pair is ready.
 - Step 3 LANDED on aeon origin/master at merge `b295559d` (tip `97d139ca`), built with our `30793305` pair (their figures). At the next pin advance past `b295559d`: retire the `games.sonic4.mt_bank_blob` SHAPE_GATES row and the `warn_tier_corpus.rs` known-site row for `mt_bank.emp` (it goes red then by design).
 - 2026-11-17 (step 0 Task 6, pin advance to aeon `936439fa`, branch `parcel/step0-soundness`): the `warn_tier_corpus.rs` row went red as designed and is retired (`files: &[]`). The `games.sonic4.mt_bank_blob` SHAPE_GATES row is deliberately KEPT: dead at 936439fa, but the 1ee78b88 reference tree (still the attest tree for entry #207) carries the old id. Retire it once no lane builds a pre-`97d139ca` tree.
+- 2026-11-18 (`parcel/pin-advance-99cb963d`): the pin is now aeon `99cb963d` (entry #209). #207 was attested long ago (`a8973000`) and no timer, script or gate names `.aeon-sigil-ref-1ee78b88` (evidence in `.aeon-v2-harness-out/pin99/report.md`), so that tree no longer holds this row back. The row itself is still in place: retiring it edits shipping-closure source and is its own parcel.
 
 ## CI-TOOLCHAIN-FLOATS: CLOSED IN BRANCH 2026-11-17 (step-0 fix wave, final review I3; the commit adding `rust-toolchain.toml`)
 
@@ -1761,6 +1765,8 @@ Two smaller items booked here as well:
   standing reference tree (provenance tip `pin-advance-step0` = `936439fa`) then needs the next pin
   advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
   red on the Z80 rows by design.
+- 2026-11-18: that pin advance is done in branch `parcel/pin-advance-99cb963d` (entry #209, aeon
+  `99cb963d`, the pair merge; byte-neutral). The standing reference is `.aeon-sigil-ref-99cb963d`.
 - Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
   symbols). `split_z80_drops` counts them apart (a `dc` is not decoded as code by the closure, dropped or
   not); a define set that resolves them would let the Z80 drop count be an exact 0.

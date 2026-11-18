@@ -1228,29 +1228,30 @@ corner of the option space. It is not a cargo test because it needs `lua` and bo
 
 ### THE REFERENCE TREE IS `.aeon-sigil-ref`, AND ITS EXCLUSIVITY IS INCIDENTAL (2026-09-09)
 
-**⚠ MOVED AGAIN 2026-11-17 (step 0, Task 6 M5), AND IT IS IN TRANSITION.** Read this before the
-2026-09-28 paragraph below, which names a tree that is now two pins old.
+**⚠ MOVED 2026-11-18 (step-0 wave-3 checklist step 7), THE TRANSITION IS OVER.** Read this before the
+2026-11-17 and 2026-09-28 paragraphs below, which name trees that are now superseded.
 
-- **The pin is aeon `936439fa`** (provenance entry `pin-advance-step0`, the last `aeon_rev` in
-  `crates/sigil-harness/golden/provenance.toml`, chain len 208). Its provisioned tree is
-  **`/home/volence/sonic_hacks/.aeon-sigil-ref-936439fa`**, detached and clean, made by
-  `scripts/provision-aeon-ref.sh`. Shape CRCs and sizes live in that provenance entry only.
-- **Sigil at or past step-0 wave 3 cannot build that tree.** Wave 3 (A5 Z80 clobber gate, A4 one name
-  environment) refuses an aeon tree without the pair `parcel/step0-soundness-pair`: on a plain
-  `936439fa` tree the Z80 clobber rows are red BY DESIGN (QUEUE `Z80-CLOBBER-BUILD-GATE`). So until
-  the pair reaches aeon origin, every post-wave-3 landing run uses the hand-made overlay
-  **`/home/volence/sonic_hacks/.aeon-t9-pairref`**: `936439fa` with the pair's source files
-  (`map.toml`, `sound_sequencer.emp`, `palette_dsl.emp`, plus `EMP_PITFALLS.md`) as working-tree
-  changes, byte-equal to pair tip `6269c7fd`'s copies. That tree is not reproducible from a SHA, so a result against it is attributed to
-  "`936439fa` + the pair branch tip", stated with the run. `provision-aeon-ref.sh` refuses non-origin
-  commits, which is why it is not provisioned the normal way.
-- **Exit from the transition** (the parcel note's "Wave 3 landing checklist"): once the pair is on aeon
-  origin, pin-advance to that pushed revision, provision `.aeon-sigil-ref-<rev>` with
-  `provision-aeon-ref.sh`, rewrite this paragraph to name it, and retire `.aeon-t9-pairref`,
-  `.aeon-sigil-ref-936439fa-t6` (Task 6's scratch copy) and `.aeon-sigil-ref-1ee78b88` (still the
-  attest tree for entry #207 until no lane builds a pre-`97d139ca` tree, QUEUE row on `mt_bank_blob`).
-- Re-derive: `git -C <tree> rev-parse HEAD` against the last `aeon_rev` in the provenance file, and
-  `git -C <tree> status --short` (empty for a provisioned tree; the pair's files for the overlay).
+- **The pin is aeon `99cb963d`** (aeon origin/master, the merge of `parcel/step0-soundness-pair`;
+  provenance entry `pin-advance-99cb963d`, #209, the last `aeon_rev` in
+  `crates/sigil-harness/golden/provenance.toml`). Its provisioned tree is
+  **`/home/volence/sonic_hacks/.aeon-sigil-ref-99cb963d`**, detached and clean, made by
+  `scripts/provision-aeon-ref.sh` (golden control `MATCHES THE GOLDEN` for s4 and s4.debug, `repin --check`
+  `pins.rs unchanged`). It is reproducible from the SHA, so a result against it is attributed to `99cb963d`
+  and nothing else. Shape CRCs and sizes live in the provenance entry only.
+- **The advance was byte-neutral.** All seven goldens equal entry #208's; #209 exists to supersede #208,
+  whose strict run under wave-3 sigil is recorded RED (`936439fa` has no pair, so the A5 Z80 clobber rows and
+  the A4 unbound-name rows refuse it by design). A plain freeze would have been a FIXPOINT and could not move
+  `aeon_rev`; see the parcel note's checklist step 7.
+- **Any post-wave-3 run against `.aeon-sigil-ref-936439fa` or `.aeon-t9-pairref` is now wrong**: the first
+  is red by design, the second is an unreproducible overlay. Neither is a standing reference any more.
+- Re-derive: `git -C /home/volence/sonic_hacks/.aeon-sigil-ref-99cb963d rev-parse HEAD` against the last
+  `aeon_rev` in the provenance file, and `git -C <tree> status --short` (empty).
+
+**SUPERSEDED 2026-11-18 (kept as the record).** The 2026-11-17 transition paragraph: the pin was aeon
+`936439fa` (entry `pin-advance-step0`, #208), provisioned at `.aeon-sigil-ref-936439fa`; post-wave-3 landing
+runs used the hand-made overlay `.aeon-t9-pairref` (`936439fa` + the pair's source files as working-tree
+changes, byte-equal to pair tip `6269c7fd`'s copies) because `provision-aeon-ref.sh` refuses non-origin
+commits. Exit from the transition was the checklist step 7 above.
 
 **⚠ MOVED 2026-09-28, AND THE TREE THIS HEADING NAMES IS NOW THE WRONG ONE.** The pin advanced to aeon
 `1ee78b88` at merge `b4472d9c` (provenance entry `pin-advance-s2`, chain len 207). The standing

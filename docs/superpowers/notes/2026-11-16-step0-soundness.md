@@ -1095,6 +1095,17 @@ refs, so the order below is what keeps each of them green. Do not reorder.
    `.aeon-sigil-ref-<rev>`, update `docs/OVERSEER-REFERENCE.md`'s standing-reference paragraph, and retire
    `.aeon-t9-pairref`, `.aeon-sigil-ref-936439fa-t6` and (when no lane builds a pre-`97d139ca` tree)
    `.aeon-sigil-ref-1ee78b88`.
+   **DONE 2026-11-18 in branch `parcel/pin-advance-99cb963d`** (from master `b674ed34`; not merged, not
+   pushed). Aeon origin/master `99cb963d` (the pair merge). Provisioned `.aeon-sigil-ref-99cb963d`
+   (`provision-aeon-ref.sh`, golden control MATCHES for s4/s4.debug, `repin --check` `pins.rs unchanged`).
+   The pair is BYTE-NEUTRAL (BN on 99cb963d: all seven shapes equal entry #208), so a plain freeze is a
+   FIXPOINT that cannot move `aeon_rev`, and the freeze refuses an unattested tip. So: `ea6195a3` attests
+   #208 at sigil `b674ed34` vs clean `936439fa`, recorded RED as designed (534 suites, 5879/109/3; the
+   wave-3 refusals of the unpaired tree); `1a1a3016` freezes `pin-advance-99cb963d` (#209, chain 209) with
+   `--supersede-tip`, goldens/size tables/`pins.rs` unchanged, only `provenance.toml` moves. The four
+   `build.sh` shapes equal aeon's own CRCs (193507d9, ce326232, 2f9e2d4c, 64717bac). Docs: this line,
+   `OVERSEER-REFERENCE.md` standing-reference paragraph, QUEUE. Gates and the retirement list:
+   `.aeon-v2-harness-out/pin99/report.md`. Tree removal is left to the owner (no tree was removed).
 8. Record `merge-base --is-ancestor` of each tip in each master (invariant 12), and the A-task notes
    (`status`, `branch`, one Progress line with SHA) in empyrean.
 
