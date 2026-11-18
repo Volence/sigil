@@ -41,6 +41,23 @@ impl SourceId {
     pub fn is_expansion(self) -> bool {
         self.0 & EXPANSION_BIT != 0
     }
+
+    /// The index of an expansion id within the map that issued it (`k` for
+    /// `EXPANSION_BIT | k`), or `None` for a file id. The no-source id decodes to
+    /// an index no map issues ([`SourceMap::add_expansion`] stops below it).
+    ///
+    /// For a driver that joins two maps' expansions into one id space, as it
+    /// joins their files: it moves one map's indices past the other's.
+    pub fn expansion_index(self) -> Option<u32> {
+        self.is_expansion().then_some(self.0 & !EXPANSION_BIT)
+    }
+
+    /// The expansion id with index `k`: the inverse of
+    /// [`expansion_index`](Self::expansion_index). `k` at or past the expansion
+    /// limit would decode to the no-source id or wrap, so it is refused (`None`).
+    pub fn from_expansion_index(k: u32) -> Option<SourceId> {
+        (k < EXPANSION_LIMIT).then_some(SourceId(EXPANSION_BIT | k))
+    }
 }
 
 /// Half-open byte range `[start, end)` within a source file.
@@ -162,6 +179,12 @@ pub enum Frame {
     /// An `irpc` iteration: `IRPC:'c'(line)`, where `c` is the character
     /// AFTER this iteration's; the last iteration prints `IRPC:'(line)`.
     Irpc(Option<char>),
+    /// A `.emp` template splice: `name(line)`, where `name` is the template the
+    /// splice inlined (a comptime fn's path, `<expr>` for a `{expr}` splice, or
+    /// `ctx.acquire`/`ctx.release` for a `with` bracket's half). asl has no such
+    /// frame, so its spelling follows [`Frame::Macro`], the nearest thing asl
+    /// prints; `.emp` diagnostics render `path:line:col` and never ask for it.
+    Template(String),
 }
 
 impl Frame {
@@ -175,12 +198,13 @@ impl Frame {
             Frame::Irp(next) => write!(out, "IRP:{next}({line})"),
             Frame::Irpc(Some(c)) => write!(out, "IRPC:'{c}'({line})"),
             Frame::Irpc(None) => write!(out, "IRPC:'({line})"),
+            Frame::Template(name) => write!(out, "{name}({line})"),
         };
     }
 
     /// Whether a space separates this frame from the next one in.
     fn spaced(&self) -> bool {
-        matches!(self, Frame::Macro(_))
+        matches!(self, Frame::Macro(_) | Frame::Template(_))
     }
 }
 
@@ -210,6 +234,41 @@ impl SourceMap {
         let backing = self.backing(body);
         self.expansions.push(Expansion { backing, body_start, call, frame });
         SourceId(EXPANSION_BIT | index as u32)
+    }
+
+    /// How many expansions this map holds: ids `EXPANSION_BIT | 0 .. count`.
+    pub fn expansion_count(&self) -> usize {
+        self.expansions.len()
+    }
+
+    /// One expansion's record, read back: the file its body was written in,
+    /// the body's first byte there, the span that entered it, and its frame.
+    /// `None` for a file id, the no-source id, or an index this map never
+    /// issued.
+    pub fn expansion_entry(&self, id: SourceId) -> Option<(SourceId, u32, Span, &Frame)> {
+        self.expansion(id).map(|e| (e.backing, e.body_start, e.call, &e.frame))
+    }
+
+    /// Append every expansion of `other`, in order, so each keeps the id it had
+    /// there. That holds only when this map has no expansion of its own yet, so
+    /// one that does is refused (`false`, nothing appended) rather than
+    /// renumbered: a renumbered expansion would silently name a different run.
+    ///
+    /// For a map rebuilt after the fact (the `.emp` front end's `SourceIndex`,
+    /// rebuilt from the manifest once lowering is done) that has to answer for
+    /// the expansion ids another map handed out. `other`'s file ids must mean
+    /// the same files here; this copies records, it does not check texts.
+    pub fn adopt_expansions(&mut self, other: &SourceMap) -> bool {
+        if !self.expansions.is_empty() {
+            return false;
+        }
+        self.expansions.extend(other.expansions.iter().map(|e| Expansion {
+            backing: e.backing,
+            body_start: e.body_start,
+            call: e.call,
+            frame: e.frame.clone(),
+        }));
+        true
     }
 
     fn expansion(&self, id: SourceId) -> Option<&Expansion> {
@@ -709,6 +768,38 @@ mod tests {
         assert_eq!(map.outermost(at(&map, o, 11, 2)), Some((root, 4)));
         // A plain file span is its own outermost line.
         assert_eq!(map.outermost(at(&map, inc, 3, 2)), Some((inc, 3)));
+    }
+
+    /// G0a Task 7: a `.emp` template frame renders like a macro frame (asl has none of
+    /// its own), and a map rebuilt after the fact ADOPTS another map's expansions under
+    /// the ids that map issued, so it reads the spans carrying them.
+    #[test]
+    fn template_frames_render_and_adopted_expansions_keep_their_ids() {
+        let text = "comptime fn t() -> Code {\n    return asm { nop }\n}\nproc p () {\n    t()\n}\n";
+        // The evaluator's map: expansions only, no files.
+        let mut runs = SourceMap::new();
+        let body = line_start(text, 2);
+        let call = Span { source: SourceId(0), start: line_start(text, 5) + 4, end: line_start(text, 5) + 7 };
+        let id = runs.add_expansion(SourceId(0), body, call, Frame::Template("t".into()));
+        assert_eq!(runs.expansion_count(), 1);
+        assert_eq!(id.expansion_index(), Some(0));
+        assert_eq!(SourceId::from_expansion_index(0), Some(id));
+        assert_eq!(runs.expansion_entry(id), Some((SourceId(0), body, call, &Frame::Template("t".into()))));
+        assert_eq!(runs.expansion_entry(SourceId(0)), None, "a file id is no expansion");
+        // The rebuilt map: the file, then the adopted runs.
+        let mut map = SourceMap::new();
+        map.add_named("m.emp".into(), text.into());
+        assert!(map.adopt_expansions(&runs));
+        let span = Span { source: id, start: body + 17, end: body + 20 };
+        assert_eq!(map.label(span).as_deref(), Some("m.emp(5) t(1):18"));
+        assert_eq!(map.outermost(span), Some((SourceId(0), 5)));
+        assert_eq!(map.location(span), (2, 18), "located where written");
+        // A map that already numbered expansions refuses rather than renumbering.
+        assert!(!map.adopt_expansions(&runs));
+        assert_eq!(map.expansion_count(), 1);
+        // The no-source id is no issued index, and past the limit there is no id.
+        assert_eq!(SourceId(u32::MAX).expansion_index(), Some(EXPANSION_LIMIT));
+        assert_eq!(SourceId::from_expansion_index(EXPANSION_LIMIT), None);
     }
 
     /// The bound: a span this map never issued answers `None`, never a guess. An unknown

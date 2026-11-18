@@ -20,6 +20,7 @@ mod compress_common;
 mod const_arity;
 mod control;
 pub use const_arity::validate_const_arity;
+pub use asm::SPLICE_SITES;
 pub mod diag;
 mod emit;
 mod env;
@@ -272,6 +273,15 @@ pub struct Evaluator<'a> {
     /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
     /// proc name for a proc body and `k` for a raw `asm { }` (T5).
     asm_counter: u32,
+    /// The program's TEMPLATE EXPANSIONS (G0a spec 4.4): where every splice this
+    /// evaluator performs records one expansion per run, so the spliced items'
+    /// spans say which line spliced them (`Frame::Template`). `Some` only on the
+    /// lowering path, which threads ONE map through every proc of every module
+    /// so the ids are program-wide and the rebuilt `SourceIndex` can adopt them
+    /// ([`crate::resolve::BuiltProgram::expansions`]). `None` everywhere else (an
+    /// analysis, a probe, a test evaluator): a splice there leaves its items'
+    /// spans exactly as they were, because nothing could read the ids back.
+    pub(crate) expansions: Option<sigil_span::SourceMap>,
     /// The [`ItemAuthor`](crate::value::ItemAuthor) every instruction lowered
     /// RIGHT NOW is stamped with — `User` except while a compiler construct is
     /// emitting on the containing author's behalf (the `assert` desugar sets
@@ -616,6 +626,7 @@ impl<'a> Evaluator<'a> {
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
+            expansions: None,
             item_author: crate::value::ItemAuthor::User,
             sr_reported_contexts: std::collections::HashSet::new(),
             module_id: String::new(),
@@ -2019,6 +2030,7 @@ pub fn eval_proc_body_env(
 ) -> ProcBodyEnvResult {
     let (buf, diags, counter, dropped, unresolved, _asserts) = eval_proc_body_full(
         file, name, params, body, span, asm_counter_start, cpu, defines, ambient, contracts,
+        &mut None,
     );
     (buf, diags, counter, dropped, unresolved)
 }
@@ -2028,6 +2040,10 @@ pub fn eval_proc_body_env(
 /// condition is a link-time value defers to one, and every `extern()` evaluated
 /// in the body records one, so dropping them would leave that guard undecided
 /// and that name unchecked.
+///
+/// `expansions` is the program's template-expansion map, threaded like the
+/// counter: every splice the body performs records its expansions in it (see
+/// [`Evaluator::expansions`](Evaluator)). `None` splices without recording.
 #[allow(clippy::too_many_arguments)]
 pub fn eval_proc_body_lowering(
     file: &crate::ast::File,
@@ -2039,9 +2055,10 @@ pub fn eval_proc_body_lowering(
     cpu: sigil_ir::backend::Cpu,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, Vec<sigil_ir::LinkAssert>) {
     let (buf, diags, counter, _dropped, _unresolved, asserts) = eval_proc_body_full(
-        file, name, params, body, span, asm_counter_start, cpu, defines, &[], contracts,
+        file, name, params, body, span, asm_counter_start, cpu, defines, &[], contracts, expansions,
     );
     (buf, diags, counter, asserts)
 }
@@ -2061,6 +2078,7 @@ fn eval_proc_body_full(
     defines: &[(String, i128)],
     ambient: &[ast::Item],
     contracts: &crate::contract::InterfaceEnv,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) -> (
     Option<crate::value::CodeBuf>,
     Vec<Diagnostic>,
@@ -2071,6 +2089,9 @@ fn eval_proc_body_full(
 ) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file_and_ambient(file, ambient);
+        // The program's expansion map rides THIS evaluator for the body and goes
+        // back to the caller after it, so the next proc numbers on from here.
+        ev.expansions = expansions.take();
         ev.seed_defines(defines);
         ev.seed_interfaces(contracts);
         ev.asm_counter = asm_counter_start;
@@ -2117,6 +2138,7 @@ fn eval_proc_body_full(
             _ => None,
         };
         let asserts = ev.take_link_asserts();
+        *expansions = ev.expansions.take();
         (buf, ev.diags, ev.asm_counter, ev.dropped_instrs, ev.comptime_unresolved, asserts)
     })
 }

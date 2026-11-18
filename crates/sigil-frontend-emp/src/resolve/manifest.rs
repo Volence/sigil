@@ -124,6 +124,14 @@ impl Manifest {
 ///
 /// This is the single location authority for every diagnostic tier: errors and
 /// warnings both render through it, so the two look like one system.
+///
+/// **Template expansions.** A build that lowers through the whole-program driver
+/// rewrites every spliced item's span to an expansion id
+/// ([`BuiltProgram::expansions`](crate::resolve::BuiltProgram)). An index built
+/// [`with_expansions`](Self::with_expansions) reads those ids: [`locate`](Self::locate)
+/// and [`position`](Self::position) answer the line as WRITTEN (the template body),
+/// as for any diagnostic, and [`outermost`](Self::outermost) follows the chain out to
+/// the line that spliced it, which is what the build export's line table states.
 pub struct SourceIndex {
     map: sigil_span::SourceMap,
     paths: Vec<Option<PathBuf>>,
@@ -132,6 +140,13 @@ pub struct SourceIndex {
 impl SourceIndex {
     /// Read every source file `manifest` recorded and index it by its [`SourceId`].
     pub fn new(manifest: &Manifest) -> SourceIndex {
+        Self::with_expansions(manifest, &sigil_span::SourceMap::new())
+    }
+
+    /// [`new`](Self::new), also answering for every template expansion in
+    /// `expansions` (the map a whole-program build handed back, holding no files)
+    /// under the id that build gave it.
+    pub fn with_expansions(manifest: &Manifest, expansions: &sigil_span::SourceMap) -> SourceIndex {
         let max_id = manifest.sources.keys().map(|id| id.0).max().unwrap_or(0);
         let mut map = sigil_span::SourceMap::new();
         let mut paths = Vec::new();
@@ -145,7 +160,10 @@ impl SourceIndex {
                 .and_then(|p| sigil_span::read_set::read_to_string(p).ok().map(|t| (p.clone(), t)));
             match entry {
                 Some((path, text)) => {
-                    map.add(text);
+                    // Named, so `SourceMap::outermost` (which refuses an unnamed
+                    // file) can end a chain here; a gap stays unnamed and answers
+                    // `None` there, as it does from `locate`.
+                    map.add_named(path.display().to_string(), text);
                     paths.push(Some(path));
                 }
                 None => {
@@ -154,7 +172,18 @@ impl SourceIndex {
                 }
             }
         }
+        // A fresh map holds no expansion, so every adopted one keeps its id.
+        let adopted = map.adopt_expansions(expansions);
+        debug_assert!(adopted, "a fresh SourceMap refused to adopt expansions");
         SourceIndex { map, paths }
+    }
+
+    /// How many template expansions this index answers for: expansion ids
+    /// `0 .. expansion_count()` (in the expansion range). A chained build moves
+    /// the AS front end's expansions past them, as it moves its files past
+    /// [`len`](Self::len).
+    pub fn expansion_count(&self) -> usize {
+        self.map.expansion_count()
     }
 
     /// How many [`SourceId`]s this index covers: ids `0 .. len()`, every one of
@@ -181,14 +210,36 @@ impl SourceIndex {
     /// `(id, 1-based line)` of `span`'s start, or `None` when its source is not a
     /// file this index knows. The structured twin of [`locate`](Self::locate).
     pub fn position(&self, span: Span) -> Option<(u32, u32)> {
-        self.path(span.source.0)?;
-        Some((span.source.0, self.map.location(span).0))
+        let file = self.written_in(span)?;
+        Some((file, self.map.location(span).0))
+    }
+
+    /// `(id, 1-based line)` of the OUTERMOST line `span` came from: a span inside a
+    /// template expansion follows each splice's call out to the line a person wrote
+    /// in a file (the walk `SourceMap::outermost` makes for an AS macro); any other
+    /// span answers what [`position`](Self::position) does. `None` when the chain
+    /// does not end in a file this index knows.
+    pub fn outermost(&self, span: Span) -> Option<(u32, u32)> {
+        let (id, line) = self.map.outermost(span)?;
+        self.path(id.0)?;
+        Some((id.0, line))
+    }
+
+    /// The file id `span`'s text was written in, when it is a file this index
+    /// knows: the id itself for a file, the body's file for an expansion.
+    fn written_in(&self, span: Span) -> Option<u32> {
+        if span.source.is_expansion() && !self.map.contains(span.source) {
+            return None;
+        }
+        let id = self.map.backing(span.source).0;
+        self.path(id)?;
+        Some(id)
     }
 
     /// `path:line:col` of `span`'s start, or `None` when `span`'s source is not a
     /// file this index knows (a synthetic module, or an unattributed diagnostic).
     pub fn locate(&self, span: Span) -> Option<String> {
-        let path = self.paths.get(span.source.0 as usize)?.as_ref()?;
+        let path = self.path(self.written_in(span)?)?;
         let (line, col) = self.map.location(span);
         Some(format!("{}:{line}:{col}", path.display()))
     }

@@ -1562,13 +1562,16 @@ pub struct AsSide {
 /// `(level, message, span)` dedup key keeps its meaning) and spans that used to
 /// COLLIDE across the two front ends stop colliding.
 ///
-/// EXPANSION ids are not rebased and do not need to be: they live in their own high
-/// range by construction ([`SourceId::is_expansion`](sigil_span::SourceId::is_expansion)),
-/// only the AS front end makes them (`sigil-frontend-as`'s `eval` is the sole caller of
-/// `SourceMap::add_expansion` in this workspace), and the AS map reads them at their own
-/// numbers. The no-source id (`SourceId(u32::MAX)`) is in that range too and answers
-/// `None` from the AS map exactly as it did from the `.emp` index — an unattributed
-/// diagnostic renders as the bare message under either authority.
+/// EXPANSION ids are joined the same way, in their own high range
+/// ([`SourceId::is_expansion`](sigil_span::SourceId::is_expansion)). BOTH front ends make
+/// them: the AS front end for every macro, `rept` and `irp` run, and the `.emp` front end
+/// for every template splice (G0a spec 4.4, `Frame::Template`), and both count their
+/// expansion indices from 0, so the two ranges overlap exactly as the file ranges do. The
+/// `.emp` index keeps expansion indices `0 .. emp_expansions`; every AS expansion index
+/// `k` becomes `k + emp_expansions`, by the same rebase and at the same seam as its files.
+/// The no-source id (`SourceId(u32::MAX)`) decodes to an index neither map issues, is
+/// never moved, and answers `None` under either authority: an unattributed diagnostic
+/// renders as the bare message.
 ///
 /// # What this does NOT do
 ///
@@ -1585,6 +1588,10 @@ pub struct ChainSources {
     as_map: sigil_span::SourceMap,
     /// Where the `.emp` ids stop and the rebased AS ids start.
     as_base: u32,
+    /// Where the `.emp` EXPANSION indices stop and the rebased AS ones start.
+    emp_expansions: u32,
+    /// How many expansions the AS map issued: the AS indices that are moved.
+    as_expansions: u32,
     /// Every file of the joined id space, by id (`.emp` ids, then rebased AS ids):
     /// what [`SpanLocator::file`] hands out.
     files: Vec<sigil_link::export::locate::FileRef>,
@@ -1605,6 +1612,33 @@ fn check_joined_space(emp_len: usize, as_len: usize) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Whether `emp_len` `.emp` expansions and `as_len` AS expansions fit in one
+/// expansion range below the no-source id: the expansion half of the refusal
+/// [`ChainSources::join`] makes ([`check_joined_space`] is the file half).
+fn check_joined_expansions(emp_len: usize, as_len: usize) -> Result<(), String> {
+    let top = emp_len.saturating_add(as_len);
+    if top > u32::MAX as usize || (top > 0 && sigil_span::SourceId::from_expansion_index(top as u32 - 1).is_none()) {
+        return Err(format!(
+            "[chain.source-id-space] the chained build's joined expansion range \
+             ({emp_len} `.emp` template expansions + {as_len} AS expansions) reaches the \
+             no-source id, so a rebased AS expansion could not be told from a line with no \
+             source and every location past the boundary would be lost"
+        ));
+    }
+    Ok(())
+}
+
+/// Which authority reads a span of the joined id space, and the span as that authority
+/// numbers it.
+enum Side {
+    /// The `.emp` index, at its own (unmoved) numbering.
+    Emp(sigil_span::Span),
+    /// The AS map, brought back down to its own numbering.
+    As(sigil_span::Span),
+    /// Neither: the no-source id, or an expansion index neither front end issued.
+    Neither,
 }
 
 impl ChainSources {
@@ -1637,12 +1671,21 @@ impl ChainSources {
     ) -> Result<(ChainSources, Vec<Section>), String> {
         let as_base = emp.len();
         check_joined_space(as_base, as_map.len())?;
+        let (emp_expansions, as_expansions) = (emp.expansion_count(), as_map.expansion_count());
+        check_joined_expansions(emp_expansions, as_expansions)?;
         let files = (0..as_base)
             .map(|k| emp.path(k as u32).map(|p| p.display().to_string()).unwrap_or_default())
             .chain((0..as_map.len()).map(|k| as_map.name(sigil_span::SourceId(k as u32)).to_string()))
             .map(|path| sigil_link::export::locate::FileRef { path })
             .collect();
-        let chain = ChainSources { emp, as_map, as_base: as_base as u32, files };
+        let chain = ChainSources {
+            emp,
+            as_map,
+            as_base: as_base as u32,
+            emp_expansions: emp_expansions as u32,
+            as_expansions: as_expansions as u32,
+            files,
+        };
         for sec in &mut as_sections {
             chain.rebase_section(sec);
         }
@@ -1650,13 +1693,32 @@ impl ChainSources {
         Ok((chain, as_sections))
     }
 
-    /// `span` with its AS file id moved into the joined space. An expansion id
-    /// (the no-source id included) is returned unchanged — see the type docs.
+    /// `span` with its AS id moved into the joined space: a file id past the `.emp`
+    /// files, an expansion id past the `.emp` expansions. The no-source id (and any
+    /// expansion index the AS map never issued) is returned unchanged — see the type
+    /// docs.
     fn rebase(&self, span: sigil_span::Span) -> sigil_span::Span {
-        if span.source.is_expansion() {
-            return span;
+        let source = match span.source.expansion_index() {
+            Some(k) if k < self.as_expansions => sigil_span::SourceId::from_expansion_index(k + self.emp_expansions)
+                .expect("check_joined_expansions keeps every rebased index below the no-source id"),
+            Some(_) => return span,
+            None => sigil_span::SourceId(span.source.0 + self.as_base),
+        };
+        sigil_span::Span { source, ..span }
+    }
+
+    /// Which authority reads `span`, a span of the joined id space.
+    fn side(&self, span: sigil_span::Span) -> Side {
+        let down = |source| Side::As(sigil_span::Span { source, ..span });
+        match span.source.expansion_index() {
+            Some(k) if k < self.emp_expansions => Side::Emp(span),
+            Some(k) if k - self.emp_expansions < self.as_expansions => {
+                down(sigil_span::SourceId::from_expansion_index(k - self.emp_expansions).expect("an issued AS index"))
+            }
+            Some(_) => Side::Neither,
+            None if span.source.0 < self.as_base => Side::Emp(span),
+            None => down(sigil_span::SourceId(span.source.0 - self.as_base)),
         }
-        sigil_span::Span { source: sigil_span::SourceId(span.source.0 + self.as_base), ..span }
     }
 
     /// Rebase every span an AS-SIDE section carries, in place.
@@ -1699,40 +1761,37 @@ impl ChainSources {
 
     /// `span`'s location through the authority that can read it, or `None` when
     /// neither can.
+    ///
+    /// A `.emp` template expansion locates where its line was WRITTEN (the template
+    /// body), exactly as a diagnostic there always has; the line that spliced it is
+    /// the export's question ([`SpanLocator::outermost`]), not the diagnostics'.
     pub fn locate(&self, span: sigil_span::Span) -> Option<String> {
-        if span.source.is_expansion() {
-            // AS macro/loop expansions (and the no-source id, which answers None).
-            return self.as_map.label(span);
+        match self.side(span) {
+            Side::Emp(span) => self.emp.locate(span),
+            Side::As(span) => self.as_map.label(span),
+            Side::Neither => None,
         }
-        if (span.source.0 as usize) < self.as_base as usize {
-            return self.emp.locate(span);
-        }
-        self.as_map.label(sigil_span::Span {
-            source: sigil_span::SourceId(span.source.0 - self.as_base),
-            ..span
-        })
     }
 }
 
-/// The export's locator: the outermost line, in the joined id space. An AS expansion
-/// follows `Expansion.call` out to the line that invoked it (the walk
-/// [`SourceMap::label`](sigil_span::SourceMap::label) makes); a rebased AS file id is
+/// The export's locator: the outermost line, in the joined id space. An expansion of
+/// either front end (an AS macro or loop run, a `.emp` template splice) follows
+/// `Expansion.call` out to the line that invoked it (the walk
+/// [`SourceMap::label`](sigil_span::SourceMap::label) makes); a rebased AS id is
 /// brought back down before the AS map is asked and the answer moved up again.
 impl SpanLocator for ChainSources {
     fn outermost(&self, span: sigil_span::Span) -> Option<SourcePos> {
-        if span.source.is_expansion() {
-            let (id, line) = self.as_map.outermost(span)?;
-            return Some(SourcePos { file: id.0 + self.as_base, line });
+        match self.side(span) {
+            Side::Emp(span) => {
+                let (file, line) = self.emp.outermost(span)?;
+                Some(SourcePos { file, line })
+            }
+            Side::As(span) => {
+                let (id, line) = self.as_map.outermost(span)?;
+                Some(SourcePos { file: id.0 + self.as_base, line })
+            }
+            Side::Neither => None,
         }
-        if span.source.0 < self.as_base {
-            let (file, line) = self.emp.position(span)?;
-            return Some(SourcePos { file, line });
-        }
-        let (id, line) = self.as_map.outermost(sigil_span::Span {
-            source: sigil_span::SourceId(span.source.0 - self.as_base),
-            ..span
-        })?;
-        Some(SourcePos { file: id.0 + self.as_base, line })
     }
 
     fn file(&self, id: u32) -> &sigil_link::export::locate::FileRef {
@@ -1972,7 +2031,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // root-relative path would then join onto the module dir and resolve one level deep.
     let aeon_root = aeon.to_path_buf();
     let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
-    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols } =
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, expansions } =
         resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, &embed_base_for);
     // The helper imports `normalize_helper_imports` removed, checked above against
     // the pre-rewrite tree, reported for the modules this build contains.
@@ -1984,7 +2043,7 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         // (a struct-literal type mismatch reports both the offending field and the
         // item that failed to emit), and reporting only the first hides whichever
         // one names the actual mistake.
-        let index = resolve::manifest::SourceIndex::new(&manifest);
+        let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
         return Err(format!(
             "build_program: {} error(s);\n{}",
             berr.len(),
@@ -2024,7 +2083,10 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // for errors above, and its warnings survive only through here. The index is
     // built here, not lazily, because the LINK tier needs it after the manifest is
     // gone (see `EmpProgram::sources`).
-    let index = resolve::manifest::SourceIndex::new(&manifest);
+    // With the program's template expansions: the sections' spliced spans carry
+    // their ids, and this index is the `.emp` half of the chain's location
+    // authority (`ChainSources`), the export's line table included.
+    let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
     let warnings =
         collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
 
@@ -7105,7 +7167,7 @@ mod mixed_front_end_location_tests {
     //! index whose id 1 is `second.emp`, and an AS map whose id 1 is `sound.asm`.
     //! A span with id 1 therefore renders a DIFFERENT PATH under each authority,
     //! so a gate here reads a path and never an id.
-    use super::{render_declared_chain, ChainSources, Fragment, Section};
+    use super::{check_joined_expansions, render_declared_chain, ChainSources, Fragment, Section};
     use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
     use sigil_span::{Diagnostic, Level, SourceId, SourceMap, Span};
 
@@ -7423,6 +7485,81 @@ mod mixed_front_end_location_tests {
             "the `.emp` half must reach the `.emp` index, got {:?}",
             chain.locate(span_of(1))
         );
+    }
+
+    /// G0a Task 7: BOTH front ends make expansions now, and both number them from 0,
+    /// so an `.emp` template expansion and an AS macro expansion start out with THE
+    /// SAME id. The seam moves the AS one past the `.emp` ones (as it moves AS files
+    /// past the `.emp` files), and each then reaches its own authority: the `.emp`
+    /// one locates where its line was written (diagnostics) and its outermost line
+    /// is the splice; the AS one renders asl's trail and its outermost line is the
+    /// macro call.
+    #[test]
+    fn emp_and_as_expansions_share_one_joined_range() {
+        use sigil_link::export::locate::{SourcePos, SpanLocator};
+        let dir = tempfile::tempdir().unwrap();
+        let at = third_line(EMP_TEXT);
+        // `.emp`: a template body on first.emp's line 3, spliced at second.emp's line 3.
+        let mut emp_runs = SourceMap::new();
+        let emp_run = emp_runs.add_expansion(
+            SourceId(0),
+            at,
+            Span { source: SourceId(1), start: at, end: at },
+            sigil_span::Frame::Template("t".into()),
+        );
+        let mut sources = std::collections::HashMap::new();
+        for (id, name) in [(0u32, "first.emp"), (1, "second.emp")] {
+            let p = dir.path().join(name);
+            std::fs::write(&p, EMP_TEXT).unwrap();
+            sources.insert(SourceId(id), p);
+        }
+        let manifest = Manifest { modules: Vec::new(), by_id: std::collections::HashMap::new(), sources };
+        let index = SourceIndex::with_expansions(&manifest, &emp_runs);
+        // AS: a macro body in sound.asm (id 1) called from its line 1.
+        let mut asm = as_map();
+        let as_run = asm.add_expansion(
+            SourceId(1),
+            third_line(ASM_TEXT),
+            Span { source: SourceId(1), start: 0, end: 0 },
+            sigil_span::Frame::Macro("dbgout".into()),
+        );
+        assert_eq!(emp_run, as_run, "both front ends number expansions from 0: the collision");
+        let emp_span = Span { source: emp_run, start: at, end: at };
+        let raw_as = Span { source: as_run, start: third_line(ASM_TEXT), end: third_line(ASM_TEXT) };
+        let (chain, all) = ChainSources::join(
+            index,
+            asm,
+            vec![one_frag_section("as_side", raw_as)],
+            vec![one_frag_section("emp_side", emp_span)],
+        )
+        .unwrap();
+        let span_of = |i: usize| match &all[i].fragments[0] {
+            Fragment::Data(d) => d.span,
+            other => panic!("fixture fragment changed shape: {other:?}"),
+        };
+        let as_span = span_of(0);
+        assert!(as_span.source.is_expansion() && as_span.source != emp_run, "the AS expansion moved: {as_span:?}");
+        assert_eq!(span_of(1), emp_span, "the `.emp` expansion did not move");
+        // `.emp`: written in first.emp, spliced at second.emp line 3 (joined file 1).
+        assert!(chain.locate(emp_span).is_some_and(|l| l.contains("first.emp:3:1")), "{:?}", chain.locate(emp_span));
+        assert_eq!(chain.outermost(emp_span), Some(SourcePos { file: 1, line: 3 }));
+        // AS: asl's trail from sound.asm's line 1; sound.asm is joined file 2 + 1.
+        let got = chain.locate(as_span).unwrap_or_default();
+        assert!(got.contains("sound.asm(1)") && got.contains("dbgout("), "{got}");
+        assert_eq!(chain.outermost(as_span), Some(SourcePos { file: 3, line: 1 }));
+        // The no-source id still reaches neither.
+        let none = Span { source: SourceId(u32::MAX), start: 0, end: 0 };
+        assert_eq!((chain.locate(none), chain.outermost(none)), (None, None));
+    }
+
+    /// The expansion half of the joined-space refusal, at its boundary: one index
+    /// past the last the no-source id leaves free is refused, the last one is not.
+    #[test]
+    fn the_joined_expansion_range_is_refused_past_the_no_source_id() {
+        let limit = (u32::MAX >> 1) as usize; // expansion indices `0 .. limit`
+        assert!(check_joined_expansions(limit - 1, 1).is_ok());
+        assert!(check_joined_expansions(limit, 1).is_err());
+        assert!(check_joined_expansions(0, 0).is_ok());
     }
 
     /// THE SEAM, and THE FRAGMENT FAMILY in one gate. Handing AS-side sections to

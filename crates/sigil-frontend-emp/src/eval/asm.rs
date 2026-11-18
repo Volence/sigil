@@ -28,7 +28,7 @@ use crate::value::{
     CodeBuf, CodeItem, CodeOperand, ContextPhase, Reg, Value, Width, Z80Cond, Z80Index, Z80Pair,
     Z80Reg8, Z80RegClass,
 };
-use sigil_span::{Level, Span};
+use sigil_span::{Frame, Level, SourceId, SourceMap, Span};
 
 /// Collect every source-label definition in `body`, RECURSIVELY through
 /// comptime-`if` branches (tranche 5, H1) — the label scope is pure syntax,
@@ -102,7 +102,151 @@ fn is_slot_item(item: &CodeItem) -> bool {
     matches!(item, CodeItem::Instr { author: crate::value::ItemAuthor::ContextSlot { .. }, .. })
 }
 
+/// EVERY place this file hands spliced Code to a stream, by the tag its line carries
+/// (`// splice-site: NAME`), and how the bytes it splices are attributed (G0a spec
+/// 4.4). The census test (`sigil-cli/tests/build_export_templates.rs`,
+/// `splice_site_census_is_complete`) reads this file: every `reauthor_user_items(` and
+/// `.splice_items(` boundary and every `items.extend(`/`items.append(` must carry a tag
+/// listed here,
+/// and every entry must be tagged somewhere, so a new splice site cannot ship
+/// without a decision about its attribution.
+///
+/// "Attributed" means [`Evaluator::splice_items`]: the spliced items' spans move to a
+/// `Frame::Template` expansion whose call is the splice site, so their bytes locate
+/// to the line that spliced them (the export's line table) while every diagnostic
+/// still names the line as written (`SourceMap::physical`, applied by the driver).
+pub const SPLICE_SITES: &[(&str, &str)] = &[
+    (
+        "call",
+        "attributed: `AsmStmt::Call`, a statement-position `f(..)`; one expansion per run, \
+         `Frame::Template(<callee path>)`, entered at the call expression",
+    ),
+    (
+        "expr",
+        "attributed: `AsmStmt::Splice`, `{expr}`; `Frame::Template(<callee path> or `<expr>`)`, \
+         entered at the spliced expression",
+    ),
+    (
+        "bare-call",
+        "attributed: a bare statement call `f args` (`try_bare_statement_call`); \
+         `Frame::Template(f)`, entered at the instruction line",
+    ),
+    ("bare-call-append", "carried: appends the items `bare-call` already attributed"),
+    (
+        "context-half",
+        "attributed: a `with` bracket's `acquire`/`release` (`splice_context_code`); \
+         `Frame::Template(<ctx>.acquire|<ctx>.release)`, the acquire entered at the bracket's \
+         header and the release at its closing `}`",
+    ),
+    (
+        "context-slot-arg",
+        "not a splice: marks a bracket ARGUMENT's code as the consumer's slot; its bytes are \
+         attributed where the context's half splices it (`expr`/`call` inside the half, then \
+         `context-half`)",
+    ),
+    ("helper", "the attributing helper itself (`Evaluator::splice_items`)"),
+];
+
+/// The span a [`CodeItem`] carries, whatever its kind: the one the splice rewrites.
+fn item_span_mut(item: &mut CodeItem) -> &mut Span {
+    match item {
+        CodeItem::Label { span, .. }
+        | CodeItem::Instr { span, .. }
+        | CodeItem::Inline(_, span)
+        | CodeItem::ContextMark { span, .. } => span,
+    }
+}
+
+/// Record one splice run of `items` at `call` in `map`, and move every item's span to
+/// it (G0a spec 4.4, the AS front end's expansion model).
+///
+/// An item written in a FILE (a template body, a `const`'s `asm {}`, a Code value built
+/// anywhere) moves to one fresh `Frame::Template(template)` expansion per file, entered
+/// at `call`. An item already inside an expansion (a template that itself spliced one)
+/// gets a COPY of that expansion whose call is moved the same way, recursively, so the
+/// chain reads outermost-first exactly as an AS macro called from a macro does: the
+/// inner run entered at its splice line, that line inside the outer run, the outer run
+/// entered at `call`. `SourceMap::outermost` then lands on `call`'s line.
+///
+/// A file expansion's `body_start` is the earliest byte this splice carries from that
+/// file (an item's, or a call its chain passes through): the body's first spliced line,
+/// which is what a frame counts from. An item at the no-source id, or at an expansion id
+/// this map never issued, is left as it is: there is nothing to chain it to.
+pub(crate) fn attribute_splice(map: &mut SourceMap, items: &mut [CodeItem], call: Span, template: &str) {
+    // The earliest spliced byte of each file, over items and the calls their chains
+    // pass through. Linear vectors: a splice carries a handful of sources.
+    let mut first: Vec<(SourceId, u32)> = Vec::new();
+    for item in items.iter_mut() {
+        let mut at = *item_span_mut(item);
+        while at.source.is_expansion() {
+            match map.expansion_entry(at.source) {
+                Some((_, _, c, _)) => at = c,
+                None => break,
+            }
+        }
+        if at.source.is_expansion() {
+            continue;
+        }
+        match first.iter_mut().find(|(f, _)| *f == at.source) {
+            Some((_, s)) => *s = (*s).min(at.start),
+            None => first.push((at.source, at.start)),
+        }
+    }
+    let mut moved: Vec<(SourceId, SourceId)> = Vec::new();
+    for item in items.iter_mut() {
+        let span = item_span_mut(item);
+        if let Some(to) = rehome(map, span.source, call, template, &first, &mut moved) {
+            span.source = to;
+        }
+    }
+}
+
+/// The id `source` moves to in this splice run (see [`attribute_splice`]), memoised in
+/// `moved` so every item of one source shares one expansion.
+fn rehome(
+    map: &mut SourceMap,
+    source: SourceId,
+    call: Span,
+    template: &str,
+    first: &[(SourceId, u32)],
+    moved: &mut Vec<(SourceId, SourceId)>,
+) -> Option<SourceId> {
+    if let Some(&(_, to)) = moved.iter().find(|(from, _)| *from == source) {
+        return Some(to);
+    }
+    let to = if source.is_expansion() {
+        let (backing, body_start, inner_call, frame) = map.expansion_entry(source)?;
+        let frame = frame.clone();
+        let call_source = rehome(map, inner_call.source, call, template, first, moved)?;
+        map.add_expansion(backing, body_start, Span { source: call_source, ..inner_call }, frame)
+    } else {
+        let start = first.iter().find(|(f, _)| *f == source).map_or(call.start, |(_, s)| *s);
+        map.add_expansion(source, start, call, Frame::Template(template.to_string()))
+    };
+    moved.push((source, to));
+    Some(to)
+}
+
 impl Evaluator<'_> {
+    /// THE SPLICE BOUNDARY: claim the spliced items for `author`
+    /// ([`crate::value::reauthor_user_items`]) and, on the lowering path (the
+    /// evaluator carries the program's expansion map), record the run as a
+    /// `Frame::Template(template)` expansion entered at `call` and move the items'
+    /// spans to it ([`attribute_splice`]). Every attributed entry of
+    /// [`SPLICE_SITES`] calls this and nothing else.
+    fn splice_items(
+        &mut self,
+        items: &mut [CodeItem],
+        author: &crate::value::ItemAuthor,
+        call: Span,
+        template: &str,
+    ) {
+        crate::value::reauthor_user_items(items, author); // splice-site: helper
+        if let Some(map) = self.expansions.as_mut() {
+            attribute_splice(map, items, call, template);
+        }
+    }
+
     /// Evaluate a raw `asm { }` body to a [`Value::Code`]. Its owner scope is the
     /// instantiation itself (a fresh `k`), so an exported label is stable per
     /// §5.3 but not caller-nameable — see [`eval_asm_owned`](Self::eval_asm_owned)
@@ -247,7 +391,7 @@ impl Evaluator<'_> {
                 // nothing falls through to the unchanged "not a recognized
                 // mnemonic" error, and a non-fn value gets a specific error.
                 if let Some(spliced) = self.try_bare_statement_call(instr, env) {
-                    buf.items.extend(spliced.items);
+                    buf.items.extend(spliced.items); // splice-site: bare-call-append
                     return;
                 }
                 if let Some(item) = self.lower_instr_to_item(instr, scope, env) {
@@ -318,13 +462,14 @@ impl Evaluator<'_> {
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
                     Value::Code(mut inner) => {
-                        crate::value::reauthor_user_items(
+                        let template = splice_template_name(expr);
+                        self.splice_items( // splice-site: call
                             &mut inner.items,
-                            &crate::value::ItemAuthor::Splice {
-                                template: splice_template_name(expr),
-                            },
+                            &crate::value::ItemAuthor::Splice { template: template.clone() },
+                            expr_span(expr),
+                            &template,
                         );
-                        buf.items.extend(inner.items)
+                        buf.items.extend(inner.items) // splice-site: call
                     }
                     // A body-position guard (`ensure(...)`) yields Unit and emits
                     // no code — the rung-4 `ensure(cycles(...) == N)` site.
@@ -548,13 +693,14 @@ impl Evaluator<'_> {
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
                     Value::Code(mut inner) => {
-                        crate::value::reauthor_user_items(
+                        let template = splice_template_name(expr);
+                        self.splice_items( // splice-site: expr
                             &mut inner.items,
-                            &crate::value::ItemAuthor::Splice {
-                                template: splice_template_name(expr),
-                            },
+                            &crate::value::ItemAuthor::Splice { template: template.clone() },
+                            expr_span(expr),
+                            &template,
                         );
-                        buf.items.extend(inner.items)
+                        buf.items.extend(inner.items) // splice-site: expr
                     }
                     Value::Poison => {}
                     Value::Data(_) => self.error(
@@ -597,8 +743,8 @@ impl Evaluator<'_> {
             AsmStmt::Invoke { iface, member, span } => {
                 self.lower_invoke(iface, member, *span, scope, buf, env);
             }
-            AsmStmt::With { ctx, cond, body, args, span } => {
-                self.lower_with(ctx, cond.as_ref(), body, args, *span, scope, buf, env);
+            AsmStmt::With { ctx, cond, body, args, span, close } => {
+                self.lower_with(ctx, cond.as_ref(), body, args, *span, *close, scope, buf, env);
             }
         }
     }
@@ -624,6 +770,7 @@ impl Evaluator<'_> {
         body: &[AsmStmt],
         args: &[ast::Arg],
         span: Span,
+        close: Span,
         scope: &LabelScope,
         buf: &mut CodeBuf,
         env: &mut Env,
@@ -712,8 +859,18 @@ impl Evaluator<'_> {
             released_by_rte: rte,
         });
         let acq_start = buf.items.len();
-        let acq_ok =
-            self.splice_context_half(&acquire, ctx, ContextPhase::Acquire, span, buf, env, &slots);
+        // The acquire is spliced at the header, the release at the closing `}`:
+        // each half's bytes locate to the line that splices it (G0a spec 4.4).
+        let acq_ok = self.splice_context_half(
+            &acquire,
+            ctx,
+            ContextPhase::Acquire,
+            span,
+            span,
+            buf,
+            env,
+            &slots,
+        );
         let acq_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
@@ -735,6 +892,7 @@ impl Evaluator<'_> {
                 ctx,
                 ContextPhase::Release,
                 span,
+                close,
                 buf,
                 env,
                 &slots,
@@ -916,7 +1074,7 @@ impl Evaluator<'_> {
                 Value::Code(mut code) => {
                     let carries_code =
                         code.items.iter().any(|i| matches!(i, CodeItem::Instr { .. }));
-                    crate::value::reauthor_user_items(
+                    crate::value::reauthor_user_items( // splice-site: context-slot-arg
                         &mut code.items,
                         &crate::value::ItemAuthor::ContextSlot {
                             context: ctx.to_string(),
@@ -977,18 +1135,19 @@ impl Evaluator<'_> {
         ctx: &str,
         phase: ContextPhase,
         span: Span,
+        site: Span,
         buf: &mut CodeBuf,
         env: &mut Env,
         slots: &[SlotArg],
     ) -> bool {
         if slots.is_empty() {
-            return self.splice_context_code(expr, ctx, phase, span, buf, env);
+            return self.splice_context_code(expr, ctx, phase, span, site, buf, env);
         }
         env.push_scope();
         for slot in slots {
             env.define(slot.param.clone(), slot.value.clone(), /*mutable=*/ false);
         }
-        let ok = self.splice_context_code(expr, ctx, phase, span, buf, env);
+        let ok = self.splice_context_code(expr, ctx, phase, span, site, buf, env);
         env.pop_scope();
         ok
     }
@@ -1019,12 +1178,18 @@ impl Evaluator<'_> {
     /// splice as Code (Poison / wrong type): the caller's definition-site
     /// round-trip check reads truncated ranges in that case and would stack a
     /// spurious "does not round-trip" on the already-reported error.
+    ///
+    /// `span` (the bracket header) anchors the `[prov.comptime]` note; `site` is the
+    /// line the half is spliced at (the header for the acquire, the closing `}` for
+    /// the release), which its bytes locate to.
+    #[allow(clippy::too_many_arguments)]
     fn splice_context_code(
         &mut self,
         expr: &ast::Expr,
         ctx: &str,
         phase: ContextPhase,
         span: Span,
+        site: Span,
         buf: &mut CodeBuf,
         env: &mut Env,
     ) -> bool {
@@ -1037,11 +1202,13 @@ impl Evaluator<'_> {
         self.note_if_comptime_error(watermark, span);
         match v {
             Value::Code(mut inner) => {
-                crate::value::reauthor_user_items(
+                self.splice_items( // splice-site: context-half
                     &mut inner.items,
                     &crate::value::ItemAuthor::Context { name: ctx.to_string(), phase },
+                    site,
+                    &format!("{ctx}.{half}"),
                 );
-                buf.items.extend(inner.items);
+                buf.items.extend(inner.items); // splice-site: context-half
                 return true;
             }
             Value::Poison => {}
@@ -1396,9 +1563,11 @@ impl Evaluator<'_> {
                     // The splice boundary claims the template's own lines
                     // ([`crate::value::ItemAuthor::Splice`]); a finer
                     // compiler-authored fact inside the template survives.
-                    crate::value::reauthor_user_items(
+                    self.splice_items( // splice-site: bare-call
                         &mut inner.items,
                         &crate::value::ItemAuthor::Splice { template: name.clone() },
+                        instr.span,
+                        name,
                     );
                     return Some(inner);
                 }

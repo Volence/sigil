@@ -101,7 +101,9 @@ pub(super) struct ProcCtx<'a> {
 /// otherwise reset it and collide labels). `as_compat` (module `@as_compat`,
 /// Plan 6 D-P6.3) silences the heuristic modernization WARNINGs — undeclared
 /// fallthrough and the clobber lint — while leaving the hard `falls_into`
-/// adjacency ERROR untouched.
+/// adjacency ERROR untouched. `expansions` is the program's template-expansion
+/// map, threaded beside the counter for the same reason (program-wide ids).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_proc(
     file: &ast::File,
     proc: &ast::ProcDecl,
@@ -110,6 +112,7 @@ pub(super) fn lower_proc(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     let start = builder.fragment_position();
@@ -135,6 +138,7 @@ pub(super) fn lower_proc(
         ctx.cpu,
         ctx.defines,
         ctx.contracts,
+        expansions,
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);

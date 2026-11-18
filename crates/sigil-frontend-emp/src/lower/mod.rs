@@ -139,7 +139,7 @@ pub fn lower_module_with_region_ends(
     opts: &LowerOptions,
     external_region_ends: &std::collections::HashMap<String, u32>,
 ) -> (Module, Vec<Diagnostic>) {
-    lower_module_inner(file, opts, external_region_ends, &crate::contract::InterfaceEnv::empty())
+    lower_module_inner(file, opts, external_region_ends, &crate::contract::InterfaceEnv::empty(), &mut None)
 }
 
 /// [`lower_module`] with the resolved game-contract environment (L1). The engine
@@ -152,7 +152,7 @@ pub fn lower_module_with_contracts(
     opts: &LowerOptions,
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Module, Vec<Diagnostic>) {
-    lower_module_inner(file, opts, &std::collections::HashMap::new(), contracts)
+    lower_module_inner(file, opts, &std::collections::HashMap::new(), contracts, &mut None)
 }
 
 /// [`lower_module_with_region_ends`] AND the resolved game-contract environment —
@@ -166,7 +166,31 @@ pub fn lower_module_with_region_ends_and_contracts(
     external_region_ends: &std::collections::HashMap<String, u32>,
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Module, Vec<Diagnostic>) {
-    lower_module_inner(file, opts, external_region_ends, contracts)
+    lower_module_inner(file, opts, external_region_ends, contracts, &mut None)
+}
+
+/// [`lower_module_with_region_ends_and_contracts`] recording every template
+/// splice's expansion in `expansions` (G0a spec 4.4): a spliced item's span is
+/// rewritten to an expansion id whose call is the splice site, so its bytes
+/// locate to the line that spliced them. The whole-program build passes ONE map
+/// through every module so the ids are program-wide, then hands it to the
+/// rebuilt `SourceIndex` ([`crate::resolve::BuiltProgram::expansions`]); every
+/// other entry passes none and leaves spans as written. Diagnostics this returns
+/// may carry expansion spans: the caller that owns the map reads them back to the
+/// written line (`SourceMap::physical`) before reporting them.
+pub fn lower_module_recording_expansions(
+    file: &ast::File,
+    opts: &LowerOptions,
+    external_region_ends: &std::collections::HashMap<String, u32>,
+    contracts: &crate::contract::InterfaceEnv,
+    expansions: &mut sigil_span::SourceMap,
+) -> (Module, Vec<Diagnostic>) {
+    let mut slot = Some(std::mem::take(expansions));
+    let out = lower_module_inner(file, opts, external_region_ends, contracts, &mut slot);
+    // Every proc evaluation hands the map back; losing it would leave ids no map can
+    // read, so a missing one is a defect here, never an empty map.
+    *expansions = slot.expect("the expansion map is handed back by every proc evaluation");
+    out
 }
 
 fn lower_module_inner(
@@ -174,6 +198,7 @@ fn lower_module_inner(
     opts: &LowerOptions,
     external_region_ends: &std::collections::HashMap<String, u32>,
     contracts: &crate::contract::InterfaceEnv,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) -> (Module, Vec<Diagnostic>) {
     // Native-driver default comptime defines. The whole-program build (native.rs)
     // always injects these explicitly; an ISOLATED single-file lower (the region-
@@ -391,6 +416,7 @@ fn lower_module_inner(
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    expansions,
                 );
             }
             ast::Item::Offsets(decl) => {
@@ -448,6 +474,7 @@ fn lower_module_inner(
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    expansions,
                 );
             }
             ast::Item::Ensure(decl) => {
@@ -531,6 +558,7 @@ fn lower_module_inner(
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    expansions,
                     &mut overlay_pass_diags,
                     contracts,
                     &noreturn,
@@ -576,6 +604,7 @@ fn lower_module_inner(
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    expansions,
                 );
             }
             // `Item::Equ` (R-T0.3): evaluate the equate's value and attach an
@@ -708,6 +737,7 @@ fn lower_section_items(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    expansions: &mut Option<sigil_span::SourceMap>,
     overlay_pass_diags: &mut Vec<Diagnostic>,
     contracts: &crate::contract::InterfaceEnv,
     noreturn: &std::collections::BTreeSet<String>,
@@ -729,7 +759,7 @@ fn lower_section_items(
                 );
             }
             ast::Item::Dispatch(decl) => {
-                lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter);
+                lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter, expansions);
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
@@ -741,6 +771,7 @@ fn lower_section_items(
                     builder,
                     diags,
                     asm_counter,
+                    expansions,
                 );
             }
             ast::Item::Ensure(decl) => {
@@ -774,7 +805,7 @@ fn lower_section_items(
             // #9b Task 2: in-section placement — same desugar as the top-level
             // arm (lower/script.rs), mirroring the adjacent Dispatch arm.
             ast::Item::Script(decl) => {
-                script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter);
+                script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter, expansions);
             }
             // `Item::Equ` (R-T0.3): same as the top-level arm — evaluate the
             // value and attach an `EquSym` to THIS section (its carrier). The
@@ -1615,6 +1646,7 @@ fn lower_table_item(
 ///
 /// 9a: after the table, each `Member: { … }` inline body lowers as an anonymous
 /// proc at `__dispatch$<module>$<table>$<member>`, in member order (R9a.1-R9a.4).
+#[allow(clippy::too_many_arguments)]
 fn lower_dispatch_item(
     file: &ast::File,
     decl: &ast::DispatchDecl,
@@ -1623,6 +1655,7 @@ fn lower_dispatch_item(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) {
     // D6.B1: 68k sections only in v1, mirroring `[offsets.non-68k]`. Guard HERE
     // (at the dispatch's own span, with a dispatch-specific code) rather than
@@ -1686,6 +1719,7 @@ fn lower_dispatch_item(
             placement.cpu,
             placement.defines,
             &crate::contract::InterfaceEnv::empty(),
+            expansions,
         );
         *asm_counter = next_counter;
         diags.append(&mut ds);

@@ -2055,6 +2055,19 @@ until its row is removed.
   lost, and gate 5 holds (the listing has no space). Task 9 (the Z80 bridge, banks) decides the space of a phased
   bank-window section and moves these rows with it; the schema then requires `lma` on them, which they already have.
 
+## G0A-EMP-DIAG-SPLICE-TRAIL
+
+- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- Found in G0a Task 7. `.emp` template splices now record `Frame::Template` expansions (one per splice run, the
+  spliced items' spans moved to it), so the build export's line rows name the splicing line. The DIAGNOSTICS surface
+  was held unchanged on purpose: the whole-program driver maps every diagnostic's span back to the line as written
+  (`SourceMap::physical`, `resolve::build_program_with`), and `SourceIndex::locate` / `ChainSources::locate` render an
+  `.emp` expansion where it was written. So an error on a spliced line still names the template body only; the call
+  site reaches it only through the eval-time `[prov.comptime]` note, which a lowering-time error (an encoder refusal,
+  a proc lint over spliced items) does not get. The chain to render "body line, spliced at call line" now exists;
+  rendering it is a diagnostics-surface change for its own ruling (it would also make two splices' identical errors
+  distinct, which the dedup keys then have to agree with).
+
 ## G0A-LINE-KIND-CODE
 
 - state: **CLOSED** 2026-11-18 (G0a Task 6 fix round 1)  size: `M`  project: `G0A-BUILD-EXPORT`

@@ -322,8 +322,10 @@ fn declared_name(line: &str) -> Option<&str> {
 }
 
 /// The 1-based lines of `text` inside a `comptime fn` or `context` block: TEMPLATE
-/// bodies. Code spliced from a template carries the template's own line until G0a Task 7
-/// gives `.emp` splices expansion ids, so attribution is not checked on these lines.
+/// bodies. A template body owns no bytes of its own: since G0a Task 7 every splice moves
+/// its items to an expansion entered at the splice line, so a row ON one of these lines
+/// is a splice that was not attributed, and [`attribution`] refuses it. A label written
+/// inside a template body is no declaration a row can be checked against either.
 fn template_lines(text: &[String]) -> std::collections::HashSet<usize> {
     let mut out = std::collections::HashSet::new();
     let (mut inside, mut started, mut depth) = (false, false, 0i64);
@@ -351,7 +353,8 @@ fn template_lines(text: &[String]) -> std::collections::HashSet<usize> {
 struct Attribution {
     /// Label addresses whose row was checked.
     checked: usize,
-    /// Label addresses with a source row on a template-body line (Task 7).
+    /// Label addresses whose row is on a template-body line: each is also a problem
+    /// (an unattributed splice), so a green gate has 0.
     template: usize,
     /// Label addresses none of whose labels has a declaration outside a template body.
     undeclared: usize,
@@ -367,9 +370,14 @@ struct Attribution {
 /// row's file at a line `<=` the row's line. A row that takes another row's line (a
 /// wrong-owner walk, a shifted attribution) lands before the label's declaration or in
 /// another file. A label is placed at its load address (a listing `PHASE` row's LMA
-/// for a phased label). Excluded, and counted: rows on template-body lines (Task 7),
-/// and addresses where no label has such a declaration at all (comptime-generated
-/// names, labels a template splice defined: `$module$asmN$local`).
+/// for a phased label). A row on a template-body line is refused outright: since G0a
+/// Task 7 spliced bytes carry the splice line, so one there is an unattributed splice
+/// (counted in `template` and reported). Excluded, and counted in `undeclared`:
+/// addresses where no label has such a declaration at all (comptime-generated names,
+/// and labels a template splice defined, `$module$asmN$local`, whose only declaration
+/// is inside the template body while their row is, correctly, the splice line). The
+/// exclusion is bounded: [`ATTRIBUTION_FLOOR_PCT`] of the label addresses must be
+/// checked, per shape.
 fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[Row]) -> Attribution {
     let files = export["files"].as_array().cloned().unwrap_or_default();
     let texts: Vec<Vec<String>> = files
@@ -418,6 +426,10 @@ fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[R
         let (f, line) = (r.file as usize, r.line as usize);
         if templates.get(f).is_some_and(|t| t.contains(&line)) {
             out.template += 1;
+            let path = files.get(f).and_then(|x| x["path"].as_str()).unwrap_or("?");
+            out.bad.push(format!(
+                "attribution: row at {a:#X} {names:?} is {path}:{line}, a template-body line: a splice that was not attributed to its call"
+            ));
             continue;
         }
         // A label a template splice defined (`$module$asmN$local`) is declared in the
@@ -442,6 +454,13 @@ fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[R
     }
     out
 }
+
+/// The share of label addresses (`checked + undeclared`) whose row attribution must be
+/// CHECKED, per shape, in percent: the bound on the `undeclared` exclusion. Measured
+/// at G0a Task 7, when template rows stopped being excluded: 97.25% (demo_debug, 1310 of
+/// 1347) to 98.31% (demo, 1166 of 1186). Falling under it means the exclusion has grown
+/// into a real share of what the check is for.
+const ATTRIBUTION_FLOOR_PCT: usize = 90;
 
 /// The row starting at the listing address of `label`.
 fn row_at_label<'a>(listing: &str, rows: &'a [Row], label: &str) -> Option<&'a Row> {
@@ -470,6 +489,19 @@ fn every_rom_byte_is_covered_once() {
         let mut bad = gate2(&b.rom, eor, &phased, &b.export, &rows);
         let attr = attribution(&tree, &b.listing, &b.export, &rows);
         assert!(attr.checked > 0, "shape {name}: attribution checked nothing: {attr:?}");
+        let measured = attr.checked + attr.undeclared;
+        eprintln!(
+            "GATE2-ATTRIBUTION shape={name} checked={} undeclared={} ratio={:.2}% floor={ATTRIBUTION_FLOOR_PCT}%",
+            attr.checked,
+            attr.undeclared,
+            100.0 * attr.checked as f64 / measured as f64
+        );
+        if attr.checked * 100 < ATTRIBUTION_FLOOR_PCT * measured {
+            bad.push(format!(
+                "attribution checked {} of {measured} label addresses, under the {ATTRIBUTION_FLOOR_PCT}% floor ({} undeclared)",
+                attr.checked, attr.undeclared
+            ));
+        }
         bad.extend(attr.bad.iter().cloned());
         // The header's declaring lines: what a step into the header lands on.
         for label in ["GameHeader", "_header_tail"] {

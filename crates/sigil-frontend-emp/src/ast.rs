@@ -2297,6 +2297,11 @@ pub enum AsmStmt {
         args: Vec<Arg>,
         /// Span of the `with <ctx>` header (the diagnostics' anchor).
         span: Span,
+        /// Span of the bracket's closing `}`: the line its `release` is spliced at,
+        /// so the release's bytes locate there (G0a spec 4.4), as the acquire's
+        /// locate to the header. The header span on a bracket whose body did not
+        /// parse.
+        close: Span,
     },
     /// `invoke Iface.hook` (L1) — an engine-side call of a game-implemented hook.
     /// Lowers to an absolute `jsr <bound-proc>` (abs.l, placement-independent by

@@ -7,7 +7,7 @@ pub mod manifest;
 pub mod rename;
 
 use crate::ast;
-use crate::lower::{lower_module_with_region_ends_and_contracts, LowerOptions};
+use crate::lower::{lower_module_recording_expansions, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
@@ -706,6 +706,11 @@ pub struct BuiltProgram {
     /// What the lowering knew about every symbol it defined (module, procedure
     /// extent, `pub`), for the build export ([`crate::export_side`]).
     pub symbols: crate::export_side::ProgramSymbols,
+    /// Every template splice's expansion, program-wide (G0a spec 4.4): the ids the
+    /// sections' spliced spans carry, in the order handed out. A `SourceIndex`
+    /// built with them ([`SourceIndex::with_expansions`](manifest::SourceIndex::with_expansions))
+    /// reads those spans; one built without them cannot. Holds no files.
+    pub expansions: sigil_span::SourceMap,
 }
 
 /// Shared body of [`build_program`] / [`build_program_open`]. `closed` gates the
@@ -737,6 +742,9 @@ fn build_program_with(
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
     let mut symbols = crate::export_side::ProgramSymbols::default();
+    // The program's template expansions, threaded through every module's lowering
+    // so the ids are program-wide (see `BuiltProgram::expansions`).
+    let mut expansions = sigil_span::SourceMap::new();
 
     // 1. Reachability BFS over `use` edges from the entry (and the prelude seed).
     let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
@@ -962,7 +970,7 @@ fn build_program_with(
             ambient_items(pm, prelude_pm, manifest, &mut memo);
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
-            lower_module_with_region_ends_and_contracts(&pm.file, opts, &region_ends, &iface_env)
+            lower_module_recording_expansions(&pm.file, opts, &region_ends, &iface_env, &mut expansions)
         } else {
             // The own-items clone here could later be avoided by having the
             // evaluator index a separate ambient slice (deferred — preludes are
@@ -981,8 +989,17 @@ fn build_program_with(
                 // attach only).
                 docs: pm.file.docs.clone(),
             };
-            lower_module_with_region_ends_and_contracts(&synthetic, opts, &region_ends, &iface_env)
+            lower_module_recording_expansions(&synthetic, opts, &region_ends, &iface_env, &mut expansions)
         };
+        // A diagnostic about a spliced line names the line as WRITTEN, the template
+        // body, exactly as before splices recorded expansions: the expansion ids are
+        // for the build export's line table, and they never reach the diagnostics
+        // surface (its rendering, its dedup keys, its order). The `[prov.comptime]`
+        // note already names the call site of an error raised inside a template.
+        let ldiags: Vec<Diagnostic> = ldiags
+            .into_iter()
+            .map(|d| Diagnostic { primary: expansions.physical(d.primary), ..d })
+            .collect();
         // Drop only what an EARLIER module already contributed (`seen_across_modules`
         // is empty on this module's first appearance in the loop, so a module's
         // OWN first-time diagnostics — including intra-module duplicates among
@@ -1049,7 +1066,7 @@ fn build_program_with(
     diags.extend(fold_faults);
 
     let lowered = reachable.iter().map(|&i| manifest.modules[i].id.clone()).collect();
-    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered, symbols }
+    BuiltProgram { sections, link_asserts, comptime_guards, diags, lowered, symbols, expansions }
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME

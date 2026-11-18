@@ -32,6 +32,7 @@ use sigil_span::{Diagnostic, Level, Span};
 /// [`lower_dispatch_item`](super::lower_dispatch_item)'s 7-arg shape (post-9a):
 /// `placement`, `as_compat`, the `builder`/`diags`, and the module-wide
 /// `asm_counter` threaded across every proc-shaped body for label hygiene.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn lower_script_item(
     file: &ast::File,
     decl: &ast::ScriptDecl,
@@ -40,6 +41,7 @@ pub(super) fn lower_script_item(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    expansions: &mut Option<sigil_span::SourceMap>,
 ) {
     // 1. Guard: 68k only in v1 (mirror `[dispatch.non-68k]`), BEFORE any work —
     //    a Z80 script does not exist (R9b.9). The hidden table is emitted as a
@@ -164,6 +166,7 @@ pub(super) fn lower_script_item(
         placement.cpu,
         placement.defines,
         &crate::contract::InterfaceEnv::empty(),
+        expansions,
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);

@@ -3186,15 +3186,16 @@ impl Parser {
             let sp = self.span();
             self.diag_at(sp, "block nesting too deep (max 128)");
             self.skip_unparsed_block();
-            return AsmStmt::With { ctx, cond, body: Vec::new(), args, span };
+            return AsmStmt::With { ctx, cond, body: Vec::new(), args, span, close: span };
         }
         self.block_depth += 1;
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(splices_allowed);
         self.expect(&Tok::RBrace, "`}` to close the `with` bracket");
+        let close = self.prev_span();
         self.trailing_junk_after_brace();
         self.block_depth -= 1;
-        AsmStmt::With { ctx, cond, body, args, span }
+        AsmStmt::With { ctx, cond, body, args, span, close }
     }
 
     /// Parse a bracket's `(arg, …)` argument list, consuming both parens.
