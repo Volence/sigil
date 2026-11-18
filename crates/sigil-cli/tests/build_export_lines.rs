@@ -479,7 +479,7 @@ fn every_rom_byte_is_covered_once() {
         }
         let count = |k: &str| rows.iter().filter(|r| r.kind == k).count();
         eprintln!(
-            "GATE2 shape={name} rom={} end_of_rom={eor} rows={} code={} data={} fill={} org-gap={} deb2={} checksum={} sections={} sidecar_bytes={} attribution_checked={} attribution_template={} attribution_undeclared={} bad={}",
+            "GATE2 shape={name} rom={} end_of_rom={eor} rows={} code={} data={} fill={} org-gap={} deb2={} checksum={} sections={} sidecar_bytes={} attribution_checked={} attribution_template={} attribution_undeclared={} bad={} first_bad={:?}",
             b.rom.len(),
             rows.len(),
             count("code"),
@@ -493,7 +493,8 @@ fn every_rom_byte_is_covered_once() {
             attr.checked,
             attr.template,
             attr.undeclared,
-            bad.len()
+            bad.len(),
+            bad.first()
         );
         if !bad.is_empty() {
             failures.push(format!("shape {name}: {} problems; first: {:?}", bad.len(), &bad[..bad.len().min(5)]));
