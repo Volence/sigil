@@ -1495,7 +1495,7 @@ points at it rather than restating it, so there is one copy to keep true.
 
 ### PIN-ADVANCE-STEP0 (A9)
 
-- state: **done in branch** `parcel/step0-soundness` (lands with wave 2; the standing reference moves with it)
+- state: **done**, landed (entry #208 at aeon `936439fa`); since superseded by #209 at aeon `99cb963d`, see below
   project: Empyrean v2 step 0
 - Outcome 2026-11-17 (`docs/superpowers/notes/2026-11-16-pin-advance-step0.md`): refrozen at aeon `936439fa`,
   entry `pin-advance-step0`, chain len 208; s4 and s4.debug equal aeon's figures. `repin.toml` unchanged.
@@ -1765,8 +1765,9 @@ Two smaller items booked here as well:
   standing reference tree (provenance tip `pin-advance-step0` = `936439fa`) then needs the next pin
   advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
   red on the Z80 rows by design.
-- 2026-11-18: that pin advance is done in branch `parcel/pin-advance-99cb963d` (entry #209, aeon
-  `99cb963d`, the pair merge; byte-neutral). The standing reference is `.aeon-sigil-ref-99cb963d`.
+- 2026-11-18: that pin advance landed from `parcel/pin-advance-99cb963d` (entry #209, aeon
+  `99cb963d`, the pair merge plus the v2 harness commits; byte-neutral). #209 is not yet attested; the next
+  byte-moving freeze needs `refreeze --attest` of #209 against `.aeon-sigil-ref-99cb963d` first. The standing reference is `.aeon-sigil-ref-99cb963d`.
 - Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
   symbols). `split_z80_drops` counts them apart (a `dc` is not decoded as code by the closure, dropped or
   not); a define set that resolves them would let the Z80 drop count be an exact 0.

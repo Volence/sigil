@@ -1231,7 +1231,8 @@ corner of the option space. It is not a cargo test because it needs `lua` and bo
 **⚠ MOVED 2026-11-18 (step-0 wave-3 checklist step 7), THE TRANSITION IS OVER.** Read this before the
 2026-11-17 and 2026-09-28 paragraphs below, which name trees that are now superseded.
 
-- **The pin is aeon `99cb963d`** (aeon origin/master, the merge of `parcel/step0-soundness-pair`;
+- **The pin is aeon `99cb963d`** (aeon origin/master at pin time, the merge of `parcel/step0-soundness-pair`, which also carries the v2
+  measurement-harness commits from `936439fa..99cb963d`, all byte-neutral;
   provenance entry `pin-advance-99cb963d`, #209, the last `aeon_rev` in
   `crates/sigil-harness/golden/provenance.toml`). Its provisioned tree is
   **`/home/volence/sonic_hacks/.aeon-sigil-ref-99cb963d`**, detached and clean, made by

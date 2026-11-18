@@ -1095,8 +1095,8 @@ refs, so the order below is what keeps each of them green. Do not reorder.
    `.aeon-sigil-ref-<rev>`, update `docs/OVERSEER-REFERENCE.md`'s standing-reference paragraph, and retire
    `.aeon-t9-pairref`, `.aeon-sigil-ref-936439fa-t6` and (when no lane builds a pre-`97d139ca` tree)
    `.aeon-sigil-ref-1ee78b88`.
-   **DONE 2026-11-18 in branch `parcel/pin-advance-99cb963d`** (from master `b674ed34`; not merged, not
-   pushed). Aeon origin/master `99cb963d` (the pair merge). Provisioned `.aeon-sigil-ref-99cb963d`
+   **DONE 2026-11-18 in branch `parcel/pin-advance-99cb963d`** (from master `b674ed34`; landed on sigil master
+   by fast-forward). Aeon `99cb963d` (origin/master at pin time: the pair merge plus the v2 harness commits, byte-neutral). Provisioned `.aeon-sigil-ref-99cb963d`
    (`provision-aeon-ref.sh`, golden control MATCHES for s4/s4.debug, `repin --check` `pins.rs unchanged`).
    The pair is BYTE-NEUTRAL (BN on 99cb963d: all seven shapes equal entry #208), so a plain freeze is a
    FIXPOINT that cannot move `aeon_rev`, and the freeze refuses an unattested tip. So: `ea6195a3` attests
