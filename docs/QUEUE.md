@@ -2242,7 +2242,7 @@ until its row is removed.
      sound seams and the side tables reach it through `driver::Seams` (`sigil_harness::driver_seams::HarnessSeams`)
      until G0c. The `SIGIL_EMP_*` AS definedness defines are NOT passed: no residual AS file tests them (grep of
      aeon for `SIGIL_EMP_` hits only `.emp` comments), and the new driver's ROMs are byte-identical to the old
-     pipeline with only the walk swapped, which still passes them (see G0B-TASK5-WALK-IDENTITY). `SST_interact =
+     pipeline with only the walk swapped, which still passes them (see G0B-TASK5-WALK-IDENTITY; the fix-round-1 rule-only experiment also kept them and matched 7/7). `SST_interact =
      sizeof(Sst) - 2` stays a literal derivation in `driver.rs` (a residual-AS twin; no description field).
 
 ## G0B-DESCRIBE-TASK2-RESIDUE
@@ -2309,28 +2309,53 @@ until its row is removed.
 
 ## G0B-TASK5-WALK-IDENTITY
 
-- state: **open** 2026-11-19 (found in G0b Task 5)  size: `M`  project: `G0B-GAME-AS-DATA`  needs: controller ruling
+- state: **open** 2026-11-19 (found in G0b Task 5; measurement corrected in Task 5 fix round 1)  size: `M`
+  project: `G0B-GAME-AS-DATA`  ruled (proxy, 2026-11-19): Option B, a separate parcel changes the OLD walk to measure
+  every non-bank section in place, freezes a new golden, and merges before cutover
 - The new driver builds all seven shipped shapes (every guard green: placement, alignment, budgets, sound fold, bank
-  ids, the blob-end contract), but no shape is byte-identical to the old driver. The cause is one rule, not the
-  descriptions: the new driver's ROMs are byte-identical to the OLD pipeline with only its walk swapped for
-  `sigil_build::walk` (an uncommitted experiment binary, shapes plain/demo/debug/config-b compared, all SAME).
-- The rule: the old walk (`native::packed_true_bases`) measures a section at its packed base only when a FROZEN
-  table names one of its labels; every other section (and every section whose relaxable operands reference one) is
-  measured at a far scratch slot (0x700000+), where short `abs.w` forms cannot reach and the measured length is the
-  `abs.l` one. The section is then emitted at its real base, shorter, and the difference stays in the ROM as zero
-  padding. Example (sonic4 release): `VBlank_Handler` measures 0x1E8 at scratch, 0x1E0 in place, so the old ROM has
-  8 zero bytes at 0x2508..0x2510. Unnamed in the frozen tables, measured at scratch: `Input_Tick` (replay), the
-  effects preset, page_in, page_cache, player_fly/glide/climb/instashield, dust_spindash; referenced from them and
-  so also longer: vblank, game_loop, tile_cache, parallax, load_art, player_common, ojz_scroll_test,
-  compression_selftest. The new walk measures every labeled section in place (no table to consult), so it emits no
-  such padding.
-- Per shape, full file old vs new (bytes): release 850296 vs 850262 (-34), debug 870560 vs 870606 (+46),
-  demo 99994 vs 99980 (-14), demo.debug 106981 vs 106981 (0, content
-  differs), config-a 870972 vs 870972 (0, content differs), config-b 617813 vs 617715 (-98), lean 798202 vs 798198
-  (-4). First difference at file offset 0xB (the vector table) or 0x18E (the checksum).
-- Reaching identity in the new driver needs the frozen tables' label set, which is the port history the spec
-  forbids. Reaching it in the old driver means measuring in place there, which moves every golden. Either is a byte
-  move and the controller's call; Task 5 committed the new driver as it is (DONE_WITH_CONCERNS).
+  ids, the blob-end contract; `tests/game_as_data_driver.rs`), but no shape is byte-identical to the old driver.
+- **Measured (fix round 1), all 7 shapes: one rule accounts for the whole difference.** A scratch, never-committed
+  binary changed ONE line of the old walk, the per-round remeasure filter in `native::packed_true_bases`
+  (`if labeled[i] && !bankish[i]` became `if is_rom_section(&sections[i]) && !bankish[i]`, so every non-bank ROM
+  section is measured at its packed base). Nothing else changed: the round-0 seed (`labeled[i]` pins only), the
+  phase-run tails, the unnamed-section order, the label-less ANCHOR_GAP islands and the `SIGIL_EMP_*` defines all
+  stayed old. Built from one aeon c9053d4c copy, that binary's FULL FILE equals the new driver's on all seven
+  shapes (`cmp`-identical, image and appendix). So the round-0 seed, phase-run tails, unnamed order, label-less
+  islands and the dropped defines are each byte-neutral on today's tree. This supersedes the Task 5 claim, which compared 4
+  shapes with the whole walk swapped and overclaimed "all 7".
+  Patch: `.superpowers/sdd/2026-11-17-g0b-game-as-data-driver/scratch/task5-fr1/old-walk-rule-only.patch`.
+- The rule: the old walk remeasures a section at its packed base only when a FROZEN table names one of its labels;
+  every other section is measured at a far scratch slot (0x700000+), where short `abs.w` forms cannot reach, so the
+  measured length is the `abs.l` one, the section is emitted shorter at its real base and the difference stays as
+  zero padding (sonic4 release `VBlank_Handler`: 0x1E8 at scratch, 0x1E0 in place, 8 zero bytes at 0x2508..0x2510).
+  The mechanism can only shrink the image, and it does: no image grows.
+- Per shape (bytes). Image = `EndOfRom`; appendix = file - image (convsym deb2, island shapes only).
+
+  | shape | old image | new image | old file | new file | old appendix | new appendix | distinct sym addrs old/new | first image diff |
+  |---|---|---|---|---|---|---|---|---|
+  | release | 802428 | 802424 (-4) | 850296 | 850262 (-34) | 47868 | 47838 (-30) | 2285/2283 | 0xB |
+  | debug | 810122 | 810122 (0) | 870560 | 870606 (+46) | 60438 | 60484 (+46) | 2832/2834 | 0x395 |
+  | demo | 70170 | 70170 (0) | 99994 | 99980 (-14) | 29824 | 29810 (-14) | 1300/1299 | 0x3A3 |
+  | demo.debug | 70170 | 70170 (0) | 106981 | 106981 (0) | 36811 | 36811 (0) | 1577/1577 | 0x393 |
+  | config-a | 810122 | 810122 (0) | 870972 | 870972 (0) | 60850 | 60850 (0) | 2853/2853 | 0x395 |
+  | config-b | 570932 | 570866 (-66) | 617813 | 617715 (-98) | 46881 | 46849 (-32) | 2212/2210 | 0xB |
+  | lean | 798202 | 798198 (-4) | 798202 | 798198 (-4) | none | none | n/a | 0xB |
+
+  Header bytes 0x18E..0x18F (checksum) differ in every shape and 0x1A4..0x1A7 (ROM end) wherever the file length
+  moved. The debug shapes' images do not change length because the fault island is pinned and is the last section;
+  the shrinkage before it becomes slack before the island, so contents move (first diff 0x393..0x3A3) but
+  `EndOfRom` does not.
+- **The debug +46 is entirely in the deb2 appendix**, a second, downstream effect. The symbol set is identical
+  (same names, same count in every shape); only addresses move. convsym's table size depends on how many symbols
+  share an address: shifting ONE symbol (`Parallax_InstallScratch`, which shares 0x7476 with `Raster_Install` in the
+  new release build) by one byte in an otherwise unchanged listing grows the appendix by 14 bytes (15629 -> 15643,
+  direct convsym run). Every shape's appendix delta follows its distinct-address delta: +2 -> +46 (debug), -2 -> -30
+  (release), -2 -> -32 (config-b), -1 -> -14 (demo), 0 -> 0 (demo.debug, config-a; same size, re-encoded
+  content). Examples of collisions that change: release/config-b gain `Parallax_InstallScratch`=`Raster_Install` and
+  fold `Replay_OJZ_Fixture` into the `BgAnim_VProbe_*` group; debug loses `DacSampleTable`, `SfxBlobWinTab` and a
+  pitch-table group's collisions with `Parallax_Step4_Fill` locals and gains one with `SeqOpcodeTable`.
+- Nothing differs beyond the one rule. The Option B parcel can take the one-line change above as its complete
+  old-walk delta for today's tree; it moves every golden (image and appendix) and is the byte-moving commit.
 
 ## G0B-TASK5-NEW-PATH-GAPS
 
