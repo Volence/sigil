@@ -2216,3 +2216,13 @@ until its row is removed.
      residual-AS collision rule, derivable as "a constant a struct twin also produces"; it is not a field. The
      `SIGIL_EMP_*` AS definedness defines (`native.rs:1228`) are port history. The `--game`/target names in
      `sigil-cli` `main.rs` (`label_and_profile`, :3792-3798) go with the legacy CLI.
+  7. **Task 3 agree-with-Rust residue** (`crates/sigil-harness/tests/descriptions_agree_with_rust.rs`). (a) Its demo
+     baseline is the union engine + sonic4 + demo (item 3); Task 9's two-root corpus removes that union, and the test's
+     comment points here. (b) `GateRule.modules` is documented as "a module id, or a glob over ids" but `describe.rs`
+     has no matcher; the test matches exact ids and a single `*`. No row uses a glob today; Task 5's closed gating
+     owns the real matcher and must replace the test's. (c) Like item 4 of the Task 2 report, the test reads the
+     private Rust tables (`COMPTIME_HELPERS`, `RAM_HELPERS`, `STRUCT_OFFSET_TWINS`, `GROWABLE`, the sound labels, the
+     entry seeds) as source text; Task 11 re-homes it when the old tables go. (d) Fields with no Rust counterpart
+     (`outputs`, `id`, `engine.suite_path`) and Rust fields with no description counterpart (`frozen_sizes`,
+     `inapplicable_guards`, `extra_entries`, `anchor_overlay`, `layout_pass`, the AS definedness defines and the
+     even-alignment rows) are not compared; they are listed in the Task 3 report.

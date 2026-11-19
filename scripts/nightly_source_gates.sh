@@ -119,6 +119,12 @@ SOURCE_GATES=(
     # transcribed from. Source only: it reads TOML and sigil's own Rust source, builds
     # nothing and compares no committed artifact (crates/sigil-build).
     game_descriptions
+    # G0b Task 3: the descriptions agree with the Rust profiles field by field (every
+    # constructor's shape, the gating over the full module scan, defines, features,
+    # entry modules, alignment, baselines, engine lists). Source only: it reads TOML,
+    # scans aeon `.emp` modules and sigil's own Rust source, builds nothing and compares
+    # no committed artifact (crates/sigil-harness).
+    descriptions_agree_with_rust
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus

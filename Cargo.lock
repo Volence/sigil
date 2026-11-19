@@ -359,6 +359,7 @@ name = "sigil-harness"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sigil-build",
  "sigil-frontend-as",
  "sigil-frontend-emp",
  "sigil-ir",

@@ -30,3 +30,7 @@ toml = "0.8"
 # resolves `path:line:col` by READING the file, so a fixture that does not exist
 # would only exercise the degraded (`None`) arm.
 tempfile = "3"
+# G0b Task 3 (tests/descriptions_agree_with_rust.rs): the description loaders, to
+# compare the aeon descriptions with the Rust profiles. Dev-only: sigil-build must
+# never depend on sigil-harness, and the library here does not depend on it.
+sigil-build = { path = "../sigil-build" }
