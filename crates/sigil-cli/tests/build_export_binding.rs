@@ -171,6 +171,20 @@ fn an_export_failure_writes_nothing() {
     assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "{\"old\":true}", "the sidecar was touched by a refused export");
 }
 
+/// A file's content (SHA-256 of its bytes, and its length) and mtime, or `None` when it
+/// does not exist: what a build that must not write `path` has to leave exactly as it
+/// found it. The digest stands for the bytes so a failure prints a line, not the file.
+fn sidecar_state(path: &Path) -> Option<(String, u64, std::time::SystemTime)> {
+    match std::fs::metadata(path) {
+        Ok(m) => {
+            let bytes = std::fs::read(path).expect("read sidecar");
+            Some((sha256_hex(&sha256_of(&bytes)), bytes.len() as u64, m.modified().expect("mtime")))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("cannot stat {}: {e}", path.display()),
+    }
+}
+
 #[test]
 fn no_build_json_writes_none() {
     let Some((_g, tree)) = tree() else { return skip() };
@@ -179,9 +193,22 @@ fn no_build_json_writes_none() {
     build_ok(&tree, &["-o", rom.to_str().unwrap(), "--no-build-json"]);
     assert!(rom.exists());
     assert!(!dir.join("n.build.json").exists());
-    // Without -o there is no ROM to bind, so no sidecar anywhere.
+    // Without -o there is no ROM to bind, so the build WRITES no sidecar anywhere. The
+    // claim is about what this build writes, not about what the tree already holds: a
+    // reference tree that `build.sh demo` has run in carries a (gitignored)
+    // `demo.build.json`, and that file must come through untouched, absent staying
+    // absent and present staying byte- and mtime-identical. Nothing is deleted from the
+    // tree to make the check pass.
+    let tree_sidecar = tree.join("demo.build.json");
+    let before = sidecar_state(&tree_sidecar);
     build_ok(&tree, &[]);
-    assert!(!tree.join("demo.build.json").exists());
+    assert_eq!(
+        sidecar_state(&tree_sidecar),
+        before,
+        "a build without -o wrote {} (state before the build: {})",
+        tree_sidecar.display(),
+        if before.is_some() { "present" } else { "absent" }
+    );
     // A stale sidecar is removed even when none is asked for: it would describe a ROM
     // that was just replaced.
     std::fs::write(dir.join("n.build.json"), "{}").unwrap();
