@@ -32,6 +32,10 @@ pub mod emit;
 /// header re-fix and the presence controls (G0b Task 4, from sigil-harness).
 pub mod appendix;
 
+/// What the build gathers before it places: the AS side's result, the lowered `.emp`
+/// program, the comptime-helper rewrites, `--extra-entry` (G0b Task 4, from sigil-harness).
+pub mod harvest;
+
 /// Test support: the aeon reference tree for this crate's reference-dependent tests.
 #[doc(hidden)]
 pub mod reference;
