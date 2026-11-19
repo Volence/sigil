@@ -50,8 +50,10 @@ use crate::map_placement::{load_placement_map, AnchorOverlay};
 /// reaches via an intra-section `align $8000`.
 const DAC_INTRA_BANK_ALIGN: u32 = 0x8000;
 
-// G0b Task 4: the `$8000` bank-window arithmetic moved, unchanged, to `sigil_build::place`.
+// G0b Task 4: the `$8000` bank-window arithmetic (`sigil_build::place`) and the
+// per-artifact region check (`sigil_build::guards`) moved there unchanged.
 pub use sigil_build::place::bank_room;
+pub use sigil_build::guards::check_placed_regions;
 use sigil_build::place::BANK_WINDOW_SIZE;
 
 /// The sound-bank section head-labels in the map's declared `order`, in the
@@ -1807,24 +1809,6 @@ fn carrier_asm_for(ids: SongIdCarrier, bank_start: u32) -> String {
 /// site that co-links `mt_bank.emp` supplies its carrier through this.
 pub fn mt_bank_carrier_asm(aeon: &Path, debug: bool, bank_start: u32) -> Result<String, String> {
     Ok(carrier_asm_for(song_id_carrier(aeon, debug)?, bank_start))
-}
-
-/// The region check every seam-2 per-artifact tail ends in (`place_sections` +
-/// `resolve_layout` + `link` never emit a ROM, so `emit_rom`'s check never ran on
-/// them): each linked section the synthetic map PLACED (its group names one of the
-/// map's regions) must fit that region ([`sigil_link::check_regions`]). The
-/// cross-seam carriers the tails pin outside the map (`group = None`, at
-/// `$1000000`+) are not the map's and are not checked against it.
-pub fn check_placed_regions(linked: &sigil_link::LinkedImage, map: &sigil_ir::map::MemoryMap) -> Result<(), String> {
-    let placed = sigil_link::LinkedImage {
-        sections: linked
-            .sections
-            .iter()
-            .filter(|s| s.region.as_deref().is_some_and(|g| map.region_by_name(g).is_some()))
-            .cloned()
-            .collect(),
-    };
-    sigil_link::check_regions(&placed, map)
 }
 
 fn mt_bank_room(bank_start: u32, mt_bank_lma: u32) -> Result<u32, String> {

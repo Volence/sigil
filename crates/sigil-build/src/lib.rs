@@ -20,6 +20,10 @@ pub mod map_placement;
 /// recomputation, section predicates (G0b Task 4, from sigil-harness).
 pub mod place;
 
+/// The verdicts on a placed program: drift guards, the guard census, the placement
+/// contract, budgets, region fit (G0b Task 4, from sigil-harness).
+pub mod guards;
+
 /// Test support: the aeon reference tree for this crate's reference-dependent tests.
 #[doc(hidden)]
 pub mod reference;
