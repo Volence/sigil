@@ -2,16 +2,20 @@
 # Lines below the header are sha256sum format: <sha256>  <path relative to this directory>.
 empyrean-repo: empyrean
 empyrean-branch: feat/g0a-build-contract
-empyrean-commit: 155c080270ca10ee1acf028a16ad8febd38960c4
+empyrean-commit: 484fb8a1abebd68ee8dc464d9a8fd5a869262880
 map: empyrean contract/schema/build/** and contract/schema/tests/validate_build_schema.py -> here, flat (the runner sits beside the schema)
 files:
-e57847a7ddcde38298c7d39503f694406506c5abc6d1cf6d13274b2750d937a6  empyrean.build-1.schema.json
-26a15c8a501da7d66f0af4cbecf19c4c92c034730784c8e336fe59ce43147371  validate_build_schema.py
+c4da8c773733e49e9e65bd96261d1f2ad7e21f7bc79ef6240e8cde98896ff570  empyrean.build-1.schema.json
+f7494a9af57919224e7493ff7db3ca7b47d80027b71804ba24bbd27861f7deb5  validate_build_schema.py
+cf8f14b22f133f114cb0ceb20f30b3103f8e794981593320f718c267bc935195  vectors/lookup/z80-banked.json
 1419c69b06435529e9922d844eeba6b407f4b9860db156749879000522ae8084  vectors/pass/demo-minimal.json
 4800374ef66a5f5d25513d4223c68084b49f2b991b59419874a8b7cd6d677473  vectors/pass/minor-1-1-new-collection.json
 196e605f3f030de1ec53254a4b0f56fd18f41506cbb1d82dee12215a74d6934b  vectors/pass/minor-1-1-unknown-keys.json
 a55f193528ca07f9def7c1d3db6b724e9dc97436398148296ec401e3f16eb39d  vectors/pass/s4-minimal.json
-ae2f81acbc2ab8cba3263f69964e9d9250c0dd6a78e4869a04d34aa80df7eb56  vectors/pass/z80-banked.json
+fd1dfa060fb8b0e767800ff2af222f7b3e9782e3b59292bd2ef990cddd93e9f9  vectors/pass/z80-banked.json
+5e50c38fb08341c3290850e08ff9242d357a4e53e698bbee766334f620346ea7  vectors/reader-red/row-file-index-past-files.json
+0db53dab36a8fa799bd06245ccef9950935ef3a18f5fc91cdbcb3f685511f00b  vectors/reader-red/z80-window-lma-offset.json
+8203ebe87da7675d4b95081d90acf3808269d996d634567978869ecf82a8a0a6  vectors/reader-red/z80-window-row-lma-offset.json
 77bf325cc1dd3034af2da91b490717dc0adf990f61416e199b5f830b15539f4c  vectors/red/absolute-path.json
 e1bb5f9109e9a44324554dc48e1694c8ec32a5252e81b9a0402a3c46ecfa8c5b  vectors/red/dotdot-segment.json
 37fae41746ab763739419c394c3c4a6b8c9c09edc09437475c42d7c7a7913ca1  vectors/red/drive-letter-path.json

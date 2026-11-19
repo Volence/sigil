@@ -2022,7 +2022,7 @@ until its row is removed.
   (`LEDGER_EXIT`, `CI_EXIT` spans, `landing_verdict.rs`, `check_landing_log.py`) is deep enough that a new leg is its
   own change, with its own red-first proof. Until it is a leg, a landing verdict does not mention a stale vendor.
 - The CI half already runs everywhere: `sigil-link/tests/vendored_contract.rs::vendored_schema_matches_source`.
-- `SOURCE` pins an empyrean commit on `feat/g0a-build-contract`, not yet on empyrean `main`. Re-vendor (and the
+- `SOURCE` pins an empyrean commit on `feat/g0a-build-contract` (re-vendored 2026-11-18 at `484fb8a1` for the final review fix wave: fixed `z80-banked` vector, new `vectors/reader-red/` and `vectors/lookup/`, runner B4/B5), not yet on empyrean `main`. Re-vendor (and the
   `empyrean-commit:` line) when that merges, if the merge changes any pinned file.
 
 ## G0A-EXPORT-FILES-GAPS
@@ -2043,6 +2043,70 @@ until its row is removed.
   (`sigil-harness/src/export_files.rs`) leaves reads under exactly that directory out of the export; any other read
   under `tools/` is an error naming the path. The hole is DELETED when G0b scopes the module scan to the engine and
   game roots; then the constant and its test go with it.
+
+## G0A-SCAN-READS-OTHER-GAME
+
+- state: **OPEN** 2026-11-18  size: `M`  project: `G0A-BUILD-EXPORT`  closed by: G0b (two-root module scan)
+- Found by the G0a final review (A-I2); controller ruling: BOOK, do not fix in G0a (narrowing the scan changes the
+  front end beyond G0a's scope). The module scan reads every `*.emp` in the tree, so each game's export lists the
+  OTHER game's sources in `files` and hashes them into `inputsSha256` (`sigil-harness/src/export_files.rs` says so in
+  its module doc). Measured on the 3f211b78 sidecars: demo plain carries **124 `game/sonic4/...` rows of 206**
+  (only 44 of the 206 are named by any line row); s4 plain carries **7 `game/demo/...` rows**. Consequences until G0b:
+  - `inputsSha256` and the `files` table of demo move on every sonic4 source edit although the demo ROM does not.
+  - Consumers must read `files` as the build's read set, not as the program (booked for the Aurora hand-off in
+    empyrean `docs/v2/specs/reviews/2026-11-18-G0a-final-review-deferred.md`).
+  - Gate 8's equate attribution (`build_export_gates.rs::equate_origins`) treats a name declared in any non-sonic4
+    file of the read set as not sonic4-only. Because demo reads every sonic4 file, a sonic4 equate leaked into a demo
+    export passes when an engine or demo file declares the same spelling. The hole is named, not closed.
+- **Retargeted here (ledger T10 FINAL-REVIEW minor):** "gate 8 asserts the demo export's `files` has no game-root row
+  under `sonic4/`" is red on every demo build today (124 rows), so it is done AFTER G0b narrows the scan, together with
+  narrowing gate 8's `declared` map to files a line row or symbol module references.
+- Do (at G0b): scope the scan to the program's import closure, then add both assertions; delete
+  `G0A-SCAN-READS-TOOL-FIXTURES`'s constant in the same change.
+
+## G0A-FINAL-REVIEW-DEFERRED
+
+- state: **OPEN** 2026-11-18  size: `M` (each item `S`)  project: `G0A-BUILD-EXPORT`
+- The G0a final review (reviewer A, sigil) rated these OK-TO-DEFER. The fix wave took A-I1 (duplicate bridge
+  symbols refused), A-I2 (booked above), A-M1 (export rendered before install) and A-M10 (heading); the rest, each
+  named so it can be picked up alone:
+  - **M2 `--no-build-json` is not a full escape hatch.** `native.rs` `export_symbols`, `embed_site`, the ROM-bytes
+    check and `z80_bridge` run on every chained build; only the layout pass is gated. Gate them on `LayoutPass != Off`
+    (or a sibling flag), or say in the usage note that a side-table disagreement fails every build.
+  - **M3 `inputs.rs` doc says a reader can reproduce `inputsSha256` from the export alone**; since the T3 ruling it
+    cannot (blobs, `map.toml`, `aeon`/`external` hash-only reads, `toolexe` are not in the sidecar). Reword to "from
+    the build's read set"; the `InputRead.root` doc omits `external`; note the line format's escaping (the shape is
+    last on its line because `sonic4 plain` holds a space).
+  - **M4 duplicated gate helpers:** `SHAPES` ×4 plus the cross-check's `shapes()`, `source_path` ×2 (a hand inverse of
+    `export_files::place_path`), `declared_name`/`declared_equate` ×3, and `schema_verdict` still in
+    `build_export_binding.rs`. Move into `sigil_harness::test_support`; export the inverse of `place_path`.
+  - **M5 three cursor replays beside `Section::image_bytes`** (`lines.rs::owners`, `placed.rs::extent`,
+    `export_z80.rs::embed_site`); only `owners` asserts against `image_len`. One fragment-offset iterator in sigil-ir,
+    or the same `debug_assert` in the other two.
+  - **M6 two structs named `ExportInputs`** (`sigil_link::export` and `sigil_harness::export_files`); rename the
+    harness one (`ReadSetExport`).
+  - **M7 the writer does not enforce the bank rule the readers refuse.** `native.rs::z80_windows` checks only that a
+    VMA exists; refuse `lma & $7FFF != vma & $7FFF` and a window larger than `$8000` there. The contract now states
+    the rule and both readers refuse it (empyrean `vectors/reader-red/`), so today a bad region fails at the consumer.
+    Do it with the T9 `section_space` first-byte minor below.
+  - **M8 schema values never emitted:** `kind: "data"` and `lang: "z80"`. Emit `data` for `.emp` data items, or keep
+    the note in the hand-off (booked in empyrean's deferred page).
+  - **M9 three spellings of one shape** (`shape.shape`, gate names, the spec's `"s4"`); for the T12 hand-off.
+  - **M11 values unbounded for JavaScript:** refuse `|value| > 2^53 - 1` in `emp_consts` and `prepare_export`, the
+    `ConstOutOfRange` shape.
+  - **T9 `section_space` tests only a section's first byte** against the window; require `[lma, lma+image_len)` inside
+    it (with M7).
+  - **T8 doc comment on the wrong item:** `export_side.rs` `resolve_importer`'s doc sits above `declares_exportable`
+    (the sibling in `main.rs`, `sidecar_path` over `writes_sidecar`, was fixed in the fix wave).
+  - **Ledger items A rated OK-TO-DEFER and leaves as they are:** T1 unit test serialises no non-empty
+    files/layouts/consts/overlays; T3 hash-only label breadth, define-not-fitting-i64 untested, repeated `(crc,size)`
+    in conflicts, `--no-build-json` without `-o` accepted, sigil-root rows skip the on-disk check; T4 `outermost`/
+    `label` walk duplicated, `export_locator` assert accepts either fragment; T5 two plain rebuilds (~30 s),
+    same-named-section merge; T5 pub dispatch/vars/table/region not tested directly; T9 no red-first proof for the
+    `z80_windows` no-vma refusal, embed-site 0/multi, ROM-bytes mismatch, `emit_sound_blob` lost its
+    `handler_symbols` check (still run through `seam2::native_sound_symbols`), the gate reads raw `map.toml`
+    windows; T10 `declared_equate` misses `set`, block comments, untaken `if`, proc-body `=` (fold into the
+    G0A-SCAN-READS-OTHER-GAME narrowing).
 
 ## G0A-SOUND-BANK-LABEL-SPACE: CLOSED
 
@@ -2108,6 +2172,10 @@ until its row is removed.
   (`append_deb2_appendix`) but stays attributed to its declaring line (`rom_end:` in `header.emp`). Only the checksum
   is a declared no-source range, per spec §4.4.
 
+## G0A-TOOL-REVISION-STAMP: CLOSED
+
+- state: **CLOSED** 2026-11-18 (G0a Task 10; heading given by the final review's M10, it sat under the row above)
+  size: `S`  project: `G0A-BUILD-EXPORT`
 - Found in G0a Task 10. `tool.revision` is `env!("SIGIL_REVISION")`, baked by `crates/sigil-cli/build.rs`, whose
   rerun triggers (git HEAD, refs, packed-refs, closure sources) DO re-capture on a commit: probed with two empty commits
   on a scratch branch, `cargo build` and `cargo test --no-run` both re-stamped. The stale `9b75e609` Task 6 saw was a

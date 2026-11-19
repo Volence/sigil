@@ -14,6 +14,14 @@ Run it from anywhere:  python3 contract/schema/tests/validate_build_schema.py
       stray one, proves nothing about the rule it was written for, so it is itself a
       failure. This is the idea validate_contract_schema.py states as its anti-vacuity rule,
       tightened from "is rejected" to "is rejected for this".
+  B4  Every vector in build/vectors/reader-red/ VALIDATES against the schema and declares
+      `expect: {reader: "InvalidBuild", rule}`. These are the rules JSON Schema cannot state
+      (an lma at the wrong offset in its bank, a row's file index past `files`): the schema
+      must accept them, or the vector would prove a schema rule instead of a reader rule.
+      Every reader (clients/python, oracle's build_export.rs) runs them and must refuse.
+  B5  Every vector in build/vectors/lookup/ names an existing pass vector and holds
+      well-formed reverse-lookup cases (fn at|line_at, space, addr, optional bank, expect).
+      The readers run the cases; this gate stops a lookup file that no reader could run.
 
 Exit 0 green, 1 red, 2 cannot run (missing jsonschema, schema or vectors): never green.
 """
@@ -37,6 +45,8 @@ BUILD = next((d for d in _LAYOUTS if os.path.isfile(os.path.join(d, SCHEMA_NAME)
 SCHEMA_PATH = os.path.join(BUILD, SCHEMA_NAME)
 PASS_DIR = os.path.join(BUILD, "vectors", "pass")
 RED_DIR = os.path.join(BUILD, "vectors", "red")
+READER_RED_DIR = os.path.join(BUILD, "vectors", "reader-red")
+LOOKUP_DIR = os.path.join(BUILD, "vectors", "lookup")
 SCHEMA_ID = "https://empyrean.invalid/contract/build/1"
 
 failures = []
@@ -110,11 +120,57 @@ def main():
             n_red += 1
     print("  %d red vectors rejected for their declared reason" % n_red)
 
+    print("== B4  reader-red vectors are schema-valid and name their reader rule")
+    n_rr = 0
+    for name, v in vectors(READER_RED_DIR):
+        exp = v.get("expect")
+        if not (isinstance(exp, dict) and exp.get("reader") == "InvalidBuild" and isinstance(exp.get("rule"), str)):
+            fail("reader-red/%s: no `expect` {reader: InvalidBuild, rule}" % name)
+            continue
+        errs = sorted(validator.iter_errors(v["doc"]), key=lambda e: pointer(e))
+        if errs:
+            fail("reader-red/%s: the schema rejects it (%s at %r), so it proves a schema rule, not a reader one"
+                 % (name, errs[0].message[:160], pointer(errs[0])))
+        else:
+            n_rr += 1
+    print("  %d reader-red vectors schema-valid" % n_rr)
+
+    print("== B5  lookup vectors are well-formed")
+    n_cases = 0
+    pass_names = {n for n in os.listdir(PASS_DIR) if n.endswith(".json")}
+    for name, v in vectors(LOOKUP_DIR):
+        target = v.get("vector", "")
+        if not (isinstance(target, str) and target.startswith("pass/") and target[5:] in pass_names):
+            fail("lookup/%s: `vector` %r names no pass vector" % (name, target))
+            continue
+        cases = v.get("cases")
+        if not (isinstance(cases, list) and cases):
+            fail("lookup/%s: no cases" % name)
+            continue
+        for i, c in enumerate(cases):
+            ok = (isinstance(c, dict) and c.get("fn") in ("at", "line_at") and c.get("space") in ("m68k", "z80")
+                  and isinstance(c.get("addr"), int) and not isinstance(c.get("addr"), bool)
+                  and (c.get("bank") is None or isinstance(c["bank"], int)) and isinstance(c.get("expect"), dict))
+            if ok:
+                e = c["expect"]
+                if "error" in e:
+                    ok = e["error"] in ("NotFound", "AmbiguousBank")
+                elif c["fn"] == "at":
+                    ok = set(e) == {"symbol", "disp", "contains"}
+                else:
+                    ok = set(e) == {"source"}
+            if not ok:
+                fail("lookup/%s: case %d is malformed: %r" % (name, i, c))
+            else:
+                n_cases += 1
+    print("  %d lookup cases well-formed" % n_cases)
+
     print("")
     if failures:
         print("RED: %d failure(s)." % len(failures))
         return 1
-    print("GREEN: schema well-formed ($id %s); %d pass vectors, %d red vectors." % (SCHEMA_ID, n_pass, n_red))
+    print("GREEN: schema well-formed ($id %s); %d pass vectors, %d red vectors, %d reader-red vectors, %d lookup cases."
+          % (SCHEMA_ID, n_pass, n_red, n_rr, n_cases))
     return 0
 
 
