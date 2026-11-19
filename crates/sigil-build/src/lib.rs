@@ -5,6 +5,11 @@
 //! contract-closure baseline rows. [`describe`] holds those formats and their
 //! loaders. The driver that reads them arrives in later G0b tasks; until then
 //! the descriptions are inert and the old driver in sigil-harness ignores them.
+//!
+//! The game-independent half of that old driver lives here already (G0b Task 4):
+//! [`diag`], [`place`], [`map_placement`], [`guards`], [`emit`], [`appendix`] and
+//! [`harvest`], moved unchanged and re-exported by sigil-harness at their old
+//! paths. This crate never depends on sigil-harness (`tests/no_harness_edge.rs`).
 
 pub mod describe;
 

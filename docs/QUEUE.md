@@ -2195,6 +2195,41 @@ until its row is removed.
   live fault; the ledger is tracked, so `git restore` recovers it. Fix: run `check` on the in-memory chain
   (`parse` of `new_src` plus the blobs) before `write_atomic`, and add a test that drives the post-append path.
 
+## G0B-TASK4-GAME-TOUCHING
+
+- state: **open** 2026-11-19 (found in G0b Task 4)  size: `M`  project: `G0B-GAME-AS-DATA`
+- Task 4 moved the game-independent driver into `crates/sigil-build` (`diag`, `place`, `map_placement`,
+  `guards`, `emit`, `appendix`, `harvest`) with bodies unchanged, and sigil-harness re-exports every moved name.
+  What did NOT move is what would carry a game or description fact into sigil-build unchanged. Task 5 replaces
+  each from the descriptions; line numbers are `crates/sigil-harness/src/native.rs` at the Task 4 tip.
+  1. **Profile (`GameProfile`, :83) and everything that reads it:** the eight constructors and `shipped_shapes`
+     (:347-:639), `shape_defines` (:673), `module_shape` / `registry_from_manifest` / `module_registry`
+     (:1189-:1221), `prepare_program` / `name_env_report` / `build_emp` (:1230-:1345), `resolve_chained` (:2189),
+     `check_chained` (:2314), `build_rom_chained(_with_listing)` (:1992, :2324), `build_full_file_chained`
+     (:2434, also the per-game deb2 floor by path), `placement_map` / `overlaid_placement` (:2456, :2471), the
+     frozen-layout readers (:2493-:2590), `declares_error_handler_island` (:2930), `harvest_engine_constants`
+     (:786), `harvest_game_constants` (:829), `harvest_engine_ram_addresses` (:961), `assemble_as_side` (:1058,
+     also the `SIGIL_EMP_*` AS definedness defines, port history).
+  2. **Frozen tables:** `FROZEN_TABLES` / `load_frozen_table` (:300, :316). **The `section_align` table:**
+     `packed_chained_base` (:1578), `validate_declared_alignment` (:1609), `validate_resolved_alignment` (:1646),
+     and their callers `packed_true_bases` (:1684) and `true_bases_by_index` (:1480): the packing walk itself
+     stays until the evenness default replaces its one table read. **Sound (seam-2 heads, G0c):**
+     `validate_sound_fold` / `check_sound_fold` (:2048, :2078), `emit_generated(_in)` / `ensure_generated`
+     (:711-:747), `ChainedResolve` (:2154, holds `seam1::ResidentLink`).
+  3. **Engine tables `engine.toml` now carries:** `STRUCT_OFFSET_TWINS` + `harvest_engine_struct_offsets`
+     (:861, :888), `RAM_HELPERS` (inside :961), the entry seeds `engine.game_contract` / `engine.ram` in
+     `synthetic_entry_src` (:1152).
+  4. **Game labels and per-game constants:** `relocate_fixture_pool` (:1956, `OJZ_*` heads, `ReleaseFault` /
+     `BusError`), `SONIC4_APPENDIX_FLOOR` / `DEMO_APPENDIX_FLOOR` (:2893, :2895), `STAGE1_` / `DEMO_INAPPLICABLE_GUARDS`
+     (:1446, :1450, both empty), and the sonic4-canonical wrappers (`build_native_rom*`, `build_native_full_file`,
+     `sigil_native_symbol_listing`, `section_extents`, `section_label_owners`, `phase_bank_lmas`,
+     `project_memory_map`, `resolve_canonical_sections`, :1983 and :2655-:2880).
+  5. **Moved, but carrying ENGINE facts the descriptions also hold** (not game facts, so not a blocker for Task 12's
+     game-name gate, which counts engine ids without gating them): `sigil_build::appendix::ERROR_HANDLER_BLOB_LABEL`
+     (`ErrorHandlerBlob`, engine.toml `error_handler_blob`), `ERROR_HANDLER_BLOB_LEN` (0xF56, the vendored blob), and
+     `<aeon>/tools/convsym` inside `append_deb2_appendix` / `convsym_resolve`. Task 5 passes them in from the
+     engine description rather than reading the constants.
+
 ## G0B-DESCRIBE-TASK2-RESIDUE
 
 - state: **open** 2026-11-19 (found in G0b Task 2)  size: `S`  project: `G0B-GAME-AS-DATA`
