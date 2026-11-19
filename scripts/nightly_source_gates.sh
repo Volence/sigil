@@ -125,6 +125,11 @@ SOURCE_GATES=(
     # scans aeon `.emp` modules and sigil's own Rust source, builds nothing and compares
     # no committed artifact (crates/sigil-harness).
     descriptions_agree_with_rust
+    # G0b Task 5: the new driver's alignment rule (the 68000 evenness default plus the
+    # engine and game [[align]] rows) reproduces every row of section_align.rs's table,
+    # 102 of them by the default. Source only: it reads the TOML descriptions and links
+    # the Rust table, builds nothing and compares no committed artifact (crates/sigil-harness).
+    evenness_default
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
