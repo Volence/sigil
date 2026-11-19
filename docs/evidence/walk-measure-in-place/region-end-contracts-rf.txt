@@ -1,0 +1,49 @@
+region_end_contracts red-first transcript (2026-11-19, committed baseline bb9b3824)
+
+RF-A  the parser silently drops one region (re-grounded 'did the parse break?' guard)
+== mutation on disk:
+-    let m: Manifest = toml::from_str(src).map_err(|e| format!("repin.toml parse error: {e}"))?;
++    let mut m: Manifest = toml::from_str(src).map_err(|e| format!("repin.toml parse error: {e}"))?;
++    m.regions.pop(); // RF-MUTATION-A
+test every_region_end_contract_holds_against_the_live_layout ... FAILED
+test respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest ... ok
+thread 'every_region_end_contract_holds_against_the_live_layout' (3041463) panicked at crates/sigil-harness/tests/region_end_contracts.rs:110:5:
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.02s
+== restore: git restore --source=HEAD -- crates/sigil-harness/src/repin.rs
+
+RF-B  the strict end contract stops judging (negative control must go red)
+== mutation on disk:
++    let _ = (region, shape, listing, lo, hi); return Ok(()); // RF-MUTATION-B
++    #[allow(unreachable_code)]
+test every_region_end_contract_holds_against_the_live_layout ... ok
+test respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest ... FAILED
+thread 'respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest' (3119643) panicked at crates/sigil-harness/tests/region_end_contracts.rs:244:22:
+region `header`: the manifest resolved with `end = "EntryPoint"`, the head of the successor section `boot`, the strict end contract is not reaching this region
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.09s
+== restore: git restore --source=HEAD -- crates/sigil-harness/src/repin.rs
+
+RF-C  the control finds no doctoring target (loud when unmeasurable)
+== mutation on disk:
+-        if let Some(label) = heads.first() {
++        if let Some(label) = heads.first().filter(|_| false) { // RF-MUTATION-C
+test respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest ... FAILED
+test every_region_end_contract_holds_against_the_live_layout ... ok
+thread 'respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest' (3198358) panicked at crates/sigil-harness/tests/region_end_contracts.rs:227:5:
+none of the 80 `section:` region(s) has a successor with a head label in both shapes: the negative control measured NOTHING
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.10s
+== restore: git restore --source=HEAD -- crates/sigil-harness/tests/region_end_contracts.rs
+
+== restored baseline:
+test every_region_end_contract_holds_against_the_live_layout ... ok
+test respelling_a_section_end_as_the_successor_head_refuses_the_live_manifest ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.90s
+END
+
+RF-A re-run to capture the assertion text (same mutation, written as a second line after the parse):
+thread 'every_region_end_contract_holds_against_the_live_layout' (3394026) panicked at crates/sigil-harness/tests/region_end_contracts.rs:110:5:
+assertion `left == right` failed: the parser returned 95 region(s) but the manifest text declares 96: the parse broke
+  left: 95
+ right: 96
+restore: git restore --source=HEAD -- crates/sigil-harness/src/repin.rs
+
+Runner: the sigil suite (cargo test -p sigil-harness --test region_end_contracts), i.e. scripts/landing-run.sh and refreeze --attest.

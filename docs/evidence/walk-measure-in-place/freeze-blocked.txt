@@ -30,3 +30,7 @@ END rc=1
 The only bypass is NO_LINT=1, which build.sh's NO_LINT_KNOB block says must be unset 'before you land, merge, freeze, or
 quote a number'. Not taken. The interrupted run regenerated nothing (git status clean); its journal was discarded by the
 tool's own recovery option (2), and refreeze --check then read OK (tip pin-advance-99cb963d, chain len 209).
+
+CORRECTION (round 2, same day): the cause was NOT Python 3.14 frame depth. AEON_DIR was a cp -a copy carrying the source
+tree's tools/__pycache__ (pytest-rewritten bytecode keeps the source path as co_filename). Proven red/green in
+pycache-red-green.txt; freeze #210 then completed from a fresh clone (no NO_LINT).
