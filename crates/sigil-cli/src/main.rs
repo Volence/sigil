@@ -3538,23 +3538,37 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         },
         None => None,
     };
-    // The build-data export, stated before anything is written (see `ExportParts`).
-    let export_parts = match (&opts.output, writes_sidecar(opts)) {
-        (Some(_), true) => match prepare_export(aeon, opts) {
-            Ok(parts) => Some(parts),
-            Err(err) => {
-                eprintln!("error: native build ({label}) build export: {err}");
-                process::exit(1);
+    // The build-data export, rendered IN FULL before anything is written: the read-set
+    // parts (`ExportParts`), then the line walk, the Z80 splice, coverage and the JSON
+    // text over `full`, hashed in memory. `full` is the exact buffer installed below, so
+    // the hash is the hash of the bytes as written (spec 4.2: "the bytes it holds"). An
+    // export that cannot be stated fails the build here, while the previous ROM, listing
+    // and sidecar are untouched and still agree (final review A-M1: the walk used to run
+    // after the install, leaving a new ROM and `.lst` with no sidecar).
+    let export_text = match (&opts.output, writes_sidecar(opts)) {
+        (Some(out_path), true) => {
+            let rom_name = std::path::Path::new(out_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match prepare_export(aeon, opts)
+                .and_then(|parts| render_export(parts, &export_inputs, rom_name, &full, assembled_len))
+            {
+                Ok(text) => Some(text),
+                Err(err) => {
+                    eprintln!("error: native build ({label}) build export: {err}");
+                    process::exit(1);
+                }
             }
-        },
+        }
         _ => None,
     };
     // WRITE ORDER (spec 4.2). A sidecar is only ever written for a ROM it names:
+    //  0. (above) the sidecar text is complete, its `rom.sha256` the hash of `full`;
     //  1. remove any sidecar already beside the destination, so no failure from here on
     //     can leave a sidecar that matches a ROM it was not written for;
-    //  2. install the ROM, then the listing;
-    //  3. hash the exact bytes installed (`full`);
-    //  4. write the sidecar atomically.
+    //  2. install the ROM (`full`), then the listing;
+    //  3. write the sidecar atomically.
     // A failure after step 1 writes no sidecar. This runs even under `--no-build-json`:
     // the old sidecar would describe a ROM that is about to be replaced.
     if let Some(out_path) = &opts.output {
@@ -3579,23 +3593,15 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     }
-    if let (Some(out_path), Some(parts)) = (&opts.output, export_parts) {
+    if let (Some(out_path), Some(text)) = (&opts.output, export_text) {
         let out = std::path::Path::new(out_path);
-        // Test-only failure injection between "hash" and "write the sidecar": the point
-        // where a crash must leave NO sidecar. Nothing sets it outside the test that
-        // proves the stale sidecar was removed first.
+        // Test-only failure injection between "install the ROM" and "write the sidecar":
+        // the point where a crash must leave NO sidecar. Nothing sets it outside the test
+        // that proves the stale sidecar was removed first.
         if std::env::var_os("SIGIL_TEST_FAIL_BEFORE_SIDECAR").is_some_and(|v| v == "1") {
             eprintln!("error: native build ({label}): SIGIL_TEST_FAIL_BEFORE_SIDECAR=1, stopping before the sidecar");
             process::exit(1);
         }
-        let rom_name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let text = match render_export(parts, &export_inputs, rom_name, &full, assembled_len) {
-            Ok(t) => t,
-            Err(err) => {
-                eprintln!("error: native build ({label}) build export: {err}");
-                process::exit(1);
-            }
-        };
         let path = sidecar_path(out);
         if let Err(err) = sigil_harness::atomic_write::write_atomic(&path, text.as_bytes()) {
             eprintln!("error: cannot write {}: {err}", path.display());
@@ -3605,10 +3611,6 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
-/// Where the build-data export for the ROM written to `rom_out` lives: the ROM's
-/// final extension replaced by `build.json`, so `s4.bin` is described by `s4.build.json`
-/// and `s4.debug.bin` by `s4.debug.build.json`. A ROM with no extension gains one
-/// (`rom` becomes `rom.build.json`).
 /// Whether this build writes a `<stem>.build.json`: with `-o`, unless `--no-build-json`.
 fn writes_sidecar(opts: &BuildOpts) -> bool {
     opts.output.is_some() && !opts.no_build_json
@@ -3625,14 +3627,20 @@ fn layout_pass_for(opts: &BuildOpts) -> sigil_frontend_emp::export_side::LayoutP
     }
 }
 
+/// Where the build-data export for the ROM written to `rom_out` lives: the ROM's
+/// final extension replaced by `build.json`, so `s4.bin` is described by `s4.build.json`
+/// and `s4.debug.bin` by `s4.debug.build.json`. A ROM with no extension gains one
+/// (`rom` becomes `rom.build.json`).
 fn sidecar_path(rom_out: &std::path::Path) -> std::path::PathBuf {
     rom_out.with_extension("build.json")
 }
 
-/// Everything the sidecar says that does not depend on the installed ROM's hash.
-/// Assembled BEFORE anything is written, so an export that cannot be stated (a define
-/// that does not fit, a source read that fits no root, a file that changed while the
-/// build read it) fails the build while the previous ROM and its sidecar still agree.
+/// Everything the sidecar says that does not depend on the ROM's hash. Assembled, and
+/// then rendered with the line table by [`render_export`], BEFORE anything is written,
+/// so an export that cannot be stated (a define that does not fit, a source read that
+/// fits no root, a file that changed while the build read it, a line row naming no
+/// file, an uncovered byte) fails the build while the previous ROM and its sidecar
+/// still agree.
 struct ExportParts {
     tool: sigil_link::export::ToolRecord,
     shape: sigil_link::export::ShapeRecord,
@@ -3689,7 +3697,7 @@ fn prepare_export(
     Ok(ExportParts { tool, shape, inputs_sha256, files, aeon_root, sigil_root })
 }
 
-/// Render the sidecar for the ROM bytes `full`, which are the bytes already installed.
+/// Render the sidecar for the ROM bytes `full`, which are the bytes about to be installed.
 /// The build's own tables come through [`sigil_link::export::build_export`]; the
 /// read-set hash is the caller's, set here.
 ///
@@ -3706,6 +3714,12 @@ fn render_export(
     assembled_len: usize,
 ) -> Result<String, String> {
     use sigil_link::export::*;
+    // Test-only failure injection where a real line-table refusal arises (an uncovered
+    // byte, a row naming no file): the gate `an_export_failure_writes_nothing` proves it
+    // leaves the previous ROM, listing and sidecar untouched. Nothing else sets it.
+    if std::env::var_os("SIGIL_TEST_FAIL_EXPORT").is_some_and(|v| v == "1") {
+        return Err("SIGIL_TEST_FAIL_EXPORT=1, refusing the export".into());
+    }
     let rom = RomRecord { path: rom_name, size: full.len() as u64, sha256: sha256_of(full) };
     let mut post_link = Vec::new();
     if full.len() > assembled_len {

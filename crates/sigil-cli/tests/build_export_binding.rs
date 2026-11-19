@@ -43,7 +43,7 @@ fn scratch(tree: &Path, case: &str) -> PathBuf {
 fn run(tree: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
     cmd.args(["build", "--aeon"]).arg(tree).args(["--game", "demo"]).args(args);
-    cmd.env_remove("SIGIL_TEST_FAIL_BEFORE_SIDECAR");
+    cmd.env_remove("SIGIL_TEST_FAIL_BEFORE_SIDECAR").env_remove("SIGIL_TEST_FAIL_EXPORT");
     for (k, v) in envs {
         cmd.env(k, v);
     }
@@ -145,6 +145,30 @@ fn stale_sidecar_is_removed_before_install() {
     assert!(String::from_utf8_lossy(&o.stderr).contains("SIGIL_TEST_FAIL_BEFORE_SIDECAR"));
     assert!(rom.exists(), "the ROM is installed before the hook point, so the case is the hard one");
     assert!(!sidecar.exists(), "a stale sidecar survived beside a newly installed ROM");
+}
+
+#[test]
+fn an_export_failure_writes_nothing() {
+    // The export is rendered in full before the first write (final review A-M1): a
+    // refusal leaves the previous ROM, listing and sidecar exactly as they were, so they
+    // still agree. Before the fix the line walk ran after the install and left a new
+    // ROM and listing with no sidecar.
+    let Some((_g, tree)) = tree() else { return skip() };
+    let dir = scratch(&tree, "export_fail");
+    let (rom, lst, sidecar) = (dir.join("e.bin"), dir.join("e.lst"), dir.join("e.build.json"));
+    for (p, body) in [(&rom, "old rom"), (&lst, "old listing"), (&sidecar, "{\"old\":true}")] {
+        std::fs::write(p, body).unwrap();
+    }
+    let o = run(
+        &tree,
+        &["-o", rom.to_str().unwrap(), "--emit-lst", lst.to_str().unwrap()],
+        &[("SIGIL_TEST_FAIL_EXPORT", "1")],
+    );
+    assert!(!o.status.success(), "the export refusal must fail the build");
+    assert!(String::from_utf8_lossy(&o.stderr).contains("SIGIL_TEST_FAIL_EXPORT"));
+    assert_eq!(std::fs::read_to_string(&rom).unwrap(), "old rom", "a new ROM was installed before the export was stated");
+    assert_eq!(std::fs::read_to_string(&lst).unwrap(), "old listing", "a new listing was installed before the export was stated");
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "{\"old\":true}", "the sidecar was touched by a refused export");
 }
 
 #[test]
