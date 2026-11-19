@@ -2944,10 +2944,14 @@ fn packed_true_bases(
             }
         }
         prev_islands = Some(islands);
-        // Re-measure with the round-0 pin discipline: FROZEN-LABELED sections at
-        // their packed bases (correct relaxation at the very address each will
-        // occupy), never-pinned sections at the legacy scratch (the asl-width
-        // emulation, unchanged), and the phase banks at scratch too — a bank's
+        // Re-measure IN PLACE: every non-bank ROM section at its packed base, the very
+        // address it is emitted at, so each length is the one its own references
+        // relax to there. (Until walk-measure-in-place this pinned only the
+        // FROZEN-LABELED sections and left every other section at a far-scratch slot,
+        // an asl-width emulation: a reference into a scratch section cannot take a
+        // short form, so such a section, and every section reaching into one, measured
+        // longer than it is emitted and the difference stayed in the ROM as zero
+        // padding after its last row.) The phase banks stay at scratch: a bank's
         // content is addressed through its vma, and the pre-bank blob's baked
         // align-pad is sized for its ORIGINAL position, so at a shifted packed base
         // its image overshoots the hard bank org until declared_spans clamps it.
@@ -2956,7 +2960,7 @@ fn packed_true_bases(
             .map(|s| s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false))
             .collect();
         let remeasure: Vec<Option<u32>> = (0..n)
-            .map(|i| if labeled[i] && !bankish[i] { out[i] } else { None })
+            .map(|i| if is_rom_section(&sections[i]) && !bankish[i] { out[i] } else { None })
             .collect();
         // Exact at these pins (overlap tolerated — a length that grows only once the
         // layout is packed, the config_a `boot` knife-edge, simply measures longer
