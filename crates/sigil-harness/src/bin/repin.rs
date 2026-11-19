@@ -145,9 +145,6 @@ fn main() -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(&e),
     };
-    for w in &resolved.warnings {
-        eprintln!("repin: warning: {w}");
-    }
     let prov = Provenance {
         plain_path: "sigil-native canonical resolve".into(),
         debug_path: "sigil-native canonical resolve".into(),

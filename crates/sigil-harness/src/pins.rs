@@ -327,7 +327,7 @@ pub const PLAYER_FLY: Region = Region { plain_base: 0x112B6, debug_base: 0x113C8
 /// `PState_Glide` .. `section:player_glide`, gate `SIGIL_EMP_PLAYER_GLIDE`.
 pub const PLAYER_GLIDE: Region = Region { plain_base: 0x113F0, debug_base: 0x11500, plain_len: 0x2DC, debug_len: 0x2D8 };
 
-/// `Climb_WallDist` .. `CharDef_Sonic`, gate `SIGIL_EMP_PLAYER_CLIMB`.
+/// `Climb_WallDist` .. `section:player_instashield`, gate `SIGIL_EMP_PLAYER_CLIMB`.
 pub const PLAYER_CLIMB: Region = Region { plain_base: 0x116CC, debug_base: 0x117D8, plain_len: 0xB6C, debug_len: 0xB68 };
 
 /// `Collision_ProbeDown` .. `section:player_sensors`, gate `SIGIL_EMP_PLAYER_SENSORS`.
