@@ -7,3 +7,7 @@
 //! the descriptions are inert and the old driver in sigil-harness ignores them.
 
 pub mod describe;
+
+/// Test support: the aeon reference tree for this crate's reference-dependent tests.
+#[doc(hidden)]
+pub mod reference;

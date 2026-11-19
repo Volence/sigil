@@ -114,6 +114,11 @@ SOURCE_GATES=(
     # is to fail HERE rather than in aeon's build, so a nightly that skipped it would
     # leave the promise it stands for unmeasured until an aeon build broke.
     emp_cpu_attr_spelling
+    # the G0b descriptions (games/<id>/game.toml, engine/engine.toml and their
+    # baseline.toml) load from the aeon tree and agree with the Rust tables they were
+    # transcribed from. Source only: it reads TOML and sigil's own Rust source, builds
+    # nothing and compares no committed artifact (crates/sigil-build).
+    game_descriptions
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus

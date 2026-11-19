@@ -2187,11 +2187,15 @@ until its row is removed.
 
 - state: **open** 2026-11-19 (found in G0b Task 2)  size: `S`  project: `G0B-GAME-AS-DATA`
 - Four things the description formats leave for later G0b tasks, each a decision rather than a defect:
-  1. **Strict census scope.** `sigil-build`'s two description-reading tests (`sonic4_game_toml_loads`,
-     `engine_toml_loads`) are unit tests in `src/describe.rs`, as the brief places them. They skip with `skip: ` and
-     fail under `SIGIL_STRICT_GATE=1`, mirroring `test_support::reference_tree`, but the strict census
-     (`strict_census::scanned_files`) and `skip_marker_lint` scan only `crates/*/tests`, so neither sees these two
-     consultations. Moving them to `crates/sigil-build/tests/` (or widening the census) puts them under both.
+  1. **Strict census scope: CLOSED in Task 2 fix round 1.** The two description-reading tests moved to
+     `crates/sigil-build/tests/game_descriptions.rs`, resolve the tree through `AEON_DIR` (the mirrored A8 / d-18
+     resolver `sigil_build::reference::aeon_dir`; the parcel-only `AEON_G0B_DIR` is gone), and are a
+     `nightly_source_gates.sh` SOURCE_GATES member. `skip_marker_lint` and `strict_census_lint` were each shown red
+     on a mutation of that file.
+  5. **Misspelt define overrides (carry to Task 5).** `resolve_shape` accepts a shape override of a define nobody
+     declared (`defines = { STRES_EVICT = 1 }` resolves to a new define, no error): a hole in closed inputs. The
+     check needs the engine's `[defines]` as well as the game's, so Task 5's driver must refuse an override of an
+     undeclared define, by name.
   2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
      has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
      for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout
