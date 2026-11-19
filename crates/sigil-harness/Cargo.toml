@@ -21,6 +21,11 @@ sigil-isa = { path = "../sigil-isa" }
 # sigil-link's map loader established — no new dependency class.
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+# G0b Task 4: the game-independent driver code lives in sigil-build, and the old
+# driver here calls it (re-exported at its old paths). The edge runs ONE way:
+# sigil-build must never depend on sigil-harness. Task 3's description-loader
+# tests (tests/descriptions_agree_with_rust.rs) use this same dependency.
+sigil-build = { path = "../sigil-build" }
 
 [dev-dependencies]
 # (sigil-frontend-emp and sigil-isa are regular dependencies — see
@@ -30,7 +35,3 @@ toml = "0.8"
 # resolves `path:line:col` by READING the file, so a fixture that does not exist
 # would only exercise the degraded (`None`) arm.
 tempfile = "3"
-# G0b Task 3 (tests/descriptions_agree_with_rust.rs): the description loaders, to
-# compare the aeon descriptions with the Rust profiles. Dev-only: sigil-build must
-# never depend on sigil-harness, and the library here does not depend on it.
-sigil-build = { path = "../sigil-build" }

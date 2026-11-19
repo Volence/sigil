@@ -287,6 +287,9 @@ name = "sigil-build"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sigil-frontend-emp",
+ "sigil-ir",
+ "sigil-link",
  "sigil-span",
  "toml",
 ]

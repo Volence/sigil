@@ -3,14 +3,20 @@ name = "sigil-build"
 version = "0.1.0"
 edition = "2021"
 
-# G0b (Empyrean v2 step 0): the game-as-data build driver. Task 2 adds only the
+# G0b (Empyrean v2 step 0): the game-as-data build driver. Task 2 added the
 # description formats (`game.toml`, `engine.toml`, `baseline.toml`) as serde
-# structs and their loaders; nothing calls them yet. This crate must never
-# depend on sigil-harness (G0b Task 4 checks the edge): the driver leaves the
-# test crate, it does not reach back into it.
+# structs and their loaders; Task 4 moved the game-independent driver code here
+# out of sigil-harness, which now calls it. This crate must never depend on
+# sigil-harness (G0b Task 4 checks the edge): the driver leaves the test crate,
+# it does not reach back into it.
 [dependencies]
 # Every description read goes through the read-set recorder, so a build that reads
 # one records it in the listing's source digest (sigil-span read_set_gate).
 sigil-span = { path = "../sigil-span" }
+# The section/fragment IR, the linker, and the `.emp` front end the moved driver
+# code is written against (G0b Task 4).
+sigil-ir = { path = "../sigil-ir" }
+sigil-link = { path = "../sigil-link" }
+sigil-frontend-emp = { path = "../sigil-frontend-emp" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

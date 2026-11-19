@@ -53,7 +53,7 @@ pub mod seam2;
 /// The one renderer every error diagnostic the native build reports goes through:
 /// one `path:line:col: [Error] message` line per diagnostic, for the comptime
 /// guards, the deferred link asserts, and the sound emitters' co-link guards alike.
-pub mod diag_render;
+pub use sigil_build::diag::render as diag_render;
 /// The import rule for the seams that lower `.emp` files with no resolve pass.
 pub mod import_check;
 
