@@ -718,6 +718,17 @@ happens to sit at the tip, which is the point of deriving rather than listing.
   documentation-only, and four by the time it was reviewed), so an unconditional assertion
   would be red on trees that are byte-correct in every way. Strict is where the bar belongs —
   it *is* the pre-merge run.
+  **When the strict pre-merge run needs a LATER aeon revision whose changes moved no ROM bytes**
+  (a description file, a doc), the pin moves with `refreeze --freeze NAME --ab REF --repin-aeon`
+  (2026-11-19, G0b T-REPIN), never by hand and never by a red-by-design attest plus
+  `--supersede-tip` (the chain-209 workaround). It appends an ordinary entry equal to its
+  predecessor except `aeon_rev`/`name`/`ab`/`note`, and refuses, each by its own `REPIN_*`
+  constant in `provenance.rs`: a byte move (that is an ordinary freeze); a revision that is the
+  tip's or does not descend from it; one not reachable from aeon `origin/master` (the
+  `rev_reachability` rule); a tip that is not green and attested; and `--supersede-tip` beside
+  it. Order: `--attest` the current tip on ITS aeon revision (green) → merge and push the aeon
+  change → `--repin-aeon` from a clean checkout of the pushed SHA → commit → `--attest` the new
+  tip. The full procedure is the `refreeze.rs` header.
 - **AEON-REV-WELL-FORMED** in `provenance::check` — an entry carrying an `aeon_rev` at all must
   carry a full 40-char SHA, **wherever it sits in the chain**. Hard in every mode.
 - **AEON-REV-MONOTONIC** in `provenance::check` — once any entry names its aeon revision, no

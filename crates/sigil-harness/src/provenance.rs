@@ -38,6 +38,7 @@
 //!
 //! read-set: not a build input: the provenance chain's reader and writer, run by `refreeze` and the suite; no `sigil build` path calls into this module.
 
+use crate::rev_reachability::{classify, RevOracle, RevState};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -463,12 +464,17 @@ pub struct AppendPlan {
     /// The regenerated goldens are IDENTICAL to the tip's, so the appended entry repeats
     /// its predecessor's CRC set exactly.
     ///
-    /// True only together with [`Self::superseded`] — see [`plan_freeze`]: a byte-neutral
-    /// freeze appends nothing unless it is an explicit abandonment.
+    /// True only together with [`Self::superseded`] or [`Self::repin_from`] — see
+    /// [`plan_freeze`] and [`plan_freeze_with_repin`]: a byte-neutral freeze appends nothing
+    /// unless it is an explicit abandonment or an explicit aeon re-pin.
     pub byte_neutral: bool,
     /// The `ratchet:` notice to print before appending — the strict-attestation rule is
     /// not armed on this chain yet.
     pub ratchet: Option<String>,
+    /// Present when this entry is a `--repin-aeon`: the tip's `aeon_rev` it moves the pin
+    /// AWAY from. Always together with `byte_neutral` — a re-pin that moved bytes is
+    /// refused ([`REPIN_MOVED_BYTES`]).
+    pub repin_from: Option<String>,
 }
 
 /// Decide what a freeze whose regenerated targets are `fresh` may do to `chain`.
@@ -502,6 +508,171 @@ pub fn plan_freeze(
     name: &str,
     supersede: Option<&str>,
 ) -> FreezeAction {
+    plan_freeze_with_repin(chain, fresh, name, supersede, None)
+}
+
+/// A `--repin-aeon` request: the revision the new entry will name, and the oracle that
+/// answers the two git questions about it (descent from the tip's revision, reachability
+/// from aeon `origin/master`). A trait object so the preconditions are tested over
+/// constructed histories, exactly as [`crate::rev_reachability`]'s classifier is.
+pub struct RepinAeon<'a> {
+    /// The new `aeon_rev` — `AEON_DIR`'s HEAD, resolved and vetted by `--freeze` itself.
+    pub new_rev: &'a str,
+    pub oracle: &'a dyn RevOracle,
+}
+
+/// `--repin-aeon` and `--supersede-tip` together (precondition 5). A re-pin appends past a
+/// GREEN tip and an abandonment past a RED one; no tip is both, so the pair is a usage
+/// error whatever the chain holds.
+pub const REPIN_WITH_SUPERSEDE: &str =
+    "--repin-aeon and --supersede-tip were both passed. A re-pin moves the aeon pin past a \
+     GREEN, attested tip; an abandonment appends past a RED one. No tip is both: pick one.";
+
+/// The tip is not green and attested (precondition 4). The gate's own reason follows.
+pub const REPIN_OF_AN_UNATTESTED_TIP: &str =
+    "--repin-aeon refused: a re-pin may only move the aeon pin past a tip whose strict run \
+     PASSED and is recorded. Run `refreeze --attest` on the tip's own aeon revision first \
+     (a RED tip is abandoned with --supersede-tip, never re-pinned).";
+
+/// The rebuilt goldens differ from the tip's (precondition 1). That is an ordinary freeze.
+pub const REPIN_MOVED_BYTES: &str =
+    "--repin-aeon refused: the regenerated goldens DIFFER from the tip's, so this is not a \
+     byte-neutral re-pin. A byte move is an ordinary freeze: drop --repin-aeon and cite the \
+     A/B evidence with --ab.";
+
+/// The new revision IS the tip's revision (precondition 2, first half): nothing to re-pin.
+pub const REPIN_SAME_AEON_REV: &str =
+    "--repin-aeon refused: AEON_DIR's HEAD is the revision the tip already names, so there \
+     is nothing to re-pin.";
+
+/// The new revision does not descend from the tip's (precondition 2, second half). A pin
+/// that moves sideways or backwards is not a re-pin of the same corpus to a later tree.
+pub const REPIN_NOT_A_DESCENDANT: &str =
+    "--repin-aeon refused: the new aeon revision is not a DESCENDANT of the tip's aeon_rev \
+     (`git merge-base --is-ancestor <tip_rev> <new>` must hold), so the bytes the tip \
+     froze are not known to be an ancestor state of the tree being pinned.";
+
+/// The new revision is not reachable from aeon `origin/master` (precondition 3), judged by
+/// [`crate::rev_reachability::classify`] — the same rule `--reachability` and
+/// `scripts/provision-aeon-ref.sh` step 1 apply. AHEAD OF REMOTE, OBJECT ABSENT, DIVERGENT
+/// and COULD NOT MEASURE all refuse.
+pub const REPIN_NOT_ON_AEON_MASTER: &str =
+    "--repin-aeon refused: the new aeon revision is not REACHABLE from aeon origin/master. \
+     The pin must name a durable, published revision: merge and push the aeon change first.";
+
+/// The chain-only preconditions of a re-pin: 5 (not with `--supersede-tip`) and 4 (the
+/// tip is green and attested, by [`append_gate`]). Pure; `refreeze` consults it before the
+/// rebuild so a refusal costs nothing, and [`plan_freeze_with_repin`] again at the append.
+pub fn repin_gate_fault(chain: &Chain, supersede: Option<&str>) -> Option<String> {
+    if supersede.is_some() {
+        return Some(REPIN_WITH_SUPERSEDE.to_string());
+    }
+    match append_gate(chain) {
+        AppendGate::Allowed => None,
+        AppendGate::Ratchet(m) | AppendGate::NeedsSupersede(m) | AppendGate::Refused(m) => {
+            Some(format!("{REPIN_OF_AN_UNATTESTED_TIP} {m}"))
+        }
+    }
+}
+
+/// The git preconditions of a re-pin: 2 (the new revision differs from the tip's
+/// `aeon_rev` and descends from it) and 3 (it is reachable from aeon `origin/master`).
+/// Every question goes through `oracle`; an answer that could not be measured refuses, it
+/// is never a pass.
+pub fn repin_revision_fault(chain: &Chain, new_rev: &str, oracle: &dyn RevOracle) -> Option<String> {
+    let tip = match chain.tip() {
+        Ok(t) => t,
+        Err(e) => return Some(e),
+    };
+    let Some(tip_rev) = tip.aeon_rev.as_deref().filter(|r| is_full_sha(r)) else {
+        return Some(format!(
+            "{REPIN_NOT_A_DESCENDANT} The tip `{}` names no well-formed aeon_rev, so there is \
+             no revision to descend from.",
+            tip.name
+        ));
+    };
+    if !is_full_sha(new_rev) {
+        return Some(format!(
+            "{REPIN_NOT_A_DESCENDANT} The new revision `{new_rev}` is not a full 40-char SHA."
+        ));
+    }
+    if new_rev == tip_rev {
+        return Some(format!("{REPIN_SAME_AEON_REV} (tip `{}`, aeon_rev {tip_rev})", tip.name));
+    }
+    match oracle.is_ancestor(tip_rev, new_rev) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Some(format!(
+                "{REPIN_NOT_A_DESCENDANT} ({tip_rev} is not an ancestor of {new_rev})"
+            ))
+        }
+        Err(why) => return Some(format!("{REPIN_NOT_A_DESCENDANT} {why}")),
+    }
+    let (state, against) = classify(oracle, new_rev);
+    if state != RevState::Reachable {
+        return Some(format!(
+            "{REPIN_NOT_ON_AEON_MASTER} {new_rev}: {}",
+            state.describe(against.as_ref())
+        ));
+    }
+    None
+}
+
+/// [`plan_freeze`] with its third path: an explicit `--repin-aeon`.
+///
+/// # Why a re-pin passes the fixpoint
+///
+/// The pairing gate (`provenance_chain::aeon_dir_matches_the_provenance_tip`) is hard under
+/// `SIGIL_STRICT_GATE=1` whenever `AEON_DIR`'s HEAD is not the tip's `aeon_rev`. A
+/// ROM-byte-neutral aeon change (a description file, a doc) still moves that HEAD, but the
+/// re-freeze lands on the fixpoint and appends nothing, so the strict bar stays red on a
+/// byte-correct tree. `--supersede-tip` cannot carry it either: it abandons a RED tip only,
+/// and a re-pin is not an abandonment.
+///
+/// So `--repin-aeon` appends an ORDINARY entry whose goldens equal its predecessor's and
+/// whose `aeon_rev` is the new revision — one `[[entry]]`, no schema change, legible from
+/// its own [`repin_note`]. It is admitted only when every precondition holds, each refused
+/// by its own constant: the bytes did not move ([`REPIN_MOVED_BYTES`]), the revision moved
+/// forward along aeon history ([`REPIN_SAME_AEON_REV`], [`REPIN_NOT_A_DESCENDANT`]) onto a
+/// published one ([`REPIN_NOT_ON_AEON_MASTER`]), the tip is green and attested
+/// ([`REPIN_OF_AN_UNATTESTED_TIP`]), and it is not combined with an abandonment
+/// ([`REPIN_WITH_SUPERSEDE`]).
+///
+/// Without `repin` this is exactly [`plan_freeze`]: the path below the repin branch is the
+/// pre-existing body, unchanged.
+pub fn plan_freeze_with_repin(
+    chain: &Chain,
+    fresh: &BTreeMap<String, Target>,
+    name: &str,
+    supersede: Option<&str>,
+    repin: Option<&RepinAeon<'_>>,
+) -> FreezeAction {
+    if let Some(r) = repin {
+        if let Some(f) = repin_gate_fault(chain, supersede) {
+            return FreezeAction::Refuse(f);
+        }
+        if !equals_tip(chain, fresh) {
+            let moved: Vec<&String> = match chain.tip() {
+                Ok(tip) => fresh
+                    .iter()
+                    .filter(|(k, t)| tip.targets.get(*k) != Some(*t))
+                    .map(|(k, _)| k)
+                    .chain(tip.targets.keys().filter(|k| !fresh.contains_key(*k)))
+                    .collect(),
+                Err(_) => Vec::new(),
+            };
+            return FreezeAction::Refuse(format!("{REPIN_MOVED_BYTES} Moved: {moved:?}"));
+        }
+        if let Some(f) = repin_revision_fault(chain, r.new_rev, r.oracle) {
+            return FreezeAction::Refuse(f);
+        }
+        return FreezeAction::Append(AppendPlan {
+            superseded: None,
+            byte_neutral: true,
+            ratchet: None,
+            repin_from: chain.tip().ok().and_then(|t| t.aeon_rev.clone()),
+        });
+    }
     let byte_neutral = equals_tip(chain, fresh);
     // THE FIXPOINT, and the one thing that passes it. Consulted before the append gate,
     // exactly as it always was: a no-op re-freeze proves nothing new and is exempt from a
@@ -517,6 +688,7 @@ pub fn plan_freeze(
                 superseded: None,
                 byte_neutral,
                 ratchet: Some(m),
+                repin_from: None,
             }),
         },
         AppendGate::Allowed => match supersede {
@@ -525,6 +697,7 @@ pub fn plan_freeze(
                 superseded: None,
                 byte_neutral,
                 ratchet: None,
+                repin_from: None,
             }),
         },
         AppendGate::NeedsSupersede(m) => match supersede {
@@ -541,6 +714,7 @@ pub fn plan_freeze(
                     }),
                     byte_neutral,
                     ratchet: None,
+                    repin_from: None,
                 }),
             },
         },
@@ -560,6 +734,22 @@ pub fn byte_neutral_note(abandoned: &str, author_note: &str) -> String {
     let head = format!(
         "goldens byte-identical to `{abandoned}`, this entry exists to abandon it: the fix \
          for what turned its strict run red moved no bytes."
+    );
+    if author_note.trim().is_empty() {
+        head
+    } else {
+        format!("{head} {author_note}")
+    }
+}
+
+/// The sentence a `--repin-aeon` entry stamps into its own `note`, for the same reason
+/// [`byte_neutral_note`] exists: an entry whose CRC set repeats its predecessor's owes the
+/// reader "why is this here twice?", and the answer is prose in an existing field, not a
+/// schema change. The operator's own `--note` is kept verbatim after it.
+pub fn repin_note(tip: &str, from: &str, to: &str, author_note: &str) -> String {
+    let head = format!(
+        "goldens byte-identical to `{tip}`, this entry re-pins aeon_rev {from} -> {to}: a \
+         descendant reachable from aeon origin/master whose changes moved no ROM bytes."
     );
     if author_note.trim().is_empty() {
         head
@@ -1157,8 +1347,10 @@ pub enum Applied {
         /// The entry this append abandoned, when it abandoned one.
         abandoned: Option<String>,
         /// The appended entry's goldens are identical to its predecessor's. Only ever
-        /// true alongside `abandoned` — see [`plan_freeze`].
+        /// true alongside `abandoned` or `repinned` — see [`plan_freeze_with_repin`].
         byte_neutral: bool,
+        /// The predecessor's `aeon_rev` when this append was a `--repin-aeon`.
+        repinned: Option<String>,
         chain_len: usize,
         /// Notices the caller should print (the `ratchet:` line).
         notices: Vec<String>,
@@ -1184,13 +1376,31 @@ pub fn freeze_into(
     fresh: &BTreeMap<String, Target>,
     supersede: Option<&str>,
 ) -> Result<Applied, String> {
+    freeze_into_with_repin(golden_dir, name, ab, aeon_rev, note, fresh, supersede, None)
+}
+
+/// [`freeze_into`] with `--repin-aeon`: `repin` is the oracle the git preconditions are
+/// asked through, and `aeon_rev` is the revision the re-pin moves to. See
+/// [`plan_freeze_with_repin`].
+#[allow(clippy::too_many_arguments)]
+pub fn freeze_into_with_repin(
+    golden_dir: &Path,
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    fresh: &BTreeMap<String, Target>,
+    supersede: Option<&str>,
+    repin: Option<&dyn RevOracle>,
+) -> Result<Applied, String> {
     let path = golden_dir.join("provenance.toml");
     let src = std::fs::read_to_string(&path)
         .map_err(|e| format!("read {}: {e}", path.display()))?;
     let chain = parse(&src)?;
     let tip_name = chain.tip()?.name.clone();
 
-    let plan = match plan_freeze(&chain, fresh, name, supersede) {
+    let request = repin.map(|oracle| RepinAeon { new_rev: aeon_rev, oracle });
+    let plan = match plan_freeze_with_repin(&chain, fresh, name, supersede, request.as_ref()) {
         FreezeAction::Fixpoint => return Ok(Applied::Fixpoint { tip: tip_name }),
         FreezeAction::Refuse(m) => return Err(m),
         FreezeAction::Append(p) => p,
@@ -1226,7 +1436,9 @@ pub fn freeze_into(
     }
 
     // The entry that repeats its predecessor's CRC set says so in its own prose.
-    let note = if plan.byte_neutral {
+    let note = if let Some(from) = &plan.repin_from {
+        repin_note(&tip_name, from, aeon_rev, note)
+    } else if plan.byte_neutral {
         byte_neutral_note(&tip_name, note)
     } else {
         note.to_string()
@@ -1264,6 +1476,7 @@ pub fn freeze_into(
     Ok(Applied::Appended {
         abandoned: plan.superseded.map(|_| tip_name),
         byte_neutral: plan.byte_neutral,
+        repinned: plan.repin_from,
         chain_len: chain2.entry.len(),
         notices: plan.ratchet.into_iter().collect(),
     })

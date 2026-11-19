@@ -2203,7 +2203,13 @@ until its row is removed.
      shown red in both pre-absent and pre-present cases). (2) `provenance_chain::aeon_dir_matches_the_provenance_tip`
      **remains**: the tree is not the provenance tip; the provenance re-pin is the controller's ruling, the test and
      `golden/provenance.toml` are untouched. A standalone copy also needs full git history and every `suite_path()`
-     sibling linked beside it.
+     sibling linked beside it. **Ruled (proxy, 2026-11-19): re-pin at landing with `refreeze --freeze NAME --ab REF
+     --repin-aeon`** (built and unit-tested in T-REPIN, `tests/repin_aeon.rs`; never run against the real chain yet).
+     Landing order, all five preconditions enforced by the tool: (a) the real tip #209 `pin-advance-99cb963d` carries
+     NO strict run, so `--attest` it FIRST on its own aeon 99cb963d from a sigil revision paired with that tree (G0a
+     tip / master, NOT the G0b tip, whose description tests need the descriptions and would record RED, and a RED tip
+     cannot be re-pinned, only superseded); (b) merge + push aeon `feat/g0b-descriptions` to aeon master; (c)
+     `--repin-aeon` from a clean checkout of the pushed SHA; (d) commit, then `--attest` the new tip.
   2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
      has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
      for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout

@@ -20,6 +20,11 @@
 //! SIGIL_BUILD=<sigil>/target/release/sigil AEON_DIR=/path/to/aeon \
 //!   cargo run -p sigil-harness --bin refreeze -- \
 //!     --freeze <parcel-name> --ab <A/B-evidence-ref> [--note "<one line>"]
+//!
+//! # re-pin the chain to a LATER aeon revision whose changes moved no ROM bytes:
+//! SIGIL_EMIT=... SIGIL_BUILD=... AEON_DIR=/clean/checkout/of/the/new/aeon/sha \
+//!   cargo run -p sigil-harness --bin refreeze -- \
+//!     --freeze <parcel-name> --ab <evidence-ref> --repin-aeon [--note "<one line>"]
 //! ```
 //!
 //! `--freeze` runs, IN ORDER: (1) `golden/capture_goldens.sh --write` (rebuild all six
@@ -36,6 +41,24 @@
 //! ordinary entry whose goldens equal its predecessor's, so that a RED tip whose fix
 //! moved no bytes can still be abandoned. Every supersede precondition still gates it.
 //! See [`sigil_harness::provenance::plan_freeze`].
+//!
+//! The OTHER thing that passes it: an explicit `--repin-aeon`. A ROM-byte-neutral aeon
+//! change (a description file, a doc) moves `AEON_DIR`'s HEAD off the tip's `aeon_rev`,
+//! which the strict pairing gate `provenance_chain::aeon_dir_matches_the_provenance_tip`
+//! turns red, while the freeze lands on the fixpoint and appends nothing. `--repin-aeon`
+//! appends an ordinary entry whose goldens/CRCs/anchors EQUAL its predecessor's and whose
+//! `aeon_rev` is the new HEAD (resolved exactly as every `--freeze` resolves it). It is
+//! refused, each by its own constant in `provenance`, unless: (1) the rebuilt goldens hit
+//! the fixpoint (`REPIN_MOVED_BYTES`); (2) the new revision differs from the tip's and
+//! descends from it (`REPIN_SAME_AEON_REV`, `REPIN_NOT_A_DESCENDANT`); (3) it is reachable
+//! from aeon `origin/master` by the `rev_reachability` rule (`REPIN_NOT_ON_AEON_MASTER`);
+//! (4) the tip is green and attested (`REPIN_OF_AN_UNATTESTED_TIP`); (5) `--supersede-tip`
+//! is not also passed (`REPIN_WITH_SUPERSEDE`). 4 and 5 are checked before the rebuild, 2
+//! and 3 as soon as the revision is known, and all five again at the append. The order at
+//! landing is therefore: `--attest` the CURRENT tip on its own aeon revision (green), merge
+//! and push the aeon change, `--freeze NAME --ab REF --repin-aeon` from a clean checkout of
+//! the pushed aeon SHA, commit, then `--attest` the new tip. See
+//! [`sigil_harness::provenance::plan_freeze_with_repin`].
 //!
 //! `--freeze` REFUSES unless it can name the aeon revision honestly: `AEON_DIR` must be
 //! set, be a git repository, resolve `HEAD`, and be CLEAN. That revision is recorded in
@@ -74,7 +97,7 @@ use sigil_harness::harness_root::{
     announce_root, repin_invocation, resolve_harness_root, ROOT_OVERRIDE,
 };
 use sigil_harness::provenance::{
-    self, Applied, AppendGate, StrictRun, Target, SUPERSEDE_OF_A_GREEN_TIP,
+    self, Applied, AppendGate, StrictRun, Target, REPIN_WITH_SUPERSEDE, SUPERSEDE_OF_A_GREEN_TIP,
     SUPERSEDE_WITHOUT_A_RED_RUN,
 };
 use sigil_harness::rev_reachability::{self, GitRevOracle, RevOracle, RevState, UnavailableRepo};
@@ -1397,7 +1420,14 @@ fn do_check(root: &Path) -> ExitCode {
     }
 }
 
-fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&str>) -> ExitCode {
+fn do_freeze(
+    root: &Path,
+    name: &str,
+    ab: &str,
+    note: &str,
+    supersede: Option<&str>,
+    repin: bool,
+) -> ExitCode {
     let golden = root.join("golden");
 
     // (-2) THE PROSE, CHECKED BEFORE ANYTHING. `--ab`, `--note` and `--supersede-tip` are
@@ -1425,11 +1455,25 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
     // has not been attested yet. WITH the flag there is no such freeze: an explicit
     // abandonment appends whether or not the bytes moved, so a gate that will refuse the
     // append refuses here, before the rebuild, whatever the goldens turn out to be.
-    if let Some(c) = std::fs::read_to_string(golden.join("provenance.toml"))
-        .ok()
-        .and_then(|s| provenance::parse(&s).ok())
-    {
-        match (provenance::append_gate(&c), supersede) {
+    //
+    // `--repin-aeon` is an append by definition (it exists to pass the fixpoint), so its
+    // chain-only preconditions (not with --supersede-tip; tip green and attested) refuse
+    // here, before the rebuild, and the chain must be READABLE for them to be asked.
+    let chain_now = std::fs::read_to_string(golden.join("provenance.toml"))
+        .map_err(|e| e.to_string())
+        .and_then(|s| provenance::parse(&s));
+    if repin {
+        match &chain_now {
+            Ok(c) => {
+                if let Some(f) = provenance::repin_gate_fault(c, supersede) {
+                    return fail(f);
+                }
+            }
+            Err(e) => return fail(format!("--repin-aeon cannot read the chain: {e}")),
+        }
+    }
+    if let Ok(c) = &chain_now {
+        match (provenance::append_gate(c), supersede) {
             (AppendGate::Ratchet(_), Some(_)) => return fail(SUPERSEDE_WITHOUT_A_RED_RUN),
             (AppendGate::Allowed, Some(_)) => return fail(SUPERSEDE_OF_A_GREEN_TIP),
             (AppendGate::Refused(m), Some(_)) => return fail(m),
@@ -1448,6 +1492,18 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         Err(e) => return fail(format!("refusing to freeze, {e}")),
     };
     eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
+
+    // (0.05) THE RE-PIN'S GIT PRECONDITIONS, as soon as the revision is known and before
+    // the rebuild: the new revision descends from the tip's and is reachable from aeon
+    // origin/master. Asked again at the append, against the chain as it is then.
+    if repin {
+        if let Ok(c) = &chain_now {
+            if let Some(f) = provenance::repin_revision_fault(c, &aeon_rev, aeon_oracle().as_ref()) {
+                return fail(f);
+            }
+        }
+        eprintln!("refreeze: --repin-aeon preconditions hold before the rebuild (tip attested, descendant, on origin/master)");
+    }
 
     // (0.1) WHICH BUILD DIRECTORY. Resolved here as well as in `run_script` so a
     // derivation that cannot be made refuses before the journal opens, rather than three
@@ -1484,7 +1540,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         Ok(j) => j,
         Err(e) => return fail(e),
     };
-    match freeze_steps(root, &golden, &mut journal, name, ab, &aeon_rev, note, supersede) {
+    match freeze_steps(root, &golden, &mut journal, name, ab, &aeon_rev, note, supersede, repin) {
         // The journal STAYS on a failure, which is the same state a kill leaves; the
         // report goes out now as well, while whoever ran this is still watching.
         Err(e) => {
@@ -1514,6 +1570,7 @@ fn freeze_steps(
     aeon_rev: &str,
     note: &str,
     supersede: Option<&str>,
+    repin: bool,
 ) -> Result<(), String> {
     // (1) blobs, (2) size tables, (3) pins — the three regen steps.
     //
@@ -1544,7 +1601,7 @@ fn freeze_steps(
     // this entry may be written lives in `provenance::freeze_into`, where it is reachable
     // by a test that needs neither seven rebuilt ROMs nor the real chain.
     journal_step(journal, freeze_journal::STEP_LEDGER, || {
-        report_ledger_half(golden, name, ab, aeon_rev, note, &fresh, supersede)
+        report_ledger_half(golden, name, ab, aeon_rev, note, &fresh, supersede, repin)
     })
 }
 
@@ -1559,6 +1616,7 @@ fn journal_step(
     journal.record(key)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn report_ledger_half(
     golden: &Path,
     name: &str,
@@ -1567,15 +1625,26 @@ fn report_ledger_half(
     note: &str,
     fresh: &BTreeMap<String, Target>,
     supersede: Option<&str>,
+    repin: bool,
 ) -> Result<(), String> {
-    match provenance::freeze_into(golden, name, ab, aeon_rev, note, fresh, supersede) {
+    let oracle = repin.then(aeon_oracle);
+    match provenance::freeze_into_with_repin(
+        golden,
+        name,
+        ab,
+        aeon_rev,
+        note,
+        fresh,
+        supersede,
+        oracle.as_deref(),
+    ) {
         Err(m) => Err(m),
         Ok(Applied::Fixpoint { tip }) => {
             println!("refreeze: FIXPOINT, the regenerated goldens match tip `{tip}`; nothing appended.");
             println!("          (byte-neutral re-freeze; the tree stays git-clean.)");
             Ok(())
         }
-        Ok(Applied::Appended { abandoned, byte_neutral, chain_len, notices }) => {
+        Ok(Applied::Appended { abandoned, byte_neutral, repinned, chain_len, notices }) => {
             // `ratchet:`, never `skip:`. This lane's strict bar requires zero `skip:`
             // lines and this is not a missing reference; it is a rule that has not armed.
             for n in &notices {
@@ -1596,6 +1665,12 @@ fn report_ledger_half(
                          `{old}` and the fix that closed it moved no bytes."
                     );
                 }
+            }
+            if let Some(from) = &repinned {
+                println!(
+                    "refreeze: RE-PINNED aeon_rev {from} -> {aeon_rev}; the regenerated goldens are \
+                     byte-identical to the tip, so the entry repeats its CRC set."
+                );
             }
             println!(
                 "refreeze: appended entry `{name}` (ab=\"{ab}\", aeon_rev={aeon_rev}); chain len {chain_len}."
@@ -1623,6 +1698,7 @@ fn main() -> ExitCode {
     let mut ab = String::new();
     let mut note = String::new();
     let mut supersede: Option<String> = None;
+    let mut repin = false;
     let mut expect: Vec<String> = Vec::new();
     let mut log: Option<String> = None;
     let mut retire: Option<String> = None;
@@ -1641,6 +1717,7 @@ fn main() -> ExitCode {
                 Some(r) => supersede = Some(r),
                 None => return fail("--supersede-tip needs a one-line reason"),
             },
+            "--repin-aeon" => repin = true,
             "--expect-test" => match args.next() {
                 Some(t) => expect.push(t),
                 None => return fail("--expect-test needs a test name"),
@@ -1655,9 +1732,15 @@ fn main() -> ExitCode {
             other => return fail(format!(
                 "unknown argument `{other}` (try --check / --reachability / --attest \
                  [--expect-test NAME] [--retired-strict-gates WHY] / --freeze NAME --ab REF \
-                 [--note N] [--supersede-tip WHY])"
+                 [--note N] [--supersede-tip WHY | --repin-aeon])"
             )),
         }
+    }
+    if repin && freeze_name.is_none() {
+        return fail("--repin-aeon applies to --freeze, which appends the re-pin entry");
+    }
+    if repin && supersede.is_some() {
+        return fail(REPIN_WITH_SUPERSEDE);
     }
     if reachability && (check || attest || freeze_name.is_some()) {
         return fail(
@@ -1682,7 +1765,7 @@ fn main() -> ExitCode {
     }
     match (check, freeze_name) {
         (true, None) => do_check(&root),
-        (false, Some(name)) => do_freeze(&root, &name, &ab, &note, supersede.as_deref()),
+        (false, Some(name)) => do_freeze(&root, &name, &ab, &note, supersede.as_deref(), repin),
         (true, Some(_)) => fail("--check and --freeze are mutually exclusive"),
         (false, None) => fail("nothing to do: pass --check, --attest, or --freeze NAME --ab REF"),
     }
