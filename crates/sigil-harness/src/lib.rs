@@ -157,20 +157,10 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
     img.sections.iter().find(|s| s.lma == lma).map(|s| s.bytes.as_slice())
 }
 
-/// The Genesis header's checksum word (`$18E..$190`) — a SEMANTIC header
-/// fact, not a layout pin. One of the only two fields the out-of-scope
-/// `convsym -a`/`fixheader` post-steps rewrite (`convsym -a` appends the
-/// MD-Debugger `deb2` symbol table; `fixheader` re-checksums the appended
-/// image — M1.B models `convsym` as a no-op, so Sigil's `emit_rom` target is
-/// the pre-append ASSEMBLED ROM).
-pub const CHECKSUM_FIELD_RANGE: std::ops::Range<usize> = 0x18E..0x190;
-/// The header's `dc.l EndOfRom-1` ROM-end pointer (`$1A4..$1A8`) — the other
-/// convsym-rewritten field (bumped to the POST-append end). Which of its four
-/// bytes actually differ shifts whenever the deb2 append changes size (the
-/// tranche-9 PerFrame deletion flipped `$1A5` back), which is why the
-/// rewritten set is DERIVED per comparison rather than pinned — see
-/// [`derive_convsym_rewritten`] (tranche-10 step 0, D-T10.6).
-pub const ROM_END_FIELD_RANGE: std::ops::Range<usize> = 0x1A4..0x1A8;
+/// The Genesis header's checksum word and ROM-end pointer: the two semantic header
+/// fields the `convsym -a` / `fixheader` post-steps rewrite. Moved, unchanged, to
+/// `sigil_build::emit` (G0b Task 4).
+pub use sigil_build::emit::{CHECKSUM_FIELD_RANGE, ROM_END_FIELD_RANGE};
 
 /// The offsets at which `rom` (assembled) and `refrom` (final, post-convsym)
 /// differ WITHIN the two semantic header fields above — the derived

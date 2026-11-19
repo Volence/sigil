@@ -62,6 +62,7 @@ pub use sigil_build::guards::{
     check_budgets, declared_chain_drift_verdict, enforce_inapplicable_allowlist_against, hole_interior_faults,
     object_bank_cursor, render_declared_chain, validate_placement, GuardCensus,
 };
+pub use sigil_build::emit::{assembled_anchor_crc, crc32, listing_from_resolved, z80_windows, RomBuild};
 
 // ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
 //
@@ -2491,23 +2492,6 @@ pub fn check_sound_fold(resolved: &[Section], folded: Option<&[(&str, u32)]>) ->
     Ok(compared)
 }
 
-/// An assembled ROM image with the artefacts derived from the same build: the
-/// sigil-canonical symbol listing (the deb2-appendix source) and the `.emp`
-/// lowering's [`BuildWarning`]s, carried out to whichever caller renders them.
-pub struct RomBuild {
-    /// The assembled ROM image (checksum already folded by `emit_rom`).
-    pub rom: Vec<u8>,
-    /// One `C` row per resolved section label at its final VMA.
-    pub listing: Vec<sigil_link::ListingSymbol>,
-    /// Every non-error diagnostic the `.emp` lowering produced.
-    pub warnings: Vec<BuildWarning>,
-    /// The module roots the build derived from the game's map and placed.
-    pub registry: Vec<ModuleSpec>,
-    /// What the build-data export reads: the placed sections, the span locator and the
-    /// side tables ([`sigil_link::export::build_export`]).
-    pub export_inputs: ExportInputs,
-}
-
 /// The chained build's program, placed and guard-decided: everything
 /// `build_rom_chained_with_listing` computes BEFORE it links. Emit the sound
 /// artifacts (sound-on shapes), assemble the AS residual, lower the `.emp`
@@ -2794,35 +2778,6 @@ pub fn build_rom_chained_with_listing(
     let side = SideTables { symbols, layouts, consts, code, z80 };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side, z80_windows };
     Ok(RomBuild { rom, listing, warnings, registry, export_inputs })
-}
-
-/// The shape's Z80 bank windows, from its memory map (the `z80_bank` regions in force,
-/// each where its anchor placed it): what decides the space of a section phased into
-/// one ([`sigil_link::export::section_space`]). A window the map gives no VMA cannot
-/// say what a phased section in it maps to, so one holding a phased section is refused
-/// rather than left to state that section in `m68k`.
-fn z80_windows(
-    map: &sigil_ir::map::MemoryMap,
-    resolved: &[Section],
-) -> Result<Vec<sigil_link::export::Z80Window>, String> {
-    let mut out = Vec::new();
-    for r in map.regions.iter().filter(|r| r.kind == sigil_ir::map::RegionKind::Z80Bank) {
-        match r.vma_base {
-            Some(vma) => out.push(sigil_link::export::Z80Window { lma: r.lma_base, vma, size: r.size }),
-            None => {
-                if let Some(s) =
-                    resolved.iter().find(|s| r.contains(s.lma) && s.vma_origin() != s.lma && s.image_len() > 0)
-                {
-                    return Err(format!(
-                        "build export: z80_bank region `{}` declares no vma, so the space of section `{}`, \
-                         phased into it, cannot be stated",
-                        r.name, s.name
-                    ));
-                }
-            }
-        }
-    }
-    Ok(out)
 }
 
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
@@ -3257,27 +3212,6 @@ pub fn resolve_canonical_sections(aeon: &Path, debug: bool) -> Result<Vec<Sectio
     resolve_frozen_sections(aeon, &sonic4_profile(debug))
 }
 
-/// CRC-32 (IEEE, the campaign provenance standard alongside byte-size): the one
-/// implementation the build's read set hashes with, so a ROM's `built:` CRC and its
-/// digest rows come from the same function.
-pub fn crc32(data: &[u8]) -> u32 {
-    sigil_span::read_set::crc32(data)
-}
-
-/// The header-neutral ASSEMBLED ANCHOR CRC over `bytes[0, eor)`: the checksum (`$18E`)
-/// and ROM-end-pointer (`$1A4`) header fields are zeroed before the CRC, so it is the
-/// drift-stable invariant the PROVENANCE anchors record (`e5765873` &c). `eor` is the
-/// target's `EndOfRom`; `bytes` may be a full golden file (only its prefix is read).
-pub fn assembled_anchor_crc(bytes: &[u8], eor: usize) -> u32 {
-    let mut prefix = bytes[..eor.min(bytes.len())].to_vec();
-    for i in crate::CHECKSUM_FIELD_RANGE.chain(crate::ROM_END_FIELD_RANGE) {
-        if i < prefix.len() {
-            prefix[i] = 0;
-        }
-    }
-    crc32(&prefix)
-}
-
 /// The convsym `as_lst` filter build.sh passes verbatim (`build.sh:170-171`).
 /// `z[A-Z].+` currently matches zero Aeon labels; passed for parity.
 pub const CONVSYM_FILTER: &str = "z[A-Z].+";
@@ -3411,78 +3345,6 @@ pub fn declares_error_handler_island(profile: &GameProfile, registry: &[ModuleSp
 /// symbol table immediately after me"; convsym appends at `EndOfRom`. So a shape that
 /// carries the blob must satisfy `EndOfRom == ErrorHandlerBlob + 0xF56`.
 pub const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
-
-/// The sigil-canonical symbol listing of a `resolve_layout` output — the single
-/// derivation both native drivers (chained + full-file) use.
-///
-/// TWO row kinds, because the listing describes two different kinds of name:
-///
-///  * every section LABEL → an as-`-L` `C` (code/ADDRESS) row at its final VMA.
-///    De-duplicated (a label is defined once) and deterministic (`emit_listing`
-///    address-sorts). RAM labels (`$FFFFxxxx`) are kept — convsym's
-///    `-range 0 FFFFFF` drops them from the deb2 table, but they belong in the
-///    full listing for the `s4budget` RAM consumer.
-///  * every folded EQUATE → an as-`-L` `-` (VALUE) row. `pub equ` mints a
-///    link-level `EquSym` and no label, so before this these names existed in the
-///    linker's symbol table and nowhere a tool could read them; a `.emp` module
-///    could compute a constant at comptime but not publish it. The `-` marker is
-///    the AS form for a value symbol and the discriminator every consumer keys on
-///    — see `sigil_link::emit_listing`, which additionally keeps equates out of
-///    the Oracle address-listing half.
-///
-/// Label rows win a name collision (`seen` is seeded by the label pass): a label
-/// is an address the debugger must resolve, and `link()` already rejects a genuine
-/// equ-vs-label duplicate through its `defined_here` channel, so this is a
-/// belt-and-braces tie-break, not a policy.
-fn listing_from_resolved(
-    resolved: &[sigil_ir::Section],
-    stubs: &SymbolTable,
-) -> Vec<sigil_link::ListingSymbol> {
-    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for sec in resolved {
-        let origin = sec.vma_origin();
-        // PHASE, decided at the SECTION, which is the only place it exists. A
-        // section with an explicit `vma:` that differs from where the linker
-        // actually placed it runs at one address and is stored at another, and its
-        // labels' listing values are the former. Anything else is unphased and
-        // carries no `lma` at all, so `Some` in a row always means a real phase.
-        //
-        // A RESERVE-ONLY section is excluded even when its VMA differs from its
-        // LMA. Aeon's RAM blocks are exactly that shape (`vma: $FFFFxxxx` over an
-        // LMA that anchors at the physical counter and places ZERO image bytes), so
-        // an `lma` for one of them would name a storage address for bytes that were
-        // never stored: a number a consumer could follow into unrelated ROM. RAM
-        // symbols are already recognised by every consumer here from their own
-        // `$FFFFxxxx` value; what the marker exists to disambiguate is a phased
-        // address that looks ORDINARY.
-        let phased = sec.vma_origin() != sec.lma && sec.image_len() > 0;
-        for label in &sec.labels {
-            if seen.insert(label.name.clone()) {
-                listing.push(sigil_link::ListingSymbol {
-                    name: label.name.clone(),
-                    value: origin.wrapping_add(label.offset),
-                    is_equate: false,
-                    unused: false,
-                    lma: phased.then(|| sec.lma.wrapping_add(label.offset)),
-                });
-            }
-        }
-    }
-    for (name, value) in sigil_link::resolved_equates(resolved, stubs) {
-        if seen.insert(name.clone()) {
-            listing.push(sigil_link::ListingSymbol {
-                name,
-                value: value as u32,
-                is_equate: true,
-                unused: false,
-                // An equate is a value, not storage: never phased.
-                lma: None,
-            });
-        }
-    }
-    listing
-}
 
 /// HARD placement guard: for a shape that carries the MD Debugger blob, the deb2
 /// appendix MUST start at exactly `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, i.e. the

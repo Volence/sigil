@@ -24,6 +24,10 @@ pub mod place;
 /// contract, budgets, region fit (G0b Task 4, from sigil-harness).
 pub mod guards;
 
+/// The emitted artifact's glue: the build result, the canonical listing, the Z80 bank
+/// windows, the header fields and CRCs (G0b Task 4, from sigil-harness).
+pub mod emit;
+
 /// Test support: the aeon reference tree for this crate's reference-dependent tests.
 #[doc(hidden)]
 pub mod reference;
