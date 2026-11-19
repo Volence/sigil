@@ -555,7 +555,8 @@ pub const REPIN_NOT_A_DESCENDANT: &str =
 /// The new revision is not reachable from aeon `origin/master` (precondition 3), judged by
 /// [`crate::rev_reachability::classify`] — the same rule `--reachability` and
 /// `scripts/provision-aeon-ref.sh` step 1 apply. AHEAD OF REMOTE, OBJECT ABSENT, DIVERGENT
-/// and COULD NOT MEASURE all refuse.
+/// and COULD NOT MEASURE all refuse, and it is asked BEFORE descent, so a history that
+/// cannot be measured at all refuses under this name.
 pub const REPIN_NOT_ON_AEON_MASTER: &str =
     "--repin-aeon refused: the new aeon revision is not REACHABLE from aeon origin/master. \
      The pin must name a durable, published revision: merge and push the aeon change first.";
@@ -599,6 +600,17 @@ pub fn repin_revision_fault(chain: &Chain, new_rev: &str, oracle: &dyn RevOracle
     if new_rev == tip_rev {
         return Some(format!("{REPIN_SAME_AEON_REV} (tip `{}`, aeon_rev {tip_rev})", tip.name));
     }
+    // Reachability BEFORE descent: `classify` is the one place a history that cannot be
+    // asked at all (no remote, no AEON_DIR, no object) is named, so an unmeasurable
+    // history refuses as precondition 3 with its COULD NOT MEASURE reason, never as a
+    // descent failure it was never measured for.
+    let (state, against) = classify(oracle, new_rev);
+    if state != RevState::Reachable {
+        return Some(format!(
+            "{REPIN_NOT_ON_AEON_MASTER} {new_rev}: {}",
+            state.describe(against.as_ref())
+        ));
+    }
     match oracle.is_ancestor(tip_rev, new_rev) {
         Ok(true) => {}
         Ok(false) => {
@@ -608,14 +620,27 @@ pub fn repin_revision_fault(chain: &Chain, new_rev: &str, oracle: &dyn RevOracle
         }
         Err(why) => return Some(format!("{REPIN_NOT_A_DESCENDANT} {why}")),
     }
-    let (state, against) = classify(oracle, new_rev);
-    if state != RevState::Reachable {
+    None
+}
+
+/// A re-pin's `--ab` must be EVIDENCE. No anchor moves on a re-pin, so the anchor-move
+/// rule never asks anything of it; without this an empty ref, the root's `asl-witness`
+/// sentinel, or the name of a chain entry would all be written. The evidence a re-pin
+/// owes is the byte-neutrality proof (the shapes comparison log, the landing run) a
+/// reader can open, judged by the same [`ab_witness_fault`] every anchor-moving entry is.
+pub const REPIN_WITHOUT_EVIDENCE: &str =
+    "--repin-aeon refused: --ab must name evidence a reader can open (the shapes comparison \
+     log or landing run that shows the re-pin is byte-neutral).";
+
+/// Whether `ab` is acceptable evidence for a re-pin on `chain`; `None` when it is.
+pub fn repin_ab_fault(ab: &str, chain: &Chain) -> Option<String> {
+    if ab.trim().is_empty() || ab.trim() == ASL_WITNESS {
         return Some(format!(
-            "{REPIN_NOT_ON_AEON_MASTER} {new_rev}: {}",
-            state.describe(against.as_ref())
+            "{REPIN_WITHOUT_EVIDENCE} --ab \"{ab}\" is empty or the root sentinel."
         ));
     }
-    None
+    ab_witness_fault(ab, chain)
+        .map(|why| format!("{REPIN_WITHOUT_EVIDENCE} --ab \"{ab}\": {why}."))
 }
 
 /// [`plan_freeze`] with its third path: an explicit `--repin-aeon`.
@@ -1405,6 +1430,11 @@ pub fn freeze_into_with_repin(
         FreezeAction::Refuse(m) => return Err(m),
         FreezeAction::Append(p) => p,
     };
+    if plan.repin_from.is_some() {
+        if let Some(f) = repin_ab_fault(ab, &chain) {
+            return Err(f);
+        }
+    }
 
     // Discipline pre-check: an anchor that MOVED needs a real A/B ref. Silent on a
     // byte-neutral append by construction — no anchor moved, so there is no A/B to cite.

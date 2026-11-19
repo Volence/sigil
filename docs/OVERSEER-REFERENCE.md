@@ -726,9 +726,23 @@ happens to sit at the tip, which is the point of deriving rather than listing.
   constant in `provenance.rs`: a byte move (that is an ordinary freeze); a revision that is the
   tip's or does not descend from it; one not reachable from aeon `origin/master` (the
   `rev_reachability` rule); a tip that is not green and attested; and `--supersede-tip` beside
-  it. Order: `--attest` the current tip on ITS aeon revision (green) → merge and push the aeon
-  change → `--repin-aeon` from a clean checkout of the pushed SHA → commit → `--attest` the new
-  tip. The full procedure is the `refreeze.rs` header.
+  it, and `--ab` that is not evidence (`ab_witness_fault`). **The G0b landing order** (controller
+  ruling 2026-11-19; the same text is in the `refreeze.rs` header and QUEUE
+  G0B-DESCRIBE-TASK2-RESIDUE item 6):
+  (a) sigil G0a lands on sigil master (fast-forward, owner-gated); (b) FROM SIGIL MASTER (then the G0a
+  tip, paired with aeon 99cb963d), with AEON_DIR at a clean checkout of aeon 99cb963d, `refreeze --attest`
+  tip #209 `pin-advance-99cb963d` and commit its ledger change ON SIGIL MASTER (evidence it should be green,
+  not proof: the G0a strict landing at c9c43c73 against a 99cb963d copy was GREEN,
+  `.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/landing-20261119T064629Z.log`); NEVER attest
+  #209 from the G0b tip, whose description tests need the descriptions, so it records RED, and a red tip can
+  only be superseded, never re-pinned; (c) merge or rebase `parcel/g0b-game-as-data` onto that master so the
+  G0b chain carries the attestation, and on the G0b branch `refreeze --check` must be clean with #209
+  attested; (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated); (e)
+  from the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA, `refreeze --freeze NAME --ab
+  <evidence> --repin-aeon`, commit; (f) `refreeze --attest` the new tip, commit; (g) the full strict landing
+  bar is fully green, then sigil G0b lands.
+  After a refusal at the append (a byte move) the rebuild has rewritten blobs, size tables and
+  `pins.rs`: the exact restore command is in the `refreeze.rs` header.
 - **AEON-REV-WELL-FORMED** in `provenance::check` — an entry carrying an `aeon_rev` at all must
   carry a full 40-char SHA, **wherever it sits in the chain**. Hard in every mode.
 - **AEON-REV-MONOTONIC** in `provenance::check` — once any entry names its aeon revision, no

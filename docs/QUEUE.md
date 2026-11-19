@@ -2217,11 +2217,20 @@ until its row is removed.
      `golden/provenance.toml` are untouched. A standalone copy also needs full git history and every `suite_path()`
      sibling linked beside it. **Ruled (proxy, 2026-11-19): re-pin at landing with `refreeze --freeze NAME --ab REF
      --repin-aeon`** (built and unit-tested in T-REPIN, `tests/repin_aeon.rs`; never run against the real chain yet).
-     Landing order, all five preconditions enforced by the tool: (a) the real tip #209 `pin-advance-99cb963d` carries
-     NO strict run, so `--attest` it FIRST on its own aeon 99cb963d from a sigil revision paired with that tree (G0a
-     tip / master, NOT the G0b tip, whose description tests need the descriptions and would record RED, and a RED tip
-     cannot be re-pinned, only superseded); (b) merge + push aeon `feat/g0b-descriptions` to aeon master; (c)
-     `--repin-aeon` from a clean checkout of the pushed SHA; (d) commit, then `--attest` the new tip.
+     **Landing order** (controller ruling 2026-11-19; the same text is in the `refreeze.rs` header and
+     `docs/OVERSEER-REFERENCE.md`; every precondition is enforced by the tool):
+     (a) sigil G0a lands on sigil master (fast-forward, owner-gated); (b) FROM SIGIL MASTER (then the G0a
+     tip, paired with aeon 99cb963d), with AEON_DIR at a clean checkout of aeon 99cb963d, `refreeze --attest`
+     tip #209 `pin-advance-99cb963d` and commit its ledger change ON SIGIL MASTER (evidence it should be green,
+     not proof: the G0a strict landing at c9c43c73 against a 99cb963d copy was GREEN,
+     `.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/landing-20261119T064629Z.log`); NEVER attest
+     #209 from the G0b tip, whose description tests need the descriptions, so it records RED, and a red tip can
+     only be superseded, never re-pinned; (c) merge or rebase `parcel/g0b-game-as-data` onto that master so the
+     G0b chain carries the attestation, and on the G0b branch `refreeze --check` must be clean with #209
+     attested; (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated); (e)
+     from the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA, `refreeze --freeze NAME --ab
+     <evidence> --repin-aeon`, commit; (f) `refreeze --attest` the new tip, commit; (g) the full strict landing
+     bar is fully green, then sigil G0b lands.
   2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
      has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
      for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout

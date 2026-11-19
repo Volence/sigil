@@ -51,14 +51,50 @@
 //! refused, each by its own constant in `provenance`, unless: (1) the rebuilt goldens hit
 //! the fixpoint (`REPIN_MOVED_BYTES`); (2) the new revision differs from the tip's and
 //! descends from it (`REPIN_SAME_AEON_REV`, `REPIN_NOT_A_DESCENDANT`); (3) it is reachable
-//! from aeon `origin/master` by the `rev_reachability` rule (`REPIN_NOT_ON_AEON_MASTER`);
-//! (4) the tip is green and attested (`REPIN_OF_AN_UNATTESTED_TIP`); (5) `--supersede-tip`
-//! is not also passed (`REPIN_WITH_SUPERSEDE`). 4 and 5 are checked before the rebuild, 2
-//! and 3 as soon as the revision is known, and all five again at the append. The order at
-//! landing is therefore: `--attest` the CURRENT tip on its own aeon revision (green), merge
-//! and push the aeon change, `--freeze NAME --ab REF --repin-aeon` from a clean checkout of
-//! the pushed aeon SHA, commit, then `--attest` the new tip. See
+//! from aeon `origin/master` by the `rev_reachability` rule, an unmeasurable history
+//! included (`REPIN_NOT_ON_AEON_MASTER`); (4) the tip is green and attested
+//! (`REPIN_OF_AN_UNATTESTED_TIP`); (5) `--supersede-tip` is not also passed
+//! (`REPIN_WITH_SUPERSEDE`); and `--ab` names evidence by `ab_witness_fault`
+//! (`REPIN_WITHOUT_EVIDENCE`). 4, 5 and `--ab` are checked before the rebuild, 2 and 3 as
+//! soon as the revision is known, and all of them again at the append. See
 //! [`sigil_harness::provenance::plan_freeze_with_repin`].
+//!
+//! AFTER A PRECONDITION-1 REFUSAL (or any refusal at the append) the rebuild has already
+//! rewritten the blobs, the size tables and `pins.rs`, and the journal stays open. Return
+//! to the committed state from the sigil repository root, then confirm:
+//!
+//! ```text
+//! git restore --source=HEAD -- \
+//!   crates/sigil-harness/golden/s4.bin crates/sigil-harness/golden/s4.debug.bin \
+//!   crates/sigil-harness/golden/demo.bin crates/sigil-harness/golden/demo.debug.bin \
+//!   crates/sigil-harness/golden/config_a.bin crates/sigil-harness/golden/config_b.bin \
+//!   crates/sigil-harness/golden/lean.bin crates/sigil-harness/golden/offcanonical_sizes \
+//!   crates/sigil-harness/src/pins.rs crates/sigil-harness/golden/provenance.toml
+//! rm crates/sigil-harness/golden/.freeze-journal
+//! cargo run -p sigil-harness --bin refreeze -- --check     # must be clean, no journal
+//! ```
+//!
+//! A byte move is then an ordinary `--freeze` (no `--repin-aeon`) with real A/B evidence.
+//!
+//! THE G0b LANDING ORDER (controller ruling 2026-11-19; the same text is in
+//! `docs/OVERSEER-REFERENCE.md` and `docs/QUEUE.md` G0B-DESCRIBE-TASK2-RESIDUE item 6):
+//!
+//!   (a) sigil G0a lands on sigil master (fast-forward, owner-gated).
+//!   (b) FROM SIGIL MASTER (then the G0a tip, paired with aeon 99cb963d), with AEON_DIR at a
+//!       clean checkout of aeon 99cb963d: `refreeze --attest` of tip #209
+//!       `pin-advance-99cb963d`; commit its ledger change ON SIGIL MASTER. Evidence it should
+//!       be green, not proof: the G0a strict landing run at c9c43c73 against a 99cb963d copy
+//!       was green (`.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/
+//!       landing-20261119T064629Z.log`). NEVER attest #209 from the G0b tip: its
+//!       description tests need the descriptions, so it records RED, and a red tip can only
+//!       be superseded, never re-pinned.
+//!   (c) Merge or rebase `parcel/g0b-game-as-data` onto that master, so the G0b chain carries
+//!       the attestation; on the G0b branch `refreeze --check` must be clean and #209 attested.
+//!   (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated).
+//!   (e) From the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA:
+//!       `refreeze --freeze NAME --ab <evidence> --repin-aeon`; commit.
+//!   (f) `refreeze --attest` the new tip (same AEON_DIR); commit.
+//!   (g) The full strict landing bar is fully green; then sigil G0b lands.
 //!
 //! `--freeze` REFUSES unless it can name the aeon revision honestly: `AEON_DIR` must be
 //! set, be a git repository, resolve `HEAD`, and be CLEAN. That revision is recorded in
@@ -1466,6 +1502,9 @@ fn do_freeze(
         match &chain_now {
             Ok(c) => {
                 if let Some(f) = provenance::repin_gate_fault(c, supersede) {
+                    return fail(f);
+                }
+                if let Some(f) = provenance::repin_ab_fault(ab, c) {
                     return fail(f);
                 }
             }

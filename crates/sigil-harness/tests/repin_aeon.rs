@@ -27,7 +27,7 @@
 use sigil_harness::provenance::{
     self, Applied, Chain, FreezeAction, StrictRun, Target, ASL_WITNESS, OUTCOME_FAILED,
     OUTCOME_PASSED, REPIN_MOVED_BYTES, REPIN_NOT_A_DESCENDANT, REPIN_NOT_ON_AEON_MASTER,
-    REPIN_OF_AN_UNATTESTED_TIP, REPIN_SAME_AEON_REV, REPIN_WITH_SUPERSEDE,
+    REPIN_OF_AN_UNATTESTED_TIP, REPIN_SAME_AEON_REV, REPIN_WITHOUT_EVIDENCE, REPIN_WITH_SUPERSEDE,
 };
 use sigil_harness::rev_reachability::{
     audit, Field, RemoteTip, Repo, RevOracle, RevState, UnavailableRepo,
@@ -261,13 +261,35 @@ fn p3_a_repin_to_a_revision_not_reachable_from_origin_master_is_refused() {
     assert_refused_by(&err, REPIN_NOT_ON_AEON_MASTER, "precondition 3 (object absent)");
 }
 
-/// (3, unmeasurable) An oracle that cannot answer never reads as a pass.
+/// (3, unmeasurable) An oracle that cannot answer never reads as a pass, and it refuses as
+/// precondition 3 (reachability) carrying its COULD NOT MEASURE reason, not as a descent
+/// failure it was never measured for.
 #[test]
 fn p3_an_unmeasurable_history_refuses_and_never_passes() {
     let (dir, fresh) = fixture(Tip::Green);
     let none = UnavailableRepo::new("COULD NOT MEASURE: AEON_DIR is not set");
     let err = refused(dir.path(), &fresh, &new(), &none, None);
+    assert_refused_by(&err, REPIN_NOT_ON_AEON_MASTER, "precondition 3 (unmeasurable)");
     assert!(err.contains("COULD NOT MEASURE"), "the unmeasured reason must be carried: {err}");
+}
+
+/// `--ab` on a re-pin must be evidence: empty, the root sentinel, a chain entry's name and
+/// a bare token are each refused by `REPIN_WITHOUT_EVIDENCE`; evidence-shaped refs pass
+/// (every other test here uses one).
+#[test]
+fn a_repin_whose_ab_is_not_evidence_is_refused() {
+    for ab in ["", "   ", "asl-witness", "tip", "master"] {
+        let (dir, fresh) = fixture(Tip::Green);
+        let golden = dir.path();
+        let before = bytes(golden);
+        let oracle = history(&master());
+        let err = provenance::freeze_into_with_repin(
+            golden, "the-repin", ab, &new(), "", &fresh, None, Some(&oracle),
+        )
+        .expect_err("a re-pin without evidence must be refused");
+        assert_refused_by(&err, REPIN_WITHOUT_EVIDENCE, &format!("--ab {ab:?}"));
+        assert_eq!(before, bytes(golden), "a refusal must not touch the ledger");
+    }
 }
 
 /// (4) The tip must be green and attested: a red tip, an unattested tip on an armed
