@@ -1766,8 +1766,8 @@ Two smaller items booked here as well:
   advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
   red on the Z80 rows by design.
 - 2026-11-18: that pin advance landed from `parcel/pin-advance-99cb963d` (entry #209, aeon
-  `99cb963d`, the pair merge plus the v2 harness commits; byte-neutral). #209 is not yet attested; the next
-  byte-moving freeze needs `refreeze --attest` of #209 against `.aeon-sigil-ref-99cb963d` first. The standing reference is `.aeon-sigil-ref-99cb963d`.
+  `99cb963d`, the pair merge plus the v2 harness commits; byte-neutral). #209 was attested PASSED on 2026-11-19 from `parcel/walk-measure-in-place`
+  (code = master `dbad6235`, 545 suites, 6091/0/3, 29 strict bodies), ahead of that parcel's byte-moving freeze. The standing reference is `.aeon-sigil-ref-99cb963d`.
 - Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
   symbols). `split_z80_drops` counts them apart (a `dc` is not decoded as code by the closure, dropped or
   not); a define set that resolves them would let the Z80 drop count be an exact 0.
@@ -2182,3 +2182,26 @@ until its row is removed.
   binary no cargo invocation had rebuilt since the commit moved. Not reproduced as a build-script defect, so no build
   change; instead `build_export_gates::tool_revision_names_the_checkout_head` refuses a `tool.revision` that is not
   `unknown` or the checkout's HEAD, so a stale stamp is red in the landing bar rather than silently exported.
+
+## WALK-MEASURE-IN-PLACE
+
+- state: **LANDING** on `parcel/walk-measure-in-place` (2026-11-19)  size: `S`  project: `G0B`
+- The old walk (`native.rs` `packed_true_bases`) re-measured a section at its packed base only when a frozen size
+  table named one of its labels; the rest sat at a far-scratch slot. Now every non-bank ROM section is re-measured in
+  place (one filter, `labeled[i]` -> `is_rom_section`). It moves bytes in every shape; proof in
+  `docs/evidence/walk-measure-in-place/` (`scripts/walk_inplace_proof.sh`, 9/9 shapes EXPLAINED, 0 unexplained).
+- Found while proving it, booked:
+  - The padding was NOT only after never-pinned sections. A PINNED section that branches into a scratch-measured one
+    measured its `bsr.w` as `jsr abs.l` too (`vblank` 8 B, `tile_cache` 14 B, `load_art` 6 B, `parallax`,
+    `game_loop`, `player_common`, `ojz_scroll_test` in sonic4 release), and an internal short branch spanning such
+    sites could cascade to `.w` (`player_glide.emp:120`). The proof's site model covers all three and agrees with
+    sigil's own `width_flip_report` (scratch diagnostic build, patch kept) on all 9 shapes.
+  - lean carries one EMITTED width flip: `page_in.emp:290` `lea` abs.l `$8018` -> abs.w `$7FDC`, because the shift
+    moved its target below `$8000`. The other shapes have none.
+  - Round 0 still seeds lengths with the frozen-label pins and the far-scratch slots (`SCRATCH_FIRST`,
+    `far_scratch_slot`); only the converged lengths are in place now. Seeding round 0 in place too would retire the
+    scratch machinery from the old walk; byte-neutral by construction only if the fixpoint is unique, so it needs its
+    own proof. Moot if G0b deletes the old driver first.
+  - The cross-check diagnostic (an env-gated `width_flip_report` at convergence) is not in the tree. If walk changes
+    recur, a committed `--report walk-flips` would make the proof's site model checkable without a scratch build.
+
