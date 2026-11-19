@@ -2183,6 +2183,18 @@ until its row is removed.
   change; instead `build_export_gates::tool_revision_names_the_checkout_head` refuses a `tool.revision` that is not
   `unknown` or the checkout's HEAD, so a stale stamp is red in the landing bar rather than silently exported.
 
+## FREEZE-INTO-WRITES-BEFORE-IT-VALIDATES
+
+- state: **open** 2026-11-19 (found in G0b T-REPIN, red-first of precondition 4)  size: `S`  project: `G0B-GAME-AS-DATA`
+- `provenance::freeze_into` documents "the file on disk is untouched on every refusal", but its LAST refusal is
+  not: `append_block` writes the ledger (parsed, atomically) and only then does `check` run over the new chain, so
+  an "appended entry FAILS validation" error leaves the invalid entry ON DISK. Shown when T-REPIN's
+  precondition-4 guard was removed: the re-pin past a red tip was written, then refused by
+  strict-attest-monotonic, and `tests/repin_aeon.rs`'s "a refusal must not touch the ledger" assertion fired.
+  Every guard upstream of the write is meant to make this unreachable, so it is a defence-in-depth gap, not a
+  live fault; the ledger is tracked, so `git restore` recovers it. Fix: run `check` on the in-memory chain
+  (`parse` of `new_src` plus the blobs) before `write_atomic`, and add a test that drives the post-append path.
+
 ## G0B-DESCRIBE-TASK2-RESIDUE
 
 - state: **open** 2026-11-19 (found in G0b Task 2)  size: `S`  project: `G0B-GAME-AS-DATA`
