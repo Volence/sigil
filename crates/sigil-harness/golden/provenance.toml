@@ -11903,3 +11903,58 @@ demo_debug = "64717bac/106981"
 lean = "60a3552b/798202"
 s4 = "193507d9/850296"
 s4_debug = "ce326232/870560"
+
+[[entry]]
+name = "walk-measure-in-place"
+ab = "docs/evidence/walk-measure-in-place at 38e671ca: scripts/walk_inplace_proof.sh WALK_PROOF 9/9 EXPLAINED, 0 unexplained bytes (old sigil 4104e5df = master closure, new ccf36c43, aeon 99cb963d)"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+note = "old walk now measures every non-bank ROM section in place; drops the scratch-measurement zero padding (sonic4 release -34 B file, 140 B padding) in every shape"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2ce7438f"
+full_size = 870972
+anchor_crc = "a153cae9"
+anchor_end = 0xc5c8a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "128361b3"
+full_size = 617715
+anchor_crc = "a9058ecd"
+anchor_end = 0x8b5f2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4587df52"
+full_size = 99980
+anchor_crc = "5a5b6300"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "37d66535"
+full_size = 106981
+anchor_crc = "99043cd0"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f6b07847"
+full_size = 798198
+anchor_crc = "2b08718d"
+anchor_end = 0xc2df6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "142a39b9"
+full_size = 850262
+anchor_crc = "3f0a9b9c"
+anchor_end = 0xc3e78
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "20acdb67"
+full_size = 870606
+anchor_crc = "2172953d"
+anchor_end = 0xc5c8a
