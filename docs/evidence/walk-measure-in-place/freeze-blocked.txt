@@ -1,0 +1,32 @@
+Step 4 (freeze) BLOCKED, 2026-11-19. refreeze --freeze walk-measure-in-place, AEON_DIR = clean clone of aeon 99cb963d,
+SIGIL_BUILD/SIGIL_EMIT = this branch's .target-land (closure ccf36c43). Output of the freeze run:
+
+START2026-11-19T21:23:04Z
+refreeze: built from and operating on the same tree: /home/volence/sonic_hacks/.sigil-walk/crates/sigil-harness
+refreeze: freezing from aeon 99cb963d07a54a156b7dd97b801ad4ef93a68a08 (clean)
+refreeze: child scripts build into /home/volence/sonic_hacks/.sigil-walk/.target-land
+refreeze: running /home/volence/sonic_hacks/.sigil-walk/crates/sigil-harness/golden/capture_goldens.sh --write
+# AEON_DIR=/home/volence/sonic_hacks/.walk-aeon-attest (step 1: explicit AEON_DIR)
+== Flip Stage 1 golden capture, all seven, fresh-build ==
+   aeon: /home/volence/sonic_hacks/.walk-aeon-attest  (99cb963d)
+>> s4.bin  (sonic4: canonical)
+   [... the tool's interrupted-freeze account, then:]
+refreeze: /home/volence/sonic_hacks/.sigil-walk/crates/sigil-harness/golden/capture_goldens.sh failed (exit status: 1)
+END exit=2 2026-11-19T21:30:59Z
+
+WHY: capture_goldens.sh runs aeon's full ./build.sh sonic4 (stdout to /dev/null). Reproduced by hand in the same tree:
+4220 passed, 2 skipped, 43 deselected, 11 warnings, 162 subtests passed in 237.80s (0:03:57)
+Tool-suite tests failed — the build tooling is broken, not just the ROM.
+END rc=1
+aeon tools/land_gate_audit.py (pytest_sessionfinish) sets exitstatus 1 when it records docs reads no tools/land_gate.py rule covers;
+every one of the 3541 is attributed to <unattributed> with readers ['tools/test_citation_form.py']. All 4220 tests pass.
+
+NOT THIS PARCEL: the same lane, same tree revision, with the OLD sigil (4104e5df, master closure):
+====== LAND GATE: docs reads tools/land_gate.py RULES do not cover (3541) ======
+A push changing one of these paths would not run the test that reads it. See tools/land_gate_audit.py.
+4220 passed, 2 skipped, 43 deselected, 11 warnings, 162 subtests passed in 300.89s (0:05:00)
+END rc=1
+
+The only bypass is NO_LINT=1, which build.sh's NO_LINT_KNOB block says must be unset 'before you land, merge, freeze, or
+quote a number'. Not taken. The interrupted run regenerated nothing (git status clean); its journal was discarded by the
+tool's own recovery option (2), and refreeze --check then read OK (tip pin-advance-99cb963d, chain len 209).

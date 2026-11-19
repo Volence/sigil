@@ -2204,4 +2204,16 @@ until its row is removed.
     own proof. Moot if G0b deletes the old driver first.
   - The cross-check diagnostic (an env-gated `width_flip_report` at convergence) is not in the tree. If walk changes
     recur, a committed `--report walk-flips` would make the proof's site model checkable without a scratch build.
+  - FREEZE #210 BLOCKED, not by this parcel: `capture_goldens.sh` runs aeon `./build.sh`, whose pre-build pytest lane
+    is red at aeon 99cb963d on this machine with EITHER sigil (old 4104e5df too): 4220 passed, then
+    `tools/land_gate_audit.py` sets exit 1 for 3541 docs reads attributed to `<unattributed>` (readers
+    `['tools/test_citation_form.py']`). Its `_who()` walks frames from `sys._getframe(3)`; on this Python 3.14.9 the
+    reads it misses are probably made from a shallower frame (to verify in aeon). Aeon-side fix, then re-run the freeze.
+    `docs/evidence/walk-measure-in-place/freeze-blocked.txt`.
+  - DECISION for the owner: the LAST `end_measures = "allotment"` in `repin.toml`, `player_climb`, is stale under the new
+    walk in every shape (`region_end_contracts` red: its pad was scratch-measurement padding). Converting it to
+    `end = "section:player_climb"` as the test says empties the allotment population, and both tests in
+    `region_end_contracts.rs` then fail on `!declared.is_empty()` ("did the parse break?"); the negative control has
+    nothing left to doctor. Either retire the allotment contract (now dead code in repin) or re-ground those two tests
+    on a doctored pad. Not done here: it is a gate redesign, outside this parcel's one-rule scope.
 

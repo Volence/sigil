@@ -108,7 +108,7 @@ for row in "${SHAPES[@]}"; do
   [ -n "$verdict" ] || { cat "$OUT/$name.proof.txt" >&2; die "$name" "the proof printed no verdict (exit $prc)"; }
   [ "$prc" -eq 2 ] && { echo "$verdict"; die "$name" "could not measure"; }
   echo "$verdict"
-  if [ "$prc" -eq 0 ]; then ok=$((ok+1)); else bad=$((bad+1)); grep '  FAIL' "$OUT/$name.proof.txt" | head -5; fi
+  if [ "$prc" -eq 0 ]; then ok=$((ok+1)); else bad=$((bad+1)); awk '/  FAIL/ && n<5 {print; n++}' "$OUT/$name.proof.txt"; fi
   if [ -n "$FR1" ]; then
     if [ -f "$FR1/exp_$name.bin" ]; then
       if cmp -s "$FR1/exp_$name.bin" "$SCRATCH/$name.new.bin"; then echo "FR1 $name SAME"; else echo "FR1 $name MISMATCH"; fi
