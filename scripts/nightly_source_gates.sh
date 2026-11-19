@@ -130,6 +130,12 @@ SOURCE_GATES=(
     # 102 of them by the default. Source only: it reads the TOML descriptions and links
     # the Rust table, builds nothing and compares no committed artifact (crates/sigil-harness).
     evenness_default
+    # G0b Task 5 fix round 1: the game-as-data driver builds every shipped (non-fixture)
+    # shape of every game in-process from the descriptions, and each ROM is held to what the
+    # descriptions and the build's own listing say (EndOfRom, island and deb2 appendix,
+    # header fields, anchors). Source only: real builds, no committed artifact, golden, ROM
+    # or listing is read (crates/sigil-harness).
+    game_as_data_driver
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
