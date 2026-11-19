@@ -3328,7 +3328,7 @@ fn run_project_build(opts: &ProjectOpts) {
             std::process::exit(1);
         }
     };
-    if let Err(e) = std::fs::write(&opts.output, &out.rom) {
+    if let Err(e) = install_artifact(&opts.output, &out.rom) {
         eprintln!("error: write {}: {e}", opts.output);
         std::process::exit(1);
     }
