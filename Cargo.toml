@@ -11,6 +11,7 @@ members = [
     "crates/sigil-frontend-emp",
     "crates/sigil-cli",
     "crates/sigil-harness",
+    "crates/sigil-build",
     "crates/sigil-salvador-sys",
     "crates/sigil-s4lz",
     "crates/sigil-clownlzss-sys",

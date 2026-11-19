@@ -2182,3 +2182,25 @@ until its row is removed.
   binary no cargo invocation had rebuilt since the commit moved. Not reproduced as a build-script defect, so no build
   change; instead `build_export_gates::tool_revision_names_the_checkout_head` refuses a `tool.revision` that is not
   `unknown` or the checkout's HEAD, so a stale stamp is red in the landing bar rather than silently exported.
+
+## G0B-DESCRIBE-TASK2-RESIDUE
+
+- state: **open** 2026-11-19 (found in G0b Task 2)  size: `S`  project: `G0B-GAME-AS-DATA`
+- Four things the description formats leave for later G0b tasks, each a decision rather than a defect:
+  1. **Strict census scope.** `sigil-build`'s two description-reading tests (`sonic4_game_toml_loads`,
+     `engine_toml_loads`) are unit tests in `src/describe.rs`, as the brief places them. They skip with `skip: ` and
+     fail under `SIGIL_STRICT_GATE=1`, mirroring `test_support::reference_tree`, but the strict census
+     (`strict_census::scanned_files`) and `skip_marker_lint` scan only `crates/*/tests`, so neither sees these two
+     consultations. Moving them to `crates/sigil-build/tests/` (or widening the census) puts them under both.
+  2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
+     has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
+     for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout
+     is observed" case; the driver (Task 5) decides how it observes it.
+  3. **Baseline union vs today's corpus.** Baseline rows are split by where the proc lives (engine / sonic4 / demo).
+     Today's closure analyses the whole aeon corpus on every shape (`corpus_contracts.rs` `bind_corpus_interfaces`),
+     so a demo shape fires the 18 sonic4 rows too; engine + game union equals today's gate only once a build's corpus
+     is its own game plus the engine (Task 9). Until then the agree-with-Rust check must union all three for demo.
+  4. **Facts left in Rust on purpose.** `harvest_engine_constants`' `VDP_Shadow_len` exclusion (`native.rs:940`) is a
+     residual-AS collision rule, derivable as "a constant a struct twin also produces"; it is not a field. The
+     `SIGIL_EMP_*` AS definedness defines (`native.rs:1228`) are port history. The `--game`/target names in
+     `sigil-cli` `main.rs` (`label_and_profile`, :3792-3798) go with the legacy CLI.

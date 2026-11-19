@@ -283,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-build"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sigil-span",
+ "toml",
+]
+
+[[package]]
 name = "sigil-cli"
 version = "0.1.0"
 dependencies = [
