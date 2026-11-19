@@ -2196,13 +2196,14 @@ until its row is removed.
      declared (`defines = { STRES_EVICT = 1 }` resolves to a new define, no error): a hole in closed inputs. The
      check needs the engine's `[defines]` as well as the game's, so Task 5's driver must refuse an override of an
      undeclared define, by name.
-  6. **The G0b landing reference is not landable as-is (needs a ruling).** One strict landing bar against a built
-     G0b copy (aeon 351acc8d, sigil bf6f222f) went 6097 passed / 2 failed. Both reds are pinned to the 99cb963d
-     reference, not code: `provenance_chain::aeon_dir_matches_the_provenance_tip` (the tree is not the provenance
-     tip) and `build_export_binding::no_build_json_writes_none` (asserts no `demo.build.json` in the tree, but
-     today's aeon `build.sh demo` writes that gitignored sidecar; the 99cb963d tree has none). Decide before any
-     G0b landing: advance the tip, make the test own a pre-existing sidecar, or strip `*.build.json` from the
-     reference. A standalone copy also needs full git history and every `suite_path()` sibling linked beside it.
+  6. **G0b landing reference: one red remains, pending a controller ruling.** One strict landing bar against a built
+     G0b copy (aeon 351acc8d, sigil bf6f222f) went 6097 passed / 2 failed, both pinned to the 99cb963d reference.
+     (1) `build_export_binding::no_build_json_writes_none`: **fixed in Task 2 fix round 2** (ruling: the claim is
+     "a build without -o writes no sidecar"; the test now asserts a pre-existing `demo.build.json` is unchanged,
+     shown red in both pre-absent and pre-present cases). (2) `provenance_chain::aeon_dir_matches_the_provenance_tip`
+     **remains**: the tree is not the provenance tip; the provenance re-pin is the controller's ruling, the test and
+     `golden/provenance.toml` are untouched. A standalone copy also needs full git history and every `suite_path()`
+     sibling linked beside it.
   2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
      has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
      for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout
