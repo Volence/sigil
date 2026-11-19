@@ -106,6 +106,7 @@ pub fn build_export(
         splice_z80(&mut lines, driver, z.blob_lma)?;
         symbols.extend(z.symbols.iter().cloned());
     }
+    refuse_duplicate_symbols(&symbols)?;
     merge_adjacent(&mut lines);
     check_image_coverage(&lines, rom.size)?;
     Ok(BuildExport {
@@ -123,6 +124,24 @@ pub fn build_export(
         consts: inputs.side.consts.clone(),
         lines,
     })
+}
+
+/// Refuse two symbols with one `(space, name)`: two z80 records, two m68k records, or two
+/// space-less equates of one name. The main symbol path keeps one claimant per name, but
+/// the Z80 bridge's symbols are appended after it, so a driver label that a phased 68000
+/// section also declares would reach readers as two records (Oracle answers a duplicate
+/// as not-found; the reference reader as AmbiguousName). Refuse, never drop (T1).
+fn refuse_duplicate_symbols(symbols: &[SymbolRecord]) -> Result<(), ExportError> {
+    let mut keys: Vec<(Option<&str>, &str)> =
+        symbols.iter().map(|s| (s.space.map(Space::as_str), s.name.as_str())).collect();
+    keys.sort_unstable();
+    match keys.windows(2).find(|w| w[0] == w[1]) {
+        Some(w) => Err(ExportError::DuplicateKey {
+            what: "symbol",
+            key: format!("{} ({})", w[0].1, w[0].0.unwrap_or("no space")),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Put the Z80 bridge's rows (`driver`, files already mapped) in place of the embedding
@@ -378,6 +397,34 @@ mod tests {
             vec![(0, 2, 3, 1, 5), (3, 5, 1, 1, 6)]
         );
         assert!(e.symbols.iter().any(|s| s.name == "Drv" && s.space == Some(Space::Z80) && s.lma == Some(2)));
+    }
+
+    #[test]
+    fn a_bridge_symbol_that_repeats_a_z80_name_is_refused() {
+        // The main path already holds a z80 `Drv` (a phased 68000 section's label); the
+        // bridge appends its own `Drv`: two `{Drv, z80}` records is refused, not shipped.
+        let mut i = embedding();
+        let z = bridge(2, Space::Z80, &[(0, 2, 4, 5)]);
+        i.side.symbols.push(z.symbols[0].clone());
+        i.side.z80 = Some(z);
+        assert_eq!(
+            build(&i, 8, files(), &[]).unwrap_err(),
+            ExportError::DuplicateKey { what: "symbol", key: "Drv (z80)".into() }
+        );
+        // The same name in another space is not a duplicate.
+        let mut i = embedding();
+        let z = bridge(2, Space::Z80, &[(0, 2, 4, 5)]);
+        i.side.symbols.push(SymbolRecord { space: Some(Space::M68k), ..z.symbols[0].clone() });
+        i.side.z80 = Some(z);
+        build(&i, 8, files(), &[]).unwrap();
+        // Two space-less equates of one name are.
+        let mut i = embedding();
+        let equ = SymbolRecord { space: None, lma: None, ..bridge(0, Space::Z80, &[]).symbols[0].clone() };
+        i.side.symbols.extend([equ.clone(), equ]);
+        assert_eq!(
+            build(&i, 8, files(), &[]).unwrap_err(),
+            ExportError::DuplicateKey { what: "symbol", key: "Drv (no space)".into() }
+        );
     }
 
     #[test]
