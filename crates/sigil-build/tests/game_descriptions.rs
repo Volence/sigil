@@ -210,6 +210,8 @@ fn engine_toml_loads() {
     assert_eq!(e.terminus, str_const(&mr, "pub const ENGINE_TERMINUS"));
     assert_eq!(e.error_handler, str_const(&mr, "pub const ERROR_HANDLER_MODULE_ID"));
     assert_eq!(e.release_fault, str_const(&mr, "pub const RELEASE_FAULT_MODULE_ID"));
-    assert_eq!(e.error_handler_blob, str_const(&native, "pub const ERROR_HANDLER_BLOB_LABEL"));
+    // The blob label moved into this crate with the appendix (G0b Task 4), so it is
+    // linked, not read as harness text.
+    assert_eq!(e.error_handler_blob, sigil_build::appendix::ERROR_HANDLER_BLOB_LABEL);
     assert!(!e.gate.is_empty() && e.required_labels.contains(&"EndOfRom".to_string()));
 }
