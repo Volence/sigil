@@ -106,6 +106,25 @@ fn sigil_build_reaches_no_sigil_harness() {
             root.display()
         );
     }
+    // ...and must have RECURSED: a walk that stopped at the root's own entries would
+    // pass every check above while never looking at what those crates depend on. The
+    // root's direct entries come from its manifest, so the comparison is not a typed list.
+    let doc: toml::Table = std::fs::read_to_string(root.join("Cargo.toml"))
+        .expect("UNMEASURABLE: cannot re-read sigil-build's manifest")
+        .parse()
+        .expect("UNMEASURABLE: cannot re-parse sigil-build's manifest");
+    let direct = ["dependencies", "dev-dependencies", "build-dependencies"]
+        .iter()
+        .filter_map(|k| doc.get(*k).and_then(|t| t.as_table()))
+        .flat_map(|t| t.values())
+        .filter(|v| v.get("path").is_some())
+        .count();
+    assert!(
+        names.len() > direct + 1,
+        "UNMEASURABLE: the walk reached {} crate(s), no more than sigil-build and its {direct} direct path \
+         dependencies, so it did not recurse into them: {names:?}",
+        names.len()
+    );
     let bad = forbidden_edges(root);
     assert!(
         bad.is_empty(),
