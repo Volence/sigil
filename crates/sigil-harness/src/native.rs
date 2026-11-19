@@ -114,9 +114,6 @@ pub struct GameProfile {
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
     /// checks DEFINEDNESS — a `=0` would still take the sound arm), no BINCLUDE, no gen.
     pub sound_on: bool,
-    /// Extra AS `-D`s beyond the sound defines (Config-A: SOUND_DEBUG_HOTKEYS /
-    /// SOUND_DBG_MIRROR).
-    pub extra_as_defines: Vec<(&'static str, i64)>,
     /// The build-shape comptime defines the `.emp` modules read.
     pub emp_defines: Vec<(&'static str, i128)>,
     /// Enforce exactly ONE non-empty `text` section (OBJDEFS). OFF for demo (no objdefs).
@@ -331,7 +328,6 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
         debug,
         crash_report: true,
         sound_on: true,
-        extra_as_defines: vec![],
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
             ("DEBUG", if debug { 1 } else { 0 }),
@@ -385,7 +381,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         debug,
         crash_report: true,
         sound_on: false,
-        extra_as_defines: vec![],
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
             ("DEBUG", if debug { 1 } else { 0 }),
@@ -432,7 +427,6 @@ pub fn config_b_profile() -> GameProfile {
         // Config-B follows the RELEASE default (owner-ruled): it carries the debugger.
         crash_report: true,
         sound_on: false,
-        extra_as_defines: vec![],
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
             ("DEBUG", 0),
@@ -481,7 +475,6 @@ pub fn config_a_profile() -> GameProfile {
         debug: true,
         crash_report: true,
         sound_on: true,
-        extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
             ("DEBUG", 1),
@@ -532,7 +525,6 @@ pub fn lean_profile() -> GameProfile {
         debug: false,
         crash_report: false,
         sound_on: true,
-        extra_as_defines: vec![],
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
             ("DEBUG", 0),
@@ -1236,9 +1228,6 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
         for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX", "SIGIL_EMP_SOUNDBANKHEAD"] {
             defines.push((g.to_string(), 1));
         }
-    }
-    for (k, v) in &profile.extra_as_defines {
-        defines.push((k.to_string(), *v));
     }
     if profile.debug {
         defines.push(("__DEBUG__".to_string(), 1));
