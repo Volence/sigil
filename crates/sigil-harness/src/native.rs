@@ -60,7 +60,7 @@ pub use sigil_build::place::{
 };
 pub use sigil_build::guards::{
     check_budgets, declared_chain_drift_verdict, enforce_inapplicable_allowlist_against, hole_interior_faults,
-    object_bank_cursor, render_declared_chain, validate_placement, GuardCensus,
+    object_bank_cursor, render_declared_chain, validate_placement, CheckReport, GuardCensus,
 };
 pub use sigil_build::emit::{assembled_anchor_crc, crc32, listing_from_resolved, z80_windows, RomBuild};
 pub use sigil_build::appendix::{
@@ -2302,14 +2302,6 @@ fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve,
         as_code,
         resident,
     })
-}
-
-/// What a check-only run reports: the guard census and the warn tier.
-pub struct CheckReport {
-    /// The guards the resolve decided, by family.
-    pub guards: GuardCensus,
-    /// Every non-error diagnostic the resolve produced, for the caller to render.
-    pub warnings: Vec<BuildWarning>,
 }
 
 /// The check-only build (`sigil build --check`): run exactly the chained build's

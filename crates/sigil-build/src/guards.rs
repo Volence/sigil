@@ -1,7 +1,7 @@
 //! The build's verdicts on a placed program: the drift-guard verdict and the
 //! inapplicable-guard allowlist, the guard census, the post-resolve placement contract
-//! against the map (anchors, the driving `order`, holes), the `[[budget]]` rows, and the
-//! per-artifact region check.
+//! against the map (anchors, the driving `order`, holes), the `[[budget]]` rows, the
+//! per-artifact region check, and what a check-only run reports ([`CheckReport`]).
 //!
 //! Moved from sigil-harness (`native.rs`, `seam2.rs`) unchanged by G0b Task 4. The
 //! guards that read a game table stay there: `validate_resolved_alignment` (the frozen
@@ -10,7 +10,7 @@
 
 use sigil_ir::Section;
 
-use crate::diag::ChainSources;
+use crate::diag::{BuildWarning, ChainSources};
 use crate::place::{head_label, is_rom_section, ModuleSpec};
 
 /// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
@@ -561,4 +561,12 @@ pub fn check_placed_regions(linked: &sigil_link::LinkedImage, map: &sigil_ir::ma
             .collect(),
     };
     sigil_link::check_regions(&placed, map)
+}
+
+/// What a check-only run reports: the guard census and the warn tier.
+pub struct CheckReport {
+    /// The guards the resolve decided, by family.
+    pub guards: GuardCensus,
+    /// Every non-error diagnostic the resolve produced, for the caller to render.
+    pub warnings: Vec<BuildWarning>,
 }
