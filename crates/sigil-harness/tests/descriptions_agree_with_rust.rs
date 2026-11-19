@@ -135,12 +135,69 @@ fn shape_name(ctor: &str, arg: Option<bool>) -> String {
     }
 }
 
+/// The constructor lines the row enumeration reads: one-line `pub fn NAME(..) -> GameProfile`
+/// signatures at column zero.
+fn ctor_lines(src: &str) -> Vec<&str> {
+    src.lines().filter(|l| l.starts_with("pub fn ") && l.contains("-> GameProfile")).collect()
+}
+
+/// Every free function returning `GameProfile` in `src`, found WHITESPACE-INSENSITIVELY (a
+/// signature wrapped over several lines included). Methods (`self` first) are not
+/// constructors. Comment lines are dropped first, so prose naming the type is not a site.
+fn every_profile_fn(src: &str) -> BTreeSet<String> {
+    let code: Vec<&str> = src.lines().filter(|l| !l.trim_start().starts_with("//")).collect();
+    let flat = code.join(" ").split_whitespace().collect::<Vec<_>>().join(" ").replace("->GameProfile", "-> GameProfile");
+    let mut out = BTreeSet::new();
+    let mut from = 0;
+    while let Some(off) = flat[from..].find("-> GameProfile") {
+        let at = from + off;
+        from = at + "-> GameProfile".len();
+        if flat[from..].chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            continue; // a longer type name
+        }
+        let prefix = &flat[..at];
+        let Some(fn_at) = prefix.rfind("fn ").filter(|&i| i == 0 || prefix[..i].ends_with(' ')) else {
+            out.insert(format!("<unparsed `-> GameProfile` at flat offset {at}>"));
+            continue;
+        };
+        let sig = &prefix[fn_at + 3..];
+        let name = sig.split('(').next().unwrap_or("").trim().to_string();
+        let params = sig.split_once('(').map(|(_, r)| r).unwrap_or("").trim_start();
+        if params.starts_with("self") || params.starts_with("mut self") || params.starts_with("&self") || params.starts_with("&mut self") {
+            continue;
+        }
+        out.insert(name);
+    }
+    out
+}
+
+/// The constructor census: the one-line enumeration must see every free `-> GameProfile`
+/// function the source declares, or a wrapped signature would drop its rows silently.
+fn ctor_census(src: &str) -> Result<(), String> {
+    let seen: BTreeSet<String> =
+        ctor_lines(src).iter().map(|l| l["pub fn ".len()..].split('(').next().unwrap().to_string()).collect();
+    let all = every_profile_fn(src);
+    if seen != all {
+        return Err(format!(
+            "native.rs declares {} free `-> GameProfile` function(s) {all:?} but the one-line constructor \
+             enumeration saw {} {seen:?}: missed {:?} (a wrapped or reformatted signature)",
+            all.len(),
+            seen.len(),
+            all.difference(&seen).collect::<Vec<_>>()
+        ));
+    }
+    Ok(())
+}
+
 /// Every Rust row, plus the constructors found (for the report line).
 fn rust_rows_from_source(errs: &mut Vec<String>) -> (Vec<RustRow>, usize) {
     let src = harness_src("native.rs");
+    if let Err(e) = ctor_census(&src) {
+        errs.push(format!("[shapes] {e}"));
+    }
     let mut rows = Vec::new();
     let mut ctors = 0usize;
-    for line in src.lines().filter(|l| l.starts_with("pub fn ") && l.contains("-> GameProfile")) {
+    for line in ctor_lines(&src) {
         let ctor = line["pub fn ".len()..].split('(').next().unwrap().to_string();
         let params = line.split_once('(').unwrap().1.split_once(')').unwrap().0.trim();
         let args: Vec<Option<bool>> = match params {
@@ -586,4 +643,18 @@ fn descriptions_agree_with_rust() {
         t.errs.len(),
         t.errs.join("\n  - ")
     );
+}
+
+/// The constructor census sees a wrapped signature the one-line enumeration misses. A unit
+/// fixture: the real `native.rs` text with `config_b_profile`'s signature wrapped by hand.
+#[test]
+fn ctor_census_refuses_a_wrapped_signature() {
+    let src = harness_src("native.rs");
+    ctor_census(&src).expect("the real native.rs passes the census");
+    let one_line = "pub fn config_b_profile() -> GameProfile {";
+    assert!(src.contains(one_line), "native.rs lost `{one_line}`, the fixture needs a new victim");
+    let wrapped = src.replacen(one_line, "pub fn config_b_profile(\n) -> GameProfile {", 1);
+    assert!(!ctor_lines(&wrapped).iter().any(|l| l.contains("config_b_profile")), "the fixture is not wrapped");
+    let err = ctor_census(&wrapped).expect_err("a wrapped constructor must fail the census");
+    assert!(err.contains("missed [\"config_b_profile\"]"), "{err}");
 }
