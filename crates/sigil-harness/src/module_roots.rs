@@ -67,16 +67,8 @@ use sigil_frontend_emp::resolve::manifest::Manifest;
 
 use crate::map_placement::section_row;
 
-/// One placed `.emp` module and one section it declares.
-///
-/// The `module_id` is a root of the build's synthetic entry. The `section` is one
-/// section name the module places (a module that declares two sections contributes
-/// two specs); it is what a `[[hole]]`'s `filled_by` is checked against.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ModuleSpec {
-    pub module_id: String,
-    pub section: String,
-}
+// G0b Task 4: `ModuleSpec` moved, unchanged, to `sigil_build::place`.
+pub use sigil_build::place::ModuleSpec;
 
 /// The shape a build makes, as the gates read it.
 #[derive(Clone, Copy, Debug)]

@@ -29,7 +29,10 @@ SRC="$HERE/../crates/sigil-harness/src"
 
 # The seam table, transcribed from the S8 ledger row. Editing the plan means
 # editing this table, and the run then re-prices the plan you actually have.
-SEAM_BUILD=(native map_placement contract_baseline seam1 seam2)
+# G0b Task 4 began the sigil-build seam for real: `map_placement` (and the
+# unassigned `diag_render`) moved whole into crates/sigil-build, so they are no
+# longer modules of this crate and no longer part of the move still to make.
+SEAM_BUILD=(native contract_baseline seam1 seam2)
 SEAM_PINS=(pins)
 SEAM_TESTKIT=(test_support repin provenance)
 

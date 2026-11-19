@@ -87,7 +87,8 @@ pub mod native;
 
 /// Parcel-K1 placement map reader (`games/<g>/map.toml`) — the declared anchors /
 /// hole / budget / order-validation facts the chainer checks its layout against.
-pub mod map_placement;
+/// Moved, unchanged, to `sigil_build::map_placement` (G0b Task 4).
+pub use sigil_build::map_placement;
 
 /// Per-game `[defines]` table reader (`games/<g>/map.toml`) — the game-declared
 /// comptime define rows `native::shape_defines` merges with the profile's

@@ -12,6 +12,14 @@ pub mod describe;
 /// and the one error renderer (G0b Task 4, from sigil-harness).
 pub mod diag;
 
+/// The placement map reader (`games/<g>/map.toml`): anchors, holes, budgets, the
+/// driving `order` (G0b Task 4, from sigil-harness).
+pub mod map_placement;
+
+/// The packing walk's generic half: pinned measurement, the declared chain, align
+/// recomputation, section predicates (G0b Task 4, from sigil-harness).
+pub mod place;
+
 /// Test support: the aeon reference tree for this crate's reference-dependent tests.
 #[doc(hidden)]
 pub mod reference;

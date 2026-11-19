@@ -50,10 +50,9 @@ use crate::map_placement::{load_placement_map, AnchorOverlay};
 /// reaches via an intra-section `align $8000`.
 const DAC_INTRA_BANK_ALIGN: u32 = 0x8000;
 
-/// The Genesis `$8000`-window bank size. The sound bank spans
-/// `[sound_bank, sound_bank + BANK_WINDOW_SIZE)`; its top is the ceiling every
-/// in-bank artifact must fit under.
-const BANK_WINDOW_SIZE: u32 = 0x8000;
+// G0b Task 4: the `$8000` bank-window arithmetic moved, unchanged, to `sigil_build::place`.
+pub use sigil_build::place::bank_room;
+use sigil_build::place::BANK_WINDOW_SIZE;
 
 /// The sound-bank section head-labels in the map's declared `order`, in the
 /// sequence this emit lays them down: the DAC bank island, then the `$8000`-window
@@ -1808,18 +1807,6 @@ fn carrier_asm_for(ids: SongIdCarrier, bank_start: u32) -> String {
 /// site that co-links `mt_bank.emp` supplies its carrier through this.
 pub fn mt_bank_carrier_asm(aeon: &Path, debug: bool, bank_start: u32) -> Result<String, String> {
     Ok(carrier_asm_for(song_id_carrier(aeon, debug)?, bank_start))
-}
-
-/// The room the `mt_bank` region has: from its LMA to the top of the `$8000` bank
-/// window that starts at `bank_start`.
-/// The bytes from `lma` to the top of its `$8000` Z80 `SetBank` window: the room every
-/// seam-2 artifact placed at `lma` must fit in (the [`mt_bank_room`] precedent, without
-/// a named window base). Each seam-2 synthetic map sizes its regions with this instead
-/// of a hand-typed literal: a literal smaller than the artifact was never read (the
-/// pre-A2 `0x400` for a 1,116 B `sound_tables_z80`), and one larger would let an
-/// artifact cross into the next window.
-pub fn bank_room(lma: u32) -> u32 {
-    BANK_WINDOW_SIZE - (lma & (BANK_WINDOW_SIZE - 1))
 }
 
 /// The region check every seam-2 per-artifact tail ends in (`place_sections` +
