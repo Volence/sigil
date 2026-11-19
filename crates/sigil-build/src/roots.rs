@@ -23,7 +23,7 @@ use sigil_frontend_emp::resolve::manifest::Manifest;
 
 use crate::describe::{GateRule, ResolvedShape};
 use crate::driver::BuildError;
-use crate::gating::{gate_modules, ModuleId};
+use crate::gating::{gate_modules, ModuleId, ScannedModule};
 use crate::map_placement::section_row;
 use crate::place::ModuleSpec;
 
@@ -163,7 +163,10 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
             scan_idx.push(c);
         }
     }
-    let scan: Vec<ModuleId> = scan_idx.iter().map(|&i| manifest.modules[i].id.clone()).collect();
+    let scan: Vec<ScannedModule> = scan_idx
+        .iter()
+        .map(|&i| ScannedModule { id: manifest.modules[i].id.clone(), path: manifest.modules[i].path.clone() })
+        .collect();
     let kept: HashSet<ModuleId> = gate_modules(&scan, rules, shape)?.into_iter().collect();
     if !kept.contains(terminus) {
         return Err(BuildError::Context(format!(

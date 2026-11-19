@@ -161,6 +161,20 @@ pub struct GateRule {
     /// A module id, or a glob over ids.
     pub modules: String,
     pub place_in: PlaceIn,
+    /// The description file the rule was read from (set by [`load_game`] / [`load_engine`]
+    /// / [`parse_game`]; empty for a rule built in code), so a refusal can name it.
+    #[serde(skip)]
+    pub origin: String,
+    /// The rule's 1-based position among that file's `[[gate]]` rows (0 when built in code).
+    #[serde(skip)]
+    pub row: usize,
+}
+
+fn stamp_gate_rows(path: &Path, rules: &mut [GateRule]) {
+    for (i, r) in rules.iter_mut().enumerate() {
+        r.origin = path.display().to_string();
+        r.row = i + 1;
+    }
 }
 
 /// Where a gated module is placed. TOML: `"all"`, `{ shapes = [..] }`, `{ feature = ".." }`.
@@ -520,8 +534,9 @@ fn check_align(rows: &[AlignRow]) -> Result<(), DescError> {
 /// check: the format, no derived define, every shape reference declared, a root shape has
 /// features, alignments are powers of two.
 pub fn parse_game(path: &Path, text: &str) -> Result<GameDesc, DescError> {
-    let g: GameDesc =
+    let mut g: GameDesc =
         toml::from_str(text).map_err(|e| DescError::Parse { path: path.to_path_buf(), message: e.to_string() })?;
+    stamp_gate_rows(path, &mut g.gate);
     check_format(path, g.format)?;
     check_defines("[defines]", &g.defines)?;
     let declared = |place: String, name: &str| -> Result<(), DescError> {
@@ -562,7 +577,8 @@ pub fn load_game(path: &Path) -> Result<GameDesc, DescError> {
 
 /// Load and check an `engine.toml`.
 pub fn load_engine(path: &Path) -> Result<EngineDesc, DescError> {
-    let e: EngineDesc = read_toml(path)?;
+    let mut e: EngineDesc = read_toml(path)?;
+    stamp_gate_rows(path, &mut e.gate);
     check_format(path, e.format)?;
     check_defines("[defines]", &e.defines)?;
     check_align(&e.align)?;

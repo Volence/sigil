@@ -44,10 +44,12 @@ use crate::walk::{AnchorPin, WalkError};
 /// Why a build was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildError {
-    /// A module the shape could place matches no `[[gate]]` rule.
-    Ungated(ModuleId),
-    /// A module matches two `[[gate]]` rules (their indices, engine rules first).
-    DoubleGated(ModuleId, usize, usize),
+    /// A module the shape could place matches no `[[gate]]` rule: the module, its source
+    /// file, and the description files whose rules were searched.
+    Ungated { module: ModuleId, path: PathBuf, searched: Vec<String> },
+    /// A module matches two `[[gate]]` rules: the module, its source file, and the first two
+    /// matching rules, each by pattern, file and row.
+    DoubleGated { module: ModuleId, path: PathBuf, first: Box<RuleRef>, second: Box<RuleRef> },
     /// A gate rule could not be evaluated for the shape.
     Gate(String),
     /// A description is malformed, or the shape or engine cannot be found.
@@ -58,18 +60,46 @@ pub enum BuildError {
     Context(String),
 }
 
+/// One `[[gate]]` rule as a refusal names it: its pattern, the file it is in, and its
+/// 1-based row among that file's `[[gate]]` rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleRef {
+    pub pattern: String,
+    pub origin: String,
+    pub row: usize,
+}
+
+impl RuleRef {
+    pub fn of(rule: &describe::GateRule) -> RuleRef {
+        RuleRef { pattern: rule.modules.clone(), origin: rule.origin.clone(), row: rule.row }
+    }
+}
+
+impl std::fmt::Display for RuleRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.origin.is_empty() {
+            write!(f, "`{}` (a rule built in code)", self.pattern)
+        } else {
+            write!(f, "`{}` ({} [[gate]] row {})", self.pattern, self.origin, self.row)
+        }
+    }
+}
+
 impl std::fmt::Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BuildError::Ungated(m) => write!(
+            BuildError::Ungated { module, path, searched } => write!(
                 f,
-                "[gate.ungated] module `{m}` is placed by a map row but matches no [[gate]] rule; \
-                 name it (`place_in = \"all\"` if every shape places it)"
+                "[gate.ungated] module `{module}` ({}) is placed by a map row but matches no [[gate]] \
+                 rule in {}; name it in one of them (`place_in = \"all\"` if every shape places it)",
+                path.display(),
+                if searched.is_empty() { "any description (no rules were given)".to_string() } else { searched.join(" or ") }
             ),
-            BuildError::DoubleGated(m, a, b) => write!(
+            BuildError::DoubleGated { module, path, first, second } => write!(
                 f,
-                "[gate.double] module `{m}` matches [[gate]] rules {a} and {b} (engine rules first, \
-                 then the game's); one module has one rule"
+                "[gate.double] module `{module}` ({}) matches two [[gate]] rules, {first} and {second}; \
+                 one module has one rule, so narrow or delete one",
+                path.display()
             ),
             BuildError::Gate(m) => write!(f, "[gate.eval] {m}"),
             BuildError::Desc(m) => write!(f, "{m}"),

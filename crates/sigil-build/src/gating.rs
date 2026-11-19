@@ -20,11 +20,21 @@
 //! `engine.**` names the whole engine tree. A pattern with any other wildcard spelling
 //! (`***`, `?`, `[`) is refused when the rule is read ([`check_pattern`](crate::gating::check_pattern)).
 
+use std::path::PathBuf;
+
 use crate::describe::{GateRule, PlaceIn, ResolvedShape};
-use crate::driver::BuildError;
+use crate::driver::{BuildError, RuleRef};
 
 /// A module id (`engine.vdp`, `games.sonic4.test_player`).
 pub type ModuleId = String;
+
+/// A module the gate is asked about: its id and the `.emp` file that declares it, so a
+/// refusal can name the file to look at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScannedModule {
+    pub id: ModuleId,
+    pub path: PathBuf,
+}
 
 /// Refuse a pattern spelling the matcher does not define. The error names the pattern.
 pub fn check_pattern(pattern: &str) -> Result<(), String> {
@@ -71,21 +81,34 @@ pub fn glob_match(pattern: &str, id: &str) -> bool {
 /// The modules of `scan` that `shape` places, in `scan` order.
 ///
 /// Each module must match exactly one of `rules` (by [`glob_match`] on its `modules`):
-/// none is [`BuildError::Ungated`], two or more is [`BuildError::DoubleGated`] naming the
-/// first two rule indices. The one rule then decides: `all` places it, `shapes = [..]`
+/// none is [`BuildError::Ungated`], naming the module's file and every description file
+/// whose rules were searched; two or more is [`BuildError::DoubleGated`], naming the first
+/// two matching rules by pattern, file and row. The one rule then decides: `all` places it, `shapes = [..]`
 /// places it in exactly the listed shapes (`[]` in none), `feature = ".."` places it when
 /// the expression holds for the shape's features and defines (`shape.defines` must be the
 /// fully merged set, engine defaults included; a define the expression reads that the
 /// shape does not have is an error, never false).
-pub fn gate_modules(scan: &[ModuleId], rules: &[GateRule], shape: &ResolvedShape) -> Result<Vec<ModuleId>, BuildError> {
+pub fn gate_modules(scan: &[ScannedModule], rules: &[GateRule], shape: &ResolvedShape) -> Result<Vec<ModuleId>, BuildError> {
     let mut kept = Vec::new();
-    for id in scan {
+    for ScannedModule { id, path } in scan {
         let mut hits = rules.iter().enumerate().filter(|(_, r)| glob_match(&r.modules, id)).map(|(i, _)| i);
         let Some(first) = hits.next() else {
-            return Err(BuildError::Ungated(id.clone()));
+            let mut searched: Vec<String> = Vec::new();
+            for r in rules {
+                let o = if r.origin.is_empty() { "(rules built in code)".to_string() } else { r.origin.clone() };
+                if !searched.contains(&o) {
+                    searched.push(o);
+                }
+            }
+            return Err(BuildError::Ungated { module: id.clone(), path: path.clone(), searched });
         };
         if let Some(second) = hits.next() {
-            return Err(BuildError::DoubleGated(id.clone(), first, second));
+            return Err(BuildError::DoubleGated {
+                module: id.clone(),
+                path: path.clone(),
+                first: Box::new(RuleRef::of(&rules[first])),
+                second: Box::new(RuleRef::of(&rules[second])),
+            });
         }
         let placed = match &rules[first].place_in {
             PlaceIn::All => true,
@@ -108,7 +131,20 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn rule(modules: &str, place_in: PlaceIn) -> GateRule {
-        GateRule { modules: modules.into(), place_in }
+        GateRule { modules: modules.into(), place_in, origin: String::new(), row: 0 }
+    }
+
+    /// `rules` as the loaders stamp them: each from `origin`, numbered from 1 within it.
+    fn from_file(origin: &str, rules: Vec<GateRule>) -> Vec<GateRule> {
+        rules
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| GateRule { origin: origin.into(), row: i + 1, ..r })
+            .collect()
+    }
+
+    fn scanned(v: &[&str]) -> Vec<ScannedModule> {
+        v.iter().map(|s| ScannedModule { id: s.to_string(), path: format!("src/{}.emp", s.replace('.', "/")).into() }).collect()
     }
 
     fn shape(name: &str, debug: bool) -> ResolvedShape {
@@ -128,12 +164,29 @@ mod tests {
     /// Review Focus 1: a module with no rule is refused by name, never shipped in every shape.
     #[test]
     fn unmatched_module_is_refused() {
-        let rules = vec![
-            rule("games.g.objects.*", PlaceIn::All),
-            rule("games.g.test_player", PlaceIn::Feature(FeatureExpr::parse("debug").unwrap())),
-        ];
-        let scan = ids(&["games.g.objects.ring", "games.g.test_player", "games.g.foo"]);
-        assert_eq!(gate_modules(&scan, &rules, &shape("release", false)), Err(BuildError::Ungated("games.g.foo".into())));
+        let mut rules = from_file("engine/engine.toml", vec![rule("engine.vdp", PlaceIn::All)]);
+        rules.extend(from_file(
+            "games/g/game.toml",
+            vec![
+                rule("games.g.objects.*", PlaceIn::All),
+                rule("games.g.test_player", PlaceIn::Feature(FeatureExpr::parse("debug").unwrap())),
+            ],
+        ));
+        let scan = scanned(&["games.g.objects.ring", "games.g.test_player", "games.g.foo"]);
+        let err = gate_modules(&scan, &rules, &shape("release", false)).unwrap_err();
+        assert_eq!(
+            err,
+            BuildError::Ungated {
+                module: "games.g.foo".into(),
+                path: "src/games/g/foo.emp".into(),
+                searched: vec!["engine/engine.toml".into(), "games/g/game.toml".into()],
+            }
+        );
+        // The message names the module, its .emp file and both description files searched.
+        let msg = err.to_string();
+        for want in ["games.g.foo", "src/games/g/foo.emp", "engine/engine.toml", "games/g/game.toml"] {
+            assert!(msg.contains(want), "the refusal does not name `{want}`: {msg}");
+        }
         // Control: with the module named, the same scan gates.
         let mut named = rules.clone();
         named.push(rule("games.g.foo", PlaceIn::All));
@@ -146,18 +199,38 @@ mod tests {
     /// A module two rules match is refused naming both rules.
     #[test]
     fn double_gated_module_is_refused() {
-        let rules = vec![
-            rule("games.g.**", PlaceIn::All),
-            rule("games.g.test_player", PlaceIn::Feature(FeatureExpr::parse("debug").unwrap())),
-        ];
-        let scan = ids(&["games.g.ring", "games.g.test_player"]);
+        let mut rules = from_file("engine/engine.toml", vec![rule("games.g.**", PlaceIn::All)]);
+        rules.extend(from_file(
+            "games/g/game.toml",
+            vec![
+                rule("games.g.ring", PlaceIn::All),
+                rule("games.g.test_player", PlaceIn::Feature(FeatureExpr::parse("debug").unwrap())),
+            ],
+        ));
+        let scan = scanned(&["games.g.test_player"]);
+        let err = gate_modules(&scan, &rules, &shape("debug", true)).unwrap_err();
         assert_eq!(
-            gate_modules(&scan, &rules, &shape("debug", true)),
-            Err(BuildError::DoubleGated("games.g.test_player".into(), 0, 1))
+            err,
+            BuildError::DoubleGated {
+                module: "games.g.test_player".into(),
+                path: "src/games/g/test_player.emp".into(),
+                first: Box::new(RuleRef { pattern: "games.g.**".into(), origin: "engine/engine.toml".into(), row: 1 }),
+                second: Box::new(RuleRef { pattern: "games.g.test_player".into(), origin: "games/g/game.toml".into(), row: 2 }),
+            }
         );
-        // Control: disjoint rules gate the same scan.
-        let disjoint = vec![rules[1].clone(), rule("games.g.ring", PlaceIn::All)];
-        assert_eq!(gate_modules(&scan, &disjoint, &shape("debug", true)).unwrap(), scan);
+        // The message names each matching rule by pattern, file and row, and the module's file.
+        let msg = err.to_string();
+        for want in [
+            "src/games/g/test_player.emp",
+            "`games.g.**` (engine/engine.toml [[gate]] row 1)",
+            "`games.g.test_player` (games/g/game.toml [[gate]] row 2)",
+        ] {
+            assert!(msg.contains(want), "the refusal does not name `{want}`: {msg}");
+        }
+        // Control: disjoint rules gate the same modules.
+        let both = scanned(&["games.g.ring", "games.g.test_player"]);
+        let disjoint = rules[1..].to_vec();
+        assert_eq!(gate_modules(&both, &disjoint, &shape("debug", true)).unwrap(), ids(&["games.g.ring", "games.g.test_player"]));
     }
 
     #[test]
@@ -168,11 +241,11 @@ mod tests {
             rule("c", PlaceIn::Feature(FeatureExpr::parse("!debug").unwrap())),
             rule("d", PlaceIn::Feature(FeatureExpr::parse("HOTKEYS").unwrap())),
         ];
-        let scan = ids(&["a", "b", "c", "d"]);
+        let scan = scanned(&["a", "b", "c", "d"]);
         assert_eq!(gate_modules(&scan, &rules, &shape("debug", true)).unwrap(), ids(&["a"]));
         assert_eq!(gate_modules(&scan, &rules, &shape("release", false)).unwrap(), ids(&["c"]));
         let missing = vec![rule("e", PlaceIn::Feature(FeatureExpr::parse("NOPE").unwrap()))];
-        assert!(matches!(gate_modules(&ids(&["e"]), &missing, &shape("x", false)), Err(BuildError::Gate(m)) if m.contains("NOPE")));
+        assert!(matches!(gate_modules(&scanned(&["e"]), &missing, &shape("x", false)), Err(BuildError::Gate(m)) if m.contains("NOPE")));
     }
 
     #[test]
