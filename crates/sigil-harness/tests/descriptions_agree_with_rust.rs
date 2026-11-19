@@ -462,7 +462,7 @@ fn descriptions_agree_with_rust() {
         let floor = if p.game_root_rel.contains("/demo/") { native::DEMO_APPENDIX_FLOOR } else { native::SONIC4_APPENDIX_FLOOR };
         t.check("game", side.desc.appendix_floor as usize == floor, || format!("{at}: appendix floor Rust {floor:#x} vs description {:#x}", side.desc.appendix_floor));
         let is_shipped = shipped.contains(&(g.clone(), row.shape.clone()));
-        t.check("game", shape.fixture == !is_shipped, || format!("{at}: shipped_shapes membership {is_shipped} vs description fixture {}", shape.fixture));
+        t.check("game", shape.fixture == !is_shipped, || format!("{at}: in shipped_shapes: {is_shipped}, so fixture must be {}, description fixture {}", !is_shipped, shape.fixture));
         t.check("game", shape.fixture_placement.is_some() == p.fixture_placement, || format!("{at}: fixture_placement Rust {} vs description {:?}", p.fixture_placement, shape.fixture_placement));
         if let Some(fp) = &shape.fixture_placement {
             let growable = rust_list(fn_body(&harness_src("native.rs"), "relocate_fixture_pool"), "const GROWABLE");
