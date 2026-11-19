@@ -1,0 +1,33 @@
+{
+ "shape": "demo_debug",
+ "old_eor": 70170,
+ "new_eor": 70170,
+ "old_len": 106981,
+ "new_len": 106981,
+ "dropped": 78,
+ "sites": 78,
+ "positional": 34949,
+ "classes": {
+  "header": 2,
+  "pointer": 97,
+  "shift": 34773,
+  "padding": 77,
+  "deb2 appendix": 1477
+ },
+ "file_delta": 0,
+ "emitted_flips": 0,
+ "unexplained": 0,
+ "fails": 0,
+ "verdict": "EXPLAINED",
+ "unlabeled_sections": [
+  "boot_tail",
+  "page_cache",
+  "page_in",
+  "palette",
+  "preset",
+  "raster",
+  "replay",
+  "z80_idle",
+  "zx0_resume"
+ ]
+}

@@ -1,0 +1,10 @@
+DIAGX plain sigil-flip-sections=16 bytes=140 model-sections=16 bytes=140 AGREE
+DIAGX debug sigil-flip-sections=16 bytes=146 model-sections=16 bytes=146 AGREE
+DIAGX demo sigil-flip-sections=9 bytes=74 model-sections=9 bytes=74 AGREE
+DIAGX demo_debug sigil-flip-sections=9 bytes=78 model-sections=9 bytes=78 AGREE
+DIAGX config_a sigil-flip-sections=16 bytes=146 model-sections=16 bytes=146 AGREE
+DIAGX config_b sigil-flip-sections=16 bytes=142 model-sections=16 bytes=142 AGREE
+DIAGX lean sigil-flip-sections=16 bytes=140 model-sections=16 bytes=140 AGREE
+DIAGX stress_evict sigil-flip-sections=16 bytes=146 model-sections=16 bytes=146 AGREE
+DIAGX stress_art sigil-flip-sections=16 bytes=146 model-sections=16 bytes=146 AGREE
+END

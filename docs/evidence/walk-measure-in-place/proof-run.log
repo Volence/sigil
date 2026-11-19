@@ -1,0 +1,23 @@
+# old  /home/volence/sonic_hacks/.walk-runs/bin/sigil-old (sigil 0.1.0 (4104e5df))
+# new  /home/volence/sonic_hacks/.walk-runs/bin/sigil-new (sigil 0.1.0 (ccf36c43))
+# aeon /home/volence/sonic_hacks/.aeon-sigil-ref-99cb963d (99cb963d07a54a156b7dd97b801ad4ef93a68a08)
+PROOF plain EXPLAINED dropped=140 sites=140 positional=426472 unexplained=0 fails=0
+FR1 plain SAME
+PROOF debug EXPLAINED dropped=146 sites=146 positional=455147 unexplained=0 fails=0
+FR1 debug SAME
+PROOF demo EXPLAINED dropped=74 sites=74 positional=21703 unexplained=0 fails=0
+FR1 demo SAME
+PROOF demo_debug EXPLAINED dropped=78 sites=78 positional=34949 unexplained=0 fails=0
+FR1 demo_debug SAME
+PROOF config_a EXPLAINED dropped=146 sites=146 positional=455428 unexplained=0 fails=0
+FR1 config_a SAME
+PROOF config_b EXPLAINED dropped=142 sites=142 positional=426732 unexplained=0 fails=0
+FR1 config_b SAME
+PROOF lean EXPLAINED dropped=140 sites=140 positional=422306 unexplained=0 fails=0
+FR1 lean SAME
+PROOF stress_evict EXPLAINED dropped=146 sites=146 positional=455147 unexplained=0 fails=0
+FR1 stress_evict absent
+PROOF stress_art EXPLAINED dropped=146 sites=146 positional=416437 unexplained=0 fails=0
+FR1 stress_art absent
+WALK_PROOF 9/9 EXPLAINED
+WALK_PROOF_END rc=0

@@ -1,0 +1,52 @@
+walk_inplace_proof red-first transcript (2026-11-19, checker at 3649c92e, inputs = the plain
+old/new triples the evidence run kept, copied to a scratch dir RF=.walk-runs/rf).
+
+RF-1  a planted unexplained byte in the NEW ROM (inside replay's code, a shifted section)
+== mutation on disk:
+  9985 162 163                      (cmp -l plain.new.bin.pristine plain.new.bin; offset 0x2700)
+  FAIL new header checksum does not fold, but old does
+  FAIL UNEXPLAINED byte at new 0x2700 (old 0x270e) in `replay` engine/system/replay.emp:320: 72 -> 73
+PROOF plain UNEXPLAINED dropped=140 sites=140 positional=426472 unexplained=1 fails=2
+exit=1
+== restore: cp $RF/plain.new.bin.pristine $RF/plain.new.bin
+restored
+PROOF plain EXPLAINED dropped=140 sites=140 positional=426472 unexplained=0 fails=0
+(The ROM is a build artefact, not a tracked file, so its baseline is the pristine copy
+of the kept build output; the two source mutations below restore from the committed
+checker with git.)
+
+RF-2  a nonzero byte planted in the OLD ROM's dropped padding, and one in the NEW deb2 appendix
+== mutations on disk:
+  9483   0 116                      (old 0x250a, inside the 8 dropped bytes after vblank)
+810617 123 103                      (new appendix, EndOfRom + 0x2000)
+  FAIL dropped bytes after `vblank` at 0x2508 are not all zero: 00004e0000000000
+  FAIL new appendix records with no matching listing symbol: [(8998, 'Enqueue_2rcy_Buffers.hs_done')]
+  FAIL appendix names differ without a shared-address change: ['Enqueue_2rcy_Buffers.hs_done', 'Enqueue_Dirty_Buffers.hs_done']
+PROOF plain UNEXPLAINED dropped=140 sites=140 positional=426471 unexplained=0 fails=3
+== restore: cp plain.old.bin.pristine plain.old.bin; cp plain.new.bin.pristine plain.new.bin
+PROOF plain EXPLAINED dropped=140 sites=140 positional=426472 unexplained=0 fails=0
+
+RF-3  the checker's 32-bit pointer rule disabled (source mutation, committed baseline)
+== mutation on disk:
+ scripts/walk_inplace_proof.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+690:                    if False and r is not None and nv == ((ov & 0xFF000000) | r):  # RF-MUTATION
+  FAIL UNEXPLAINED byte at new 0x18067 (old 0x180a5) in `act_descriptor` game/sonic4/data/levels/ojz/act1/act_descriptor.emp:518: a6 -> 68
+  FAIL UNEXPLAINED byte at new 0x17ff8 (old 0x18036) in `act_descriptor` game/sonic4/data/levels/ojz/act1/act_descriptor.emp:518: 86 -> 85
+  FAIL UNEXPLAINED byte at new 0x17ff9 (old 0x18037) in `act_descriptor` game/sonic4/data/levels/ojz/act1/act_descriptor.emp:518: 32 -> f4
+  FAIL UNEXPLAINED byte at new 0x1807d (old 0x180bb) in `act_descriptor` game/sonic4/data/levels/ojz/act1/act_descriptor.emp:518: a2 -> 64
+  FAIL UNEXPLAINED byte at new 0x1800f (old 0x1804d) in `act_descriptor` game/sonic4/data/levels/ojz/act1/act_descriptor.emp:518: e6 -> a8
+== restore: git restore --source=HEAD -- scripts/walk_inplace_proof.py
+PROOF plain EXPLAINED dropped=140 sites=140 positional=426472 unexplained=0 fails=0
+
+RF-4  the site model's absolute rung pinned to 4 bytes (source mutation, committed baseline)
+== mutation on disk:
+ scripts/walk_inplace_proof.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+557:                            need = 4  # RF-MUTATION-2
+  FAIL `vblank` dropped 8 byte(s) but its scratch sites total 0:
+  FAIL `game_loop` dropped 6 byte(s) but its scratch sites total 2: engine/system/game_loop.emp:31 bsr.s $2674 -> jsr abs.w (+2)
+  FAIL `tile_cache` dropped 14 byte(s) but its scratch sites total 0:
+  FAIL `parallax` dropped 4 byte(s) but its scratch sites total 0:
+== restore: git restore --source=HEAD -- scripts/walk_inplace_proof.py
+PROOF plain EXPLAINED dropped=140 sites=140 positional=426472 unexplained=0 fails=0
