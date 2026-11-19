@@ -320,7 +320,7 @@ pub struct AsSide {
     /// It used to be dropped here, and dropping it is what made the chained
     /// build's mislocation unfixable rather than merely wrong: with the AS map
     /// gone, the `.emp` manifest's index was the only authority left in scope
-    /// and every AS span was read through it. See [`ChainSources`].
+    /// and every AS span was read through it. See [`ChainSources`](crate::diag::ChainSources).
     pub sources: sigil_span::SourceMap,
 }
 
@@ -344,7 +344,7 @@ pub struct EmpProgram {
     /// they must render through the same index rather than a second one.
     pub sources: sigil_frontend_emp::resolve::manifest::SourceIndex,
     /// The module roots this build placed, derived from the game's map over the
-    /// scanned tree ([`crate::module_roots`]).
+    /// scanned tree (sigil-harness `module_roots`).
     pub registry: Vec<ModuleSpec>,
     /// The lowering's symbol side table (module, procedure extent, `pub`) for the
     /// build export.
@@ -358,10 +358,10 @@ pub struct EmpProgram {
 /// every reportable non-error diagnostic the lowering produced. The placement map
 /// bases are COSMETIC (the chainer recomputes every base from the frozen table), so a
 /// nominal one-region-per-section map suffices.
-/// The whole-program build's inputs, exactly as [`build_emp`] lowers them: the scanned
+/// The whole-program build's inputs, exactly as sigil-harness `native::build_emp` lowers them: the scanned
 /// manifest after the helper-import rewrite and with the synthetic entry minted, the
 /// shape's lowering options, and what the scan and the entry parse reported. Shared
-/// with [`name_env_report`] so a report reads the SAME program the build lowers.
+/// with sigil-harness `native::name_env_report` so a report reads the SAME program the build lowers.
 pub struct PreparedProgram {
     pub manifest: resolve::manifest::Manifest,
     pub mdiags: Vec<sigil_span::Diagnostic>,

@@ -13,6 +13,26 @@
 
 pub mod describe;
 
+/// Section base alignment: the 68000 evenness default and the declared `[[align]]` rows.
+pub mod align;
+
+/// The new driver's packing walk: anchors from the map, no frozen size table.
+pub mod walk;
+
+/// Closed module gating: every placed module matches exactly one `[[gate]]` rule.
+pub mod gating;
+
+/// The new driver's module roots: the map's `order` through the closed gate.
+pub mod roots;
+
+/// The game-as-data build driver (G0b Task 5): a ROM from a game description, a shape
+/// name and the engine description, beside the old profile-driven driver.
+pub mod driver;
+
+/// The per-game `[defines]` table reader and the define listing rows (G0b Task 5, from
+/// sigil-harness, re-exported there).
+pub mod game_defines;
+
 /// The build's diagnostics: the warn tier, the chained build's location authority,
 /// and the one error renderer (G0b Task 4, from sigil-harness).
 pub mod diag;

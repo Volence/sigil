@@ -1,0 +1,817 @@
+//! The game-as-data build driver (G0b Task 5): a ROM from a game description
+//! (`games/<g>/game.toml`), a shape name, and the engine description it names
+//! (`engine/engine.toml`), written beside the old profile-driven driver (sigil-harness
+//! `native::build_rom_chained_with_listing`), which it replaces at the cutover.
+//!
+//! What the descriptions decide, that the old driver hardcodes:
+//!
+//!   * which modules a shape places: the closed `[[gate]]` rules ([`crate::gating`],
+//!     [`crate::roots`]);
+//!   * the define environment: derived from the shape's features, then the engine's
+//!     defaults, the game's values, the shape's overrides, the map's `[defines]`
+//!     ([`merged_defines`](crate::driver::merged_defines));
+//!   * section alignment: the 68000 evenness default and the `[[align]]` rows
+//!     ([`crate::align`]);
+//!   * where sections go: the map's `order` and its `[[anchor]]` rows, each naming the
+//!     section it `holds` ([`crate::walk`]), with no frozen size table;
+//!   * the deb2 appendix's engine facts (`engine.toml`) and floor (`game.toml`).
+//!
+//! What it does not own yet: the sound seams (the generated sound artifacts, the sound
+//! bank id and fold checks) and the build-data side tables live in sigil-harness and
+//! reach this driver through [`Seams`](crate::driver::Seams), which sigil-cli wires. The pipeline between them
+//! is the old driver's, step for step.
+
+use std::any::Any;
+use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
+use sigil_frontend_emp::export_side::{LayoutPass, ProgramLayouts, ProgramSymbols};
+use sigil_frontend_emp::lower::LowerOptions;
+use sigil_frontend_emp::resolve;
+use sigil_ir::{Cpu, Section, SymbolTable};
+use sigil_link::export::{ExportInputs, SideTables, Z80Window};
+
+use crate::align::AlignTable;
+use crate::describe::{self, EngineDesc, GameDesc, ResolvedShape};
+use crate::diag::{collect_warnings, collect_warnings_located, BuildWarning, ChainSources};
+use crate::gating::ModuleId;
+use crate::harvest::{helper_import_errors_in, publicize_helper_comptime, refuse_artifact_contribution, resolve_extra_entry, rewrite_helper_imports};
+use crate::map_placement::{AnchorOverlay, PlacementMap};
+use crate::place::ModuleSpec;
+use crate::walk::{AnchorPin, WalkError};
+
+/// Why a build was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildError {
+    /// A module the shape could place matches no `[[gate]]` rule.
+    Ungated(ModuleId),
+    /// A module matches two `[[gate]]` rules (their indices, engine rules first).
+    DoubleGated(ModuleId, usize, usize),
+    /// A gate rule could not be evaluated for the shape.
+    Gate(String),
+    /// A description is malformed, or the shape or engine cannot be found.
+    Desc(String),
+    /// The packing walk refused.
+    Walk(WalkError),
+    /// Any later stage, with its own message.
+    Context(String),
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildError::Ungated(m) => write!(
+                f,
+                "[gate.ungated] module `{m}` is placed by a map row but matches no [[gate]] rule; \
+                 name it (`place_in = \"all\"` if every shape places it)"
+            ),
+            BuildError::DoubleGated(m, a, b) => write!(
+                f,
+                "[gate.double] module `{m}` matches [[gate]] rules {a} and {b} (engine rules first, \
+                 then the game's); one module has one rule"
+            ),
+            BuildError::Gate(m) => write!(f, "[gate.eval] {m}"),
+            BuildError::Desc(m) => write!(f, "{m}"),
+            BuildError::Walk(e) => write!(f, "{e}"),
+            BuildError::Context(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+impl std::error::Error for BuildError {}
+
+impl From<WalkError> for BuildError {
+    fn from(e: WalkError) -> Self {
+        BuildError::Walk(e)
+    }
+}
+
+impl From<describe::DescError> for BuildError {
+    fn from(e: describe::DescError) -> Self {
+        BuildError::Desc(e.to_string())
+    }
+}
+
+fn ctx(e: impl std::fmt::Display) -> BuildError {
+    BuildError::Context(e.to_string())
+}
+
+/// The pieces that still live in sigil-harness, behind a seam this crate can name without
+/// depending on it (`tests/no_harness_edge.rs`). sigil-cli passes the harness's.
+pub trait Seams {
+    /// A sound-on shape: write the generated sound artifacts into `checkout` and return the
+    /// resident driver link the shape embeds (handed back to [`Seams::side_tables`]).
+    fn emit_sound(&self, checkout: &Path, overlay: Option<&AnchorOverlay>, debug: bool) -> Result<Box<dyn Any>, String>;
+    /// The post-link sound checks: the bank id constants and the sound fold.
+    fn validate_sound(
+        &self,
+        checkout: &Path,
+        overlay: Option<&AnchorOverlay>,
+        resolved: &[Section],
+        linked: &sigil_link::LinkedImage,
+        sound_on: bool,
+        debug: bool,
+    ) -> Result<(), String>;
+    /// The build-data export's side tables.
+    fn side_tables(&self, inputs: SideInputs<'_>) -> Result<SideTables, String>;
+}
+
+/// What [`Seams::side_tables`] reads.
+pub struct SideInputs<'a> {
+    pub emp_symbols: &'a ProgramSymbols,
+    pub as_symbols: &'a sigil_frontend_as::export_side::AsSymbols,
+    pub define_rows: &'a [sigil_link::ListingSymbol],
+    pub resolved: &'a [Section],
+    pub stubs: &'a SymbolTable,
+    pub z80_windows: &'a [Z80Window],
+    pub emp_layouts: &'a ProgramLayouts,
+    pub code: Vec<(String, std::ops::Range<usize>)>,
+    pub resident: Option<Box<dyn Any>>,
+    pub rom: &'a [u8],
+}
+
+/// How to build.
+pub struct BuildOptions<'a> {
+    /// `--extra-entry` modules (ids or `.emp` paths).
+    pub extra_entries: Vec<String>,
+    /// `--anchor-overlay`.
+    pub anchor_overlay: Option<AnchorOverlay>,
+    pub layout_pass: LayoutPass,
+    pub seams: &'a dyn Seams,
+    /// The environment (the engine checkout variable); injected so a test owns it.
+    pub env: &'a dyn Fn(&str) -> Option<OsString>,
+}
+
+/// A built shape.
+pub struct BuildOutput {
+    /// The full file: the assembled image, then the deb2 appendix when the shape carries
+    /// the MD Debugger island.
+    pub rom: Vec<u8>,
+    /// The assembled image's length (`EndOfRom`).
+    pub assembled_len: usize,
+    pub listing: Vec<sigil_link::ListingSymbol>,
+    pub export_inputs: ExportInputs,
+    pub warnings: Vec<BuildWarning>,
+    /// The module roots the shape placed.
+    pub registry: Vec<ModuleSpec>,
+    /// The engine checkout the build read.
+    pub checkout: PathBuf,
+}
+
+/// A game description with the engine it names, located.
+#[derive(Debug, Clone)]
+pub struct Project {
+    pub game_path: PathBuf,
+    pub game_dir: PathBuf,
+    pub game: GameDesc,
+    /// The checkout holding the engine root (the module scan root, `include` root).
+    pub checkout: PathBuf,
+    pub engine_dir: PathBuf,
+    pub engine_path: PathBuf,
+    pub engine: EngineDesc,
+}
+
+impl Project {
+    /// The game's module prefix (`games.sonic4`), from its `entry.game` module.
+    pub fn game_prefix(&self) -> &str {
+        self.game.entry.game.rsplit_once('.').map_or(self.game.entry.game.as_str(), |(p, _)| p)
+    }
+    /// The game's sources root.
+    pub fn sources_root(&self) -> PathBuf {
+        self.game_dir.join(&self.game.sources.root)
+    }
+    pub fn map_path(&self) -> PathBuf {
+        self.game_dir.join(&self.game.map)
+    }
+}
+
+/// Read `project` (a game directory holding `game.toml`, or the file) and find its engine.
+///
+/// The engine is found by observation first: the nearest ancestor of the game directory
+/// that holds `<engine.root>/engine.toml` is the game's own checkout. Only a game with no
+/// such ancestor falls back to SUITE_PATHS ([`describe::resolve_engine_dir`]). When the
+/// checkout variable is set and names a different tree than the one observed, the build is
+/// refused: two answers to "which engine" is a fork, and neither may silently win.
+pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Project, BuildError> {
+    let game_path = if project.is_dir() { project.join("game.toml") } else { project.to_path_buf() };
+    let game = describe::load_game(&game_path)?;
+    let game_dir = game_path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let game_dir = std::fs::canonicalize(&game_dir)
+        .map_err(|e| BuildError::Desc(format!("game directory {}: {e}", game_dir.display())))?;
+    let observed = game_dir.ancestors().find(|a| a.join(&game.engine.root).join("engine.toml").is_file()).map(Path::to_path_buf);
+    let var = format!("{}_DIR", game.engine.suite_path.to_ascii_uppercase());
+    let checkout = match observed {
+        Some(dir) => {
+            if let Some(v) = env(&var).filter(|v| !v.is_empty()) {
+                let named = std::fs::canonicalize(&v).unwrap_or_else(|_| PathBuf::from(&v));
+                if named != dir {
+                    return Err(BuildError::Desc(format!(
+                        "[engine.conflict] {var} names {}, but the game {} sits in the checkout {}; \
+                         build the game with the engine beside it, or unset {var}",
+                        named.display(),
+                        game_path.display(),
+                        dir.display()
+                    )));
+                }
+            }
+            dir
+        }
+        None => describe::resolve_engine_dir(&game.engine, env)?.0,
+    };
+    let engine_dir = checkout.join(&game.engine.root);
+    let engine_path = engine_dir.join("engine.toml");
+    let engine = describe::load_engine(&engine_path)?;
+    Ok(Project { game_path, game_dir, game, checkout, engine_dir, engine_path, engine })
+}
+
+/// The shape's define environment, in order: the three the shape's features DERIVE
+/// (`SOUND_DRIVER_ENABLED`, `DEBUG`, `CRASH_REPORT`), the engine's defaults, the game's
+/// values, each overridden by the shape where it says so, then the map's `[defines]` rows.
+///
+/// Refused: a description that declares a derived name; a game define that redeclares an
+/// engine one; a shape override of a name neither description declares (a typo there
+/// would otherwise mint a define silently); a map row that redeclares any earlier one.
+pub fn merged_defines(p: &Project, shape: &ResolvedShape, map_src: &str) -> Result<Vec<(String, i128)>, BuildError> {
+    let f = shape.features;
+    let derived: [(&str, i64); 3] =
+        [("SOUND_DRIVER_ENABLED", f.sound as i64), ("DEBUG", f.debug as i64), ("CRASH_REPORT", f.crash_report as i64)];
+    let is_derived = |k: &str| derived.iter().any(|(d, _)| *d == k);
+    let eng = &p.engine.defines;
+    let game = &p.game.defines;
+    for k in eng.keys() {
+        if is_derived(k) {
+            return Err(BuildError::Desc(format!(
+                "[define.derived] {} declares `{k}`, which the shape's features derive",
+                p.engine_path.display()
+            )));
+        }
+    }
+    for k in game.keys() {
+        if is_derived(k) || eng.contains_key(k) {
+            return Err(BuildError::Desc(format!(
+                "[define.redeclared] {} declares `{k}`, which {} already declares; a game sets an \
+                 engine define per shape, it does not redeclare it",
+                p.game_path.display(),
+                if is_derived(k) { "the shape's features derive".to_string() } else { p.engine_path.display().to_string() }
+            )));
+        }
+    }
+    let mut out: BTreeMap<&str, i64> = BTreeMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for (k, v) in derived {
+        order.push(k.to_string());
+        out.insert(k, v);
+    }
+    for (k, v) in eng.iter().chain(game.iter()) {
+        order.push(k.clone());
+        out.insert(k, *v);
+    }
+    for (k, v) in &shape.defines {
+        if !out.contains_key(k.as_str()) || is_derived(k) {
+            return Err(BuildError::Desc(format!(
+                "[define.undeclared-override] shape `{}` sets `{k}`, which neither {} nor {} declares \
+                 (or which the shape's features derive); declare it with its default first",
+                shape.name,
+                p.engine_path.display(),
+                p.game_path.display()
+            )));
+        }
+        out.insert(k, *v);
+    }
+    let mut env: Vec<(String, i128)> = order.iter().map(|k| (k.clone(), out[k.as_str()] as i128)).collect();
+    let origin = p.map_path().display().to_string();
+    for (k, v) in crate::game_defines::parse_game_defines(map_src, &origin).map_err(ctx)? {
+        if env.iter().any(|(e, _)| *e == k) {
+            return Err(BuildError::Desc(format!(
+                "[define.redeclared] {origin} [defines] declares `{k}`, which the descriptions already declare"
+            )));
+        }
+        env.push((k, v));
+    }
+    Ok(env)
+}
+
+// ───────────────────────────── the AS side ─────────────────────────────
+
+fn parse_emp(path: &Path, what: &str) -> Result<sigil_frontend_emp::ast::File, BuildError> {
+    let src = sigil_span::read_set::read_to_string(path).map_err(|e| ctx(format!("{what}: read {}: {e}", path.display())))?;
+    let (file, d) = sigil_frontend_emp::parse_str(&src);
+    if let Some(e) = d.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("{what}: parse {}: {e:?}", path.display())));
+    }
+    Ok(file)
+}
+
+fn pub_consts(p: &Project, path: &Path, seed: &[(String, i128)], what: &str) -> Result<Vec<(String, i64)>, BuildError> {
+    let file = parse_emp(path, what)?;
+    let (vals, d) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&p.checkout), seed);
+    if let Some(e) = d.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("{what}: resolve {}: {e:?}", path.display())));
+    }
+    Ok(vals)
+}
+
+/// The engine's public constants (the AS side's guarded defines), evaluated in `defines`.
+fn engine_constants(p: &Project, defines: &[(String, i128)]) -> Result<Vec<(String, i64)>, BuildError> {
+    let vals = pub_consts(p, &p.engine_dir.join(&p.engine.constants), defines, "engine constants")?;
+    // `VDP_Shadow_len` is also a struct-twin offset; the twin is the AS side's spelling.
+    Ok(vals.into_iter().filter(|(n, _)| n != "VDP_Shadow_len").collect())
+}
+
+/// The engine structs' field offsets, under the AS spelling `<prefix>_<field>` and
+/// `<prefix>_len`, for each `struct_twins` row.
+fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
+    let types = parse_emp(&p.engine_dir.join(&p.engine.types), "struct offsets")?;
+    let mut out = Vec::new();
+    for (rel, sname, prefix) in &p.engine.struct_twins {
+        let file = parse_emp(&p.engine_dir.join(rel), "struct offsets")?;
+        let (layout, d) = sigil_frontend_emp::layout::layout_struct_ambient(&file, &types.items, sname);
+        if let Some(e) = d.iter().find(|d| d.level == sigil_span::Level::Error) {
+            return Err(ctx(format!("struct offsets: layout {sname}: {e:?}")));
+        }
+        let layout = layout.ok_or_else(|| ctx(format!("struct offsets: no struct `{sname}` in {rel}")))?;
+        for f in &layout.fields {
+            out.push((format!("{prefix}_{}", f.name), f.offset as i64));
+        }
+        out.push((format!("{prefix}_len"), layout.size as i64));
+        if sname == "Sst" {
+            // `SST_interact` is the last word of the slot (sst.emp `interact_off()`).
+            if !layout.fields.iter().any(|f| f.name == "frame_off") {
+                return Err(ctx("struct offsets: Sst lost frame_off; re-derive SST_interact against sst.emp"));
+            }
+            out.push(("SST_interact".to_string(), layout.size as i64 - 2));
+        }
+    }
+    Ok(out)
+}
+
+/// The RAM labels and equates the engine RAM and the game RAM place (the AS side's plain
+/// defines), from a focused build of those two modules.
+fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)]) -> Result<Vec<(String, i64)>, BuildError> {
+    let (mut manifest, md) = resolve::manifest::Manifest::scan(&p.checkout);
+    if let Some(e) = md.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("ram harvest: manifest scan: {e:?}")));
+    }
+    let helpers: Vec<&str> = p.engine.ram_helpers.iter().map(String::as_str).collect();
+    publicize_helper_comptime(&mut manifest, &helpers);
+    let entry_id = "__ram_harvest_entry__".to_string();
+    let src = format!("module __ram_harvest_entry__\n\nuse {ram_seed}\nuse {}\n", p.game.entry.ram);
+    push_synthetic(&mut manifest, &entry_id, &src, &p.checkout)?;
+    let opts = lower_options(p, defines);
+    let root = p.checkout.clone();
+    let embed = move |_: &str| Some(root.clone());
+    let (sections, _, bd) = resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed);
+    if let Some(e) = bd.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("ram harvest: build: {e:?}")));
+    }
+    let mut out = Vec::new();
+    for sec in sections.iter().filter(|s| s.vma_origin() >= 0x00F0_0000) {
+        for l in &sec.labels {
+            out.push((l.name.clone(), sec.vma_origin().wrapping_add(l.offset) as i64));
+        }
+        for e in &sec.equ_syms {
+            if let sigil_ir::expr::Expr::Int(v) = e.expr {
+                out.push((e.name.clone(), v));
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(ctx("ram harvest: no RAM labels found (the RAM modules are not reachable?)"));
+    }
+    Ok(out)
+}
+
+fn lower_options(p: &Project, defines: &[(String, i128)]) -> LowerOptions {
+    LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(p.checkout.clone()),
+        embed_base: Some(p.checkout.clone()),
+        defines: defines.to_vec(),
+    }
+}
+
+fn push_synthetic(manifest: &mut resolve::manifest::Manifest, id: &str, src: &str, checkout: &Path) -> Result<sigil_span::SourceId, BuildError> {
+    let source = sigil_span::SourceId(manifest.modules.len() as u32);
+    if manifest.sources.contains_key(&source) {
+        return Err(ctx(format!("synthetic entry {source:?} collides with a scanned module")));
+    }
+    let (file, pd) = sigil_frontend_emp::parse_file(src, source);
+    if let Some(e) = pd.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("synthetic entry `{id}` parse: {e:?}")));
+    }
+    let path = checkout.join(format!("__{id}__.emp"));
+    manifest.by_id.insert(id.to_string(), manifest.modules.len());
+    manifest.sources.insert(source, path.clone());
+    manifest.modules.push(resolve::manifest::ParsedModule { id: id.to_string(), file, path });
+    Ok(source)
+}
+
+/// The residual AS side, assembled with the defines the descriptions derive.
+fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], seeds: (&str, &str)) -> Result<crate::harvest::AsSide, BuildError> {
+    let engine = engine_constants(p, defines)?;
+    let mut guarded = engine.clone();
+    guarded.extend(struct_offsets(p)?);
+    let mut seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
+    seed.push(("DEBUG".to_string(), shape.features.debug as i128));
+    let e = &p.game.entry;
+    for rel in [&e.constants, &e.sound_ids, &e.sfx_bank].into_iter().flatten() {
+        guarded.extend(pub_consts(p, &p.game_dir.join(rel), &seed, "game constants")?);
+    }
+    let mut plain = ram_addresses(p, seeds.1, defines)?;
+    if shape.features.sound {
+        plain.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
+    }
+    if shape.features.debug {
+        plain.push(("__DEBUG__".to_string(), 1));
+    }
+    if shape.features.debug || shape.features.crash_report {
+        plain.push(("__MDDBG__".to_string(), 1));
+    }
+    let opts = sigil_frontend_as::Options {
+        initial_cpu: Some(Cpu::M68000),
+        defines: plain,
+        include_root: Some(p.checkout.clone()),
+        guarded_defines: guarded,
+        cli_defines: Vec::new(),
+        share_file: false,
+    };
+    let root = p.sources_root().join(&p.game.sources.residual_as);
+    sigil_frontend_as::assemble_root_relocating_warned(&root, &opts)
+        .map(|a| crate::harvest::AsSide {
+            warnings: a.warnings.iter().map(|d| BuildWarning::from_as(d, &a.sources)).collect(),
+            module: a.module,
+            sources: a.sources,
+        })
+        .map_err(|f| ctx(format!("assemble {}: {} diagnostic(s); first: {:?}", root.display(), f.diags.len(), f.diags.first())))
+}
+
+// ───────────────────────────── the .emp side ─────────────────────────────
+
+struct EmpSide {
+    program: crate::harvest::EmpProgram,
+}
+
+fn build_emp(
+    p: &Project,
+    shape: &ResolvedShape,
+    gate_shape: &ResolvedShape,
+    order: &[String],
+    defines: &[(String, i128)],
+    opts: &BuildOptions<'_>,
+) -> Result<EmpSide, BuildError> {
+    let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(&p.checkout);
+    if let Some(e) = mdiags.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("manifest scan: {e:?}")));
+    }
+    let seeds = entry_seeds(p)?;
+    let rules: Vec<describe::GateRule> = p.engine.gate.iter().chain(p.game.gate.iter()).cloned().collect();
+    let map_name = p.map_path().display().to_string();
+    let registry = crate::roots::derive_roots(&crate::roots::RootsInput {
+        manifest: &manifest,
+        order,
+        game_prefix: p.game_prefix(),
+        rules: &rules,
+        shape: gate_shape,
+        seeds: &seeds,
+        terminus: &p.engine.terminus,
+        map_name: &map_name,
+    })?;
+    let helpers: Vec<&str> = p.engine.helpers.iter().map(String::as_str).collect();
+    let removed = rewrite_helper_imports(&mut manifest, &helpers);
+    let extra: Vec<String> = opts
+        .extra_entries
+        .iter()
+        .map(|arg| {
+            let id = resolve_extra_entry(&manifest, &p.checkout, arg)?;
+            refuse_artifact_contribution(&manifest, &id, arg)?;
+            Ok(id)
+        })
+        .collect::<Result<_, String>>()
+        .map_err(ctx)?;
+    let entry_id = "native_flip_entry";
+    let mut src = format!("module {entry_id}\n\n");
+    for s in seeds.iter().map(String::as_str).chain(registry.iter().map(|m| m.module_id.as_str())).chain(extra.iter().map(String::as_str)) {
+        src.push_str(&format!("use {s}\n"));
+    }
+    let source = push_synthetic(&mut manifest, entry_id, &src, &p.checkout)?;
+    let lopts = lower_options(p, defines);
+    let root = p.checkout.clone();
+    let embed = move |_: &str| Some(root.clone());
+    let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
+        resolve::build_program_open_embed_counted(&manifest, entry_id, None, &lopts, opts.layout_pass, &embed);
+    bdiags.extend(helper_import_errors_in(&manifest, &removed, &lowered, &bdiags));
+    let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    if !berr.is_empty() {
+        let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
+        return Err(ctx(format!(
+            "build_program: {} error(s);\n{}",
+            berr.len(),
+            crate::diag::render::render_diag_lines(&berr, &|span| index.locate(span))
+        )));
+    }
+    if p.game.require_one_text {
+        let n = sections.iter().filter(|s| s.name == "text" && !s.image_bytes().is_empty()).count();
+        if n != 1 {
+            return Err(ctx(format!("expected exactly 1 non-empty `text` section (game.toml require_one_text), found {n}")));
+        }
+    }
+    let map = sigil_link::load_map(&crate::place::emp_map_frozen(&sections)).map_err(|e| ctx(format!("emp map load: {e}")))?;
+    let place_diags = resolve::place_sections(&mut sections, &map);
+    if let Some(e) = place_diags.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("place_sections: {e:?}")));
+    }
+    let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
+    let pdiags: Vec<sigil_span::Diagnostic> = Vec::new();
+    let warnings = collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
+    let _ = shape;
+    Ok(EmpSide {
+        program: crate::harvest::EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols, layouts },
+    })
+}
+
+/// The synthetic entry's leading `use`s: the engine's `entry_seeds` paired with the game's
+/// entry modules (seed 0, `entry.game`, seed 1, `entry.ram`).
+fn entry_seeds(p: &Project) -> Result<Vec<String>, BuildError> {
+    match p.engine.entry_seeds.as_slice() {
+        [contract, ram] => Ok(vec![contract.clone(), p.game.entry.game.clone(), ram.clone(), p.game.entry.ram.clone()]),
+        other => Err(BuildError::Desc(format!(
+            "{}: `entry_seeds` must name two modules (the game contract, then the engine RAM), found {}",
+            p.engine_path.display(),
+            other.len()
+        ))),
+    }
+}
+
+// ───────────────────────────── the build ─────────────────────────────
+
+/// Build `shape` of the game at `project`.
+pub fn build(project: &Path, shape: &str, opts: &BuildOptions<'_>) -> Result<BuildOutput, BuildError> {
+    let p = load_project(project, opts.env)?;
+    build_project(&p, shape, opts)
+}
+
+/// [`build`] over a loaded [`Project`].
+pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<BuildOutput, BuildError> {
+    let shape = describe::resolve_shape(&p.game, shape_name)?;
+    let sound = shape.features.sound;
+    let debug = shape.features.debug;
+    let map_path = p.map_path();
+    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
+    let defines = merged_defines(p, &shape, &map_src)?;
+    let gate_shape = ResolvedShape { defines: defines.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(), ..shape.clone() };
+
+    // ── Placement facts. ──
+    let base_pmap = crate::map_placement::load_placement_map(&map_src).map_err(|e| ctx(format!("placement {}: {e}", map_path.display())))?;
+    let map = sigil_link::load_map(&map_src).map_err(|e| ctx(format!("load {}: {e}", map_path.display())))?;
+    let map = crate::map_placement::map_for_shape(&map, &base_pmap, sound);
+    let mut pmap: PlacementMap = match &opts.anchor_overlay {
+        Some(ov) => base_pmap.with_overlay(ov).map_err(ctx)?,
+        None => base_pmap.clone(),
+    };
+    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap, sound);
+    let map = crate::map_placement::bank_windows_for_shape(&map, &pmap, sound).map_err(ctx)?;
+    if let Some(fp) = &shape.fixture_placement {
+        relocate_rows(&mut pmap.order, &fp.relocate, &p.engine.fault_island_heads)?;
+    }
+    let mut pins: Vec<AnchorPin> = Vec::new();
+    for a in pmap.anchors_for(sound) {
+        let holds = a.holds.clone().ok_or_else(|| {
+            BuildError::Desc(format!(
+                "[map.anchor-holds-missing] {} anchor `{}` at {:#x} names no `holds` row; the driver \
+                 places the section an anchor holds, so each anchor in force must say which",
+                map_path.display(),
+                a.name,
+                a.at
+            ))
+        })?;
+        pins.push(AnchorPin { name: a.name.clone(), holds, at: a.at });
+    }
+    let engine_origin = p.engine_path.display().to_string();
+    let game_origin = p.game_path.display().to_string();
+    let align = AlignTable::new([(engine_origin.as_str(), &p.engine.align[..]), (game_origin.as_str(), &p.game.align[..])]).map_err(ctx)?;
+
+    // ── Front ends. ──
+    let resident = if sound { Some(opts.seams.emit_sound(&p.checkout, opts.anchor_overlay.as_ref(), debug).map_err(ctx)?) } else { None };
+    let seeds = entry_seeds(p)?;
+    let crate::harvest::AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
+        assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]))?;
+    let EmpSide { program } = build_emp(p, &shape, &gate_shape, &pmap.order, &defines, opts)?;
+    let crate::harvest::EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } = program;
+    let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
+    let as_code = as_module.named_code_marks();
+    let (sources, sections) = ChainSources::join(sources, as_map, as_module.sections, emp_sections).map_err(ctx)?;
+    for w in &mut as_warnings {
+        sources.rebase_warning(w);
+    }
+    warnings.extend(as_warnings);
+    let island = declares_island(p, &shape, &registry)?;
+
+    // ── Place. ──
+    let true_bases = crate::walk::true_bases(&sections, &pmap.order, &pins, &align, &|s| sources.locate(s))?;
+    let spans = crate::place::declared_spans_by_index(&sections, &true_bases).map_err(ctx)?;
+    let all = crate::place::apply_declared_chain(sections, &true_bases, &spans);
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout_owned(all, &stubs, true)
+        .map_err(|d| ctx(crate::guards::render_declared_chain("resolve_layout", &d, &sources)))?;
+    let (adiags, tally) = sigil_link::check_link_asserts_tallied(&resolved, &stubs, &link_asserts);
+    warnings.extend(collect_warnings_located(&|s| sources.locate(s), &[&adiags], None));
+    let inapplicable = crate::guards::declared_chain_drift_verdict(&adiags, &|s| sources.locate(s)).map_err(ctx)?;
+    crate::guards::enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &[]).map_err(ctx)?;
+    crate::guards::GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable).map_err(ctx)?;
+
+    // ── Link, check, emit. ──
+    let mut listing = crate::emit::listing_from_resolved(&resolved, &stubs);
+    let define_rows = crate::game_defines::define_listing_rows(&defines, &[], &listing, &map_path.display().to_string()).map_err(ctx)?;
+    listing.extend(define_rows.iter().cloned());
+    let z80_windows = crate::emit::z80_windows(&map, &resolved).map_err(ctx)?;
+    let linked = sigil_link::link(&resolved, &stubs).map_err(|d| ctx(crate::guards::render_declared_chain("link", &d, &sources)))?;
+    opts.seams.validate_sound(&p.checkout, opts.anchor_overlay.as_ref(), &resolved, &linked, sound, debug).map_err(ctx)?;
+    crate::guards::validate_placement(&resolved, &pmap, sound, &registry).map_err(ctx)?;
+    align.validate_resolved(&resolved).map_err(ctx)?;
+    crate::guards::check_budgets(&resolved, &map, &pmap).map_err(ctx)?;
+    let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| ctx(format!("emit_rom: {e}")))?;
+    let mut code = emp_symbols.code.clone();
+    code.extend(as_code);
+    let side = opts
+        .seams
+        .side_tables(SideInputs {
+            emp_symbols: &emp_symbols,
+            as_symbols: &as_symbols,
+            define_rows: &define_rows,
+            resolved: &resolved,
+            stubs: &stubs,
+            z80_windows: &z80_windows,
+            emp_layouts: &emp_layouts,
+            code,
+            resident,
+            rom: &rom,
+        })
+        .map_err(ctx)?;
+    let assembled_len = rom.len();
+    let full = if island {
+        let facts = crate::appendix::AppendixFacts {
+            blob_label: &p.engine.error_handler_blob,
+            blob_len: p.engine.error_handler_blob_len,
+            convsym: p.engine_dir.join(&p.engine.convsym),
+        };
+        crate::appendix::append_deb2_appendix_with(&facts, &rom, &listing, debug, p.game.appendix_floor as usize, true).map_err(ctx)?
+    } else {
+        crate::appendix::check_error_handler_is_last_with(&p.engine.error_handler_blob, p.engine.error_handler_blob_len, &listing, rom.len(), false)
+            .map_err(ctx)?;
+        rom
+    };
+    let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side, z80_windows };
+    Ok(BuildOutput { rom: full, assembled_len, listing, export_inputs, warnings, registry, checkout: p.checkout.clone() })
+}
+
+/// Move the `relocate` rows (a fixture shape's growable sections) to just before the
+/// first fault island head in the order, keeping their own order.
+fn relocate_rows(order: &mut Vec<String>, relocate: &[String], fault_heads: &[String]) -> Result<(), BuildError> {
+    let mut moved = Vec::new();
+    for head in relocate {
+        match order.iter().position(|s| s == head) {
+            Some(at) => moved.push(order.remove(at)),
+            None => return Err(BuildError::Desc(format!("[fixture.relocate] `{head}` is not in the map order"))),
+        }
+    }
+    let at = order
+        .iter()
+        .position(|s| fault_heads.iter().any(|h| h == s))
+        .ok_or_else(|| BuildError::Desc(format!("[fixture.relocate] no fault island head ({}) in the map order", fault_heads.join(", "))))?;
+    for (k, head) in moved.into_iter().enumerate() {
+        order.insert(at + k, head);
+    }
+    Ok(())
+}
+
+/// Whether the shape carries the MD Debugger island: the engine's `error_handler` and
+/// `release_fault` modules are the two arms of one gate, so exactly one is placed, and it
+/// is the one the features say (`debug || crash_report`).
+fn declares_island(p: &Project, shape: &ResolvedShape, registry: &[ModuleSpec]) -> Result<bool, BuildError> {
+    let axis = shape.features.debug || shape.features.crash_report;
+    let island = registry.iter().any(|m| m.module_id == p.engine.error_handler);
+    let lean = registry.iter().any(|m| m.module_id == p.engine.release_fault);
+    if island == lean {
+        return Err(ctx(format!(
+            "[gate.fault-split] shape `{}` places {} of `{}` and `{}`; the fault handler is exactly one",
+            shape.name,
+            if island { "both" } else { "neither" },
+            p.engine.error_handler,
+            p.engine.release_fault
+        )));
+    }
+    if axis != island {
+        return Err(ctx(format!(
+            "[gate.fault-split] shape `{}`: `debug || crash_report` is {axis} but the gate {} `{}`",
+            shape.name,
+            if island { "places" } else { "drops" },
+            p.engine.error_handler
+        )));
+    }
+    Ok(island)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ENGINE: &str = r#"format = 1
+        helpers = []
+        ram_helpers = []
+        struct_twins = []
+        entry_seeds = ["engine.game_contract", "engine.ram"]
+        terminus = "engine.epilogue"
+        error_handler = "engine.debug.error_handler"
+        release_fault = "engine.system.release_fault"
+        required_labels = []
+        baseline = "b"
+        constants = "c"
+        types = "t"
+        error_handler_blob = "x"
+        error_handler_blob_len = 1
+        convsym = "c"
+        fault_island_heads = []
+        [defines]
+        HOTKEYS = 0
+        [sound]
+        blob_bank_ids = []
+        blob_start = "a"
+        blob_end = "b"
+        dac_head = "c"
+        dac_blip_bank = "d"
+        dac_shared_bank = "e"
+    "#;
+
+    const GAME: &str = r#"format = 1
+        id = "g"
+        name = "g"
+        require_one_text = false
+        appendix_floor = 4096
+        map = "map.toml"
+        baseline = "baseline.toml"
+        engine = { suite_path = "aeon", root = "engine" }
+        sources = { root = ".", residual_as = "game_root.asm" }
+        entry = { game = "games.g.game", ram = "games.g.ram" }
+        [defines]
+        RINGS = 16
+        [shapes.release]
+        features = { debug = false, crash_report = true, sound = false }
+        [shapes.keys]
+        extends = "release"
+        defines = { HOTKEYS = 1, RINGS = 8 }
+        [shapes.typo]
+        extends = "release"
+        defines = { HOTKYES = 1 }
+    "#;
+
+    fn project(game: &str, engine: &str) -> Project {
+        Project {
+            game_path: "games/g/game.toml".into(),
+            game_dir: "games/g".into(),
+            game: describe::parse_game(Path::new("games/g/game.toml"), game).unwrap(),
+            checkout: ".".into(),
+            engine_dir: "engine".into(),
+            engine_path: "engine/engine.toml".into(),
+            engine: toml::from_str(engine).unwrap(),
+        }
+    }
+
+    fn defines(p: &Project, shape: &str, map: &str) -> Result<Vec<(String, i128)>, BuildError> {
+        merged_defines(p, &describe::resolve_shape(&p.game, shape).unwrap(), map)
+    }
+
+    #[test]
+    fn defines_merge_in_order_and_a_shape_overrides_what_is_declared() {
+        let p = project(GAME, ENGINE);
+        let env = defines(&p, "keys", "[defines]\nCAPS = 3\n").unwrap();
+        let names: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(names, ["SOUND_DRIVER_ENABLED", "DEBUG", "CRASH_REPORT", "HOTKEYS", "RINGS", "CAPS"]);
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).unwrap().1;
+        assert_eq!((get("SOUND_DRIVER_ENABLED"), get("DEBUG"), get("CRASH_REPORT")), (0, 0, 1));
+        assert_eq!((get("HOTKEYS"), get("RINGS"), get("CAPS")), (1, 8, 3));
+        assert_eq!(defines(&p, "release", "").unwrap().iter().find(|(n, _)| n == "HOTKEYS").unwrap().1, 0);
+    }
+
+    /// QUEUE G0B-DESCRIBE-TASK2-RESIDUE item 5: a shape override of a define neither
+    /// description declares is refused, not minted.
+    #[test]
+    fn a_shape_override_of_an_undeclared_define_is_refused() {
+        let p = project(GAME, ENGINE);
+        let err = defines(&p, "typo", "").unwrap_err().to_string();
+        assert!(err.contains("[define.undeclared-override]") && err.contains("HOTKYES"), "{err}");
+        // A game redeclaring an engine define, and a map row redeclaring one, are refused too.
+        let redecl = project(&GAME.replace("RINGS = 16", "RINGS = 16\n        HOTKEYS = 1"), ENGINE);
+        assert!(defines(&redecl, "release", "").unwrap_err().to_string().contains("[define.redeclared]"));
+        assert!(defines(&p, "release", "[defines]\nRINGS = 2\n").unwrap_err().to_string().contains("[define.redeclared]"));
+        // (A game `[defines]` row naming a derived define is refused by the reader, describe.rs.)
+    }
+
+    #[test]
+    fn fixture_rows_move_before_the_first_fault_island() {
+        let mut order: Vec<String> = ["A", "Pool", "B", "ReleaseFault", "BusError", "EndOfRom"].iter().map(|s| s.to_string()).collect();
+        relocate_rows(&mut order, &["Pool".into()], &["ReleaseFault".into(), "BusError".into()]).unwrap();
+        assert_eq!(order, ["A", "B", "Pool", "ReleaseFault", "BusError", "EndOfRom"]);
+        assert!(relocate_rows(&mut order, &["Gone".into()], &["BusError".into()]).is_err());
+    }
+}

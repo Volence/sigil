@@ -18,5 +18,8 @@ sigil-span = { path = "../sigil-span" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }
+# The residual AS front end: the new driver (G0b Task 5) assembles a game's
+# `game_root.asm` itself, from the description, rather than through the harness.
+sigil-frontend-as = { path = "../sigil-frontend-as" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

@@ -11,7 +11,7 @@
 //! stay the concern of the region/placement readers (which tolerate them), so a
 //! typo'd placement key can never silently become a define.
 //!
-//! Consumption: [`crate::native::shape_defines`] merges these rows with the
+//! Consumption: sigil-harness `native::shape_defines` merges these rows with the
 //! profile's built-in `emp_defines` rows. The merge is CONFLICT-FREE by
 //! construction — a game row whose key matches a built-in row is a loud error in
 //! BOTH directions (neither source silently wins), because the built-ins carry
@@ -22,7 +22,7 @@
 //!
 //! Coverage: a game-declared row is outside the built-in polarity gate's walk
 //! (`tests/shipped_shapes.rs` reads `profile.emp_defines`), so
-//! [`audit_game_declared_polarity`] holds the game rows to the same property —
+//! [`audit_game_declared_polarity`](crate::game_defines::audit_game_declared_polarity) holds the game rows to the same property —
 //! a toggle walked in both polarities, a value walked at two sizes, or an
 //! exemption naming the reason.
 
@@ -119,7 +119,7 @@ pub fn merge_builtin_and_game(
 ///
 /// `tests/shipped_shapes.rs`'s both-polarities gate reads `profile.emp_defines`
 /// — the BUILT-IN rows only — so a game-declared row is outside that walk. This
-/// is the other half: it walks [`crate::native::shape_defines`] output, subtracts
+/// is the other half: it walks sigil-harness `native::shape_defines` output, subtracts
 /// the built-in keys, and charges the remainder the property that makes a corpus
 /// walk mean anything — that no arm is unreachable by every shape.
 ///
@@ -286,7 +286,7 @@ fn published_origin(sym: &sigil_link::ListingSymbol) -> String {
 }
 
 /// The `.lst` EQUATE rows for a shape's command-line define env — the game→engine
-/// `-D` interface values ([`crate::native::shape_defines`]) rendered so a
+/// `-D` interface values (sigil-harness `native::shape_defines`) rendered so a
 /// `.lst`-reading tool can ask what `MAX_RING_BUFFER` is worth in THIS ROM instead of
 /// hardcoding a number that is wrong for the other game by construction (sonic4
 /// declares 128, demo declares 16).

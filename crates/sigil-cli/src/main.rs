@@ -165,7 +165,7 @@ const ENTRIES: &[Entry] = &[
         label: "build",
         summary: "build the Aeon ROM from a game tree",
         usage: &[
-            "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>]",
+            "usage: sigil build --aeon <dir> [--legacy] [-o <out.bin>] [--emit-lst <lst>]",
             "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
             "                   [--report ram|contracts|indirect-cost|name-env]",
             "                   [--extra-entry <module|path.emp>]... [--check]",
@@ -184,10 +184,19 @@ const ENTRIES: &[Entry] = &[
             "dev:   --native is an accepted no-op (a native build is the only build).",
             "       --stress-evict and --stress-art each fix an off-canonical development",
             "       shape and take no other shape selector.",
+            "       sigil build --project <game dir|game.toml> --shape <name> -o <out.bin>",
+            "                   [--extra-entry <module|path.emp>]... [--anchor-overlay <anchors.toml>]",
+            "note:  --project builds from the game's description (game.toml, the engine.toml it",
+            "       names, map.toml) with the game-as-data driver; --shape names a [shapes.*] row.",
+            "       It writes the ROM only: no listing, no build.json, no contract gate yet",
+            "note:  --legacy marks the --aeon driver explicitly; it is accepted, not yet required",
             "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
         ],
         options: &[
             valued("--aeon"),
+            flag("--legacy"),
+            valued("--project"),
+            valued("--shape"),
             valued("-o"),
             valued("--emit-lst"),
             valued("--game"),
@@ -1873,6 +1882,17 @@ fn render_indexed_diags(
 /// mode retired with the flip (the AS-reassembly harness is gone); `--native` is
 /// accepted as a no-op for build.sh compatibility.
 fn run_build(entry: &Entry, args: &[String]) {
+    if args.iter().any(|a| a == "--project") {
+        let opts = match parse_project_args(args) {
+            Ok(o) => o,
+            Err(msg) => {
+                eprintln!("error: {msg}");
+                usage_error(entry);
+            }
+        };
+        run_project_build(&opts);
+        return;
+    }
     let opts = match parse_build_args(args) {
         Ok(o) => o,
         Err(msg) => {
@@ -3107,6 +3127,16 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
             "--game" => game = Some(next_value(args, &mut i, "--game")?),
             "--native" => {} // accepted as a no-op — native is the only build post-flip
+            // G0b Task 5: marks the profile-driven driver explicitly, beside `--project`.
+            // Accepted, not yet required (the cutover makes it so).
+            "--legacy" => {}
+            // `run_build` routes any argument list holding `--project` to
+            // `parse_project_args`, so reaching these arms means the two grammars
+            // were mixed in a way that routing did not see (or a direct caller).
+            a @ ("--project" | "--shape") => {
+                let _ = next_value(args, &mut i, a)?;
+                return Err(format!("{a} selects the game-as-data driver (sigil build --project <dir> --shape <name>); it does not combine with --aeon"));
+            }
             "--debug" => debug = true,
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
@@ -3201,6 +3231,116 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
         }
     }
     Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay, no_build_json })
+}
+
+/// `sigil build --project`'s options (G0b Task 5).
+#[derive(Debug, PartialEq, Eq)]
+struct ProjectOpts {
+    project: String,
+    shape: String,
+    output: String,
+    extra_entries: Vec<String>,
+    anchor_overlay: Option<String>,
+}
+
+/// Parse `sigil build --project <p> --shape <name> -o <out>`. Every option of the
+/// profile-driven grammar that names a shape (`--aeon`, `--game`, `--debug`, `--config-*`,
+/// `--lean`, `--stress-*`) is refused by name: the description and `--shape` say it. So are
+/// the outputs this path does not write yet (`--emit-lst`, `--report`, `--check`).
+fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
+    let mut project = None;
+    let mut shape = None;
+    let mut output = None;
+    let mut extra_entries = Vec::new();
+    let mut anchor_overlay: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--project" => project = Some(next_value(args, &mut i, "--project")?),
+            "--shape" => shape = Some(next_value(args, &mut i, "--shape")?),
+            "-o" => output = Some(next_value(args, &mut i, "-o")?),
+            "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
+            "--anchor-overlay" => {
+                if anchor_overlay.is_some() {
+                    return Err("--anchor-overlay takes one file; naming two applies only the last".into());
+                }
+                anchor_overlay = Some(next_value(args, &mut i, "--anchor-overlay")?);
+            }
+            "--no-build-json" => {}
+            a @ ("--aeon" | "--legacy" | "--game" | "--debug" | "--config-a" | "--config-b" | "--lean"
+            | "--stress-evict" | "--stress-art" | "--native") => {
+                return Err(format!("{a} selects the profile-driven driver; --project takes the shape from --shape"))
+            }
+            a @ ("--emit-lst" | "--report" | "--check") => {
+                return Err(format!("{a} is not available with --project yet (the game-as-data driver writes the ROM only)"))
+            }
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+        i += 1;
+    }
+    Ok(ProjectOpts {
+        project: project.ok_or("--project <dir|game.toml> is required")?,
+        shape: shape.ok_or("--project needs --shape <name> (a [shapes.*] row of the game description)")?,
+        output: output.ok_or("--project needs -o <out.bin>")?,
+        extra_entries,
+        anchor_overlay,
+    })
+}
+
+/// Build one shape with the game-as-data driver and write the ROM.
+fn run_project_build(opts: &ProjectOpts) {
+    use sigil_build::driver;
+    let env = |k: &str| std::env::var_os(k);
+    let project = match driver::load_project(std::path::Path::new(&opts.project), &env) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
+    // The sound seams write into the checkout and ask that it be NAMED (see run_build);
+    // the project's own checkout is the name. load_project has refused a conflicting one.
+    if std::env::var_os("AEON_DIR").is_none() {
+        std::env::set_var("AEON_DIR", &project.checkout);
+    }
+    let anchor_overlay = match &opts.anchor_overlay {
+        None => None,
+        Some(path) => match sigil_harness::map_placement::load_anchor_overlay(std::path::Path::new(path)) {
+            Ok(ov) => Some(ov),
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
+    let seams = sigil_harness::driver_seams::HarnessSeams;
+    let bopts = driver::BuildOptions {
+        extra_entries: opts.extra_entries.clone(),
+        anchor_overlay,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        seams: &seams,
+        env: &env,
+    };
+    let out = match driver::build_project(&project, &opts.shape, &bopts) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = std::fs::write(&opts.output, &out.rom) {
+        eprintln!("error: write {}: {e}", opts.output);
+        std::process::exit(1);
+    }
+    println!(
+        "Built {} ({} bytes, assembled {}, {} warning(s)) from {} shape `{}`",
+        opts.output,
+        out.rom.len(),
+        out.assembled_len,
+        out.warnings.len(),
+        project.game_path.display(),
+        opts.shape
+    );
 }
 
 /// `profile` with the `--anchor-overlay` file read and attached, or `profile` itself
@@ -4139,6 +4279,32 @@ mod help_gates {
             }
         }
         assert!(checked >= 15, "only {checked} option words were exercised");
+    }
+
+    /// `sigil build --project`'s parser reads or refuses, by name, every option the
+    /// build row lists: none of them is an "unexpected argument" there either.
+    #[test]
+    fn the_project_parser_names_every_listed_option() {
+        let build = super::entry_for("build").expect("the build row");
+        for o in build.options {
+            let args: Vec<String> = ["--project", "p", "--shape", "s", "-o", "r", o.name].iter().map(|a| a.to_string()).collect();
+            let err = super::parse_project_args(&args).err().unwrap_or_default();
+            assert!(!err.contains("unexpected argument"), "`{}` reaches the project parser's catch-all: {err}", o.name);
+        }
+        let ok = |v: &[&str]| super::parse_project_args(&v.iter().map(|a| a.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            ok(&["--project", "games/g", "--shape", "debug", "-o", "g.bin", "--extra-entry", "m"]).unwrap(),
+            super::ProjectOpts {
+                project: "games/g".into(),
+                shape: "debug".into(),
+                output: "g.bin".into(),
+                extra_entries: vec!["m".into()],
+                anchor_overlay: None
+            }
+        );
+        assert!(ok(&["--project", "g", "-o", "x"]).unwrap_err().contains("--shape"));
+        assert!(ok(&["--project", "g", "--shape", "s", "-o", "x", "--debug"]).unwrap_err().contains("--debug"));
+        assert!(ok(&["--project", "g", "--shape", "s", "-o", "x", "--emit-lst", "l"]).unwrap_err().contains("--emit-lst"));
     }
 
     /// `sigil build`'s parser has an arm for every option the build row lists,

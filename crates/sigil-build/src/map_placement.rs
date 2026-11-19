@@ -69,6 +69,11 @@ pub struct Anchor {
     pub at: u32,
     pub vma: Option<u32>,
     pub when: Option<When>,
+    /// The `order` row of the section this anchor holds (`holds = "ObjCodeBase"`, or a
+    /// `section:<name>` row). The new driver (G0b Task 5) places that section at `at`
+    /// and requires every anchor in force to name one; the old driver matches anchors to
+    /// sections by address through its frozen tables and ignores this key.
+    pub holds: Option<String>,
 }
 
 /// One declared mid-image hole (K1 = data; K2 enforces). The module named by
@@ -169,6 +174,8 @@ struct AnchorDoc {
     name: String,
     at: u32,
     #[serde(default)]
+    holds: Option<String>,
+    #[serde(default)]
     vma: Option<u32>,
     #[serde(default)]
     when: Option<String>,
@@ -208,7 +215,7 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
         .into_iter()
         .map(|a| {
             let when = when(a.when, format!("anchor `{}`", a.name))?;
-            Ok(Anchor { name: a.name, at: a.at, vma: a.vma, when })
+            Ok(Anchor { name: a.name, at: a.at, vma: a.vma, when, holds: a.holds })
         })
         .collect::<Result<Vec<_>, String>>()?;
     let holes = doc
@@ -463,7 +470,7 @@ pub fn parse_anchor_overlay(src: &str, origin: &str) -> Result<AnchorOverlay, St
                 a.at, OVERLAY_GRID
             ));
         }
-        rows.push(Anchor { name: a.name, at: a.at, vma: a.vma, when });
+        rows.push(Anchor { name: a.name, at: a.at, vma: a.vma, when, holds: None });
     }
     Ok(AnchorOverlay { origin: origin.to_string(), rows })
 }

@@ -213,5 +213,19 @@ fn engine_toml_loads() {
     // The blob label moved into this crate with the appendix (G0b Task 4), so it is
     // linked, not read as harness text.
     assert_eq!(e.error_handler_blob, sigil_build::appendix::ERROR_HANDLER_BLOB_LABEL);
+    // G0b Task 5: the appendix's other two engine facts, which the new driver reads from
+    // here and the old one keeps as literals until the cutover.
+    assert_eq!(e.error_handler_blob_len, sigil_build::appendix::ERROR_HANDLER_BLOB_LEN);
+    let engine_root = std::path::Path::new("engine");
+    let convsym: std::path::PathBuf = engine_root.join(&e.convsym).components().fold(std::path::PathBuf::new(), |mut p, c| {
+        match c {
+            std::path::Component::ParentDir => {
+                p.pop();
+            }
+            c => p.push(c),
+        }
+        p
+    });
+    assert_eq!(convsym, std::path::Path::new("tools/convsym"), "engine.toml `convsym` must name the checkout's tools/convsym (appendix.rs)");
     assert!(!e.gate.is_empty() && e.required_labels.contains(&"EndOfRom".to_string()));
 }

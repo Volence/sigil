@@ -258,12 +258,9 @@ struct GameSide {
     baseline: BaselineDesc,
 }
 
-fn glob_match(pat: &str, id: &str) -> bool {
-    match pat.split_once('*') {
-        None => pat == id,
-        Some((pre, post)) => id.len() >= pre.len() + post.len() && id.starts_with(pre) && id.ends_with(post),
-    }
-}
+/// The driver's own matcher (G0b QUEUE 7b: this file used an exact-or-single-`*` stand-in
+/// until the driver's landed), so this test and the build read one pattern one way.
+use sigil_build::gating::glob_match;
 
 /// The description's placement of module `id` in `shape`: `Ok(None)` when no rule names it
 /// (placed in every shape), `Ok(Some(b))` from the one rule that does.
@@ -507,7 +504,11 @@ fn descriptions_agree_with_rust() {
             .filter(|id| in_game(id))
             .map(str::to_string)
             .collect();
-        let desc_ids: BTreeSet<String> = rules.iter().map(|r| r.modules.clone()).collect();
+        // SHAPE_GATES lists only modules some shape DROPS; the closed description gate also
+        // names every always-placed module (`place_in = "all"`, G0b Task 5), and those rows
+        // have no Rust twin. The placement scan above still compares every module.
+        let desc_ids: BTreeSet<String> =
+            rules.iter().filter(|r| r.place_in != PlaceIn::All).map(|r| r.modules.clone()).collect();
         t.rows("gate rows", &format!("{at}: gated module ids (SHAPE_GATES + SIGIL_PROBE_FIXTURES vs gate rules)"), &rust_ids.iter().cloned().collect::<Vec<_>>(), &desc_ids.iter().cloned().collect::<Vec<_>>());
         for id in rust_ids.intersection(&desc_ids) {
             let rust = !SIGIL_PROBE_FIXTURES.contains(&id.as_str()) && gate_of(id).is_none_or(|gt| gt.admits(&rshape));

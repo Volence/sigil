@@ -68,14 +68,27 @@ pub fn check_error_handler_is_last(
     appendix_start: usize,
     expect_island: bool,
 ) -> Result<(), String> {
+    check_error_handler_is_last_with(ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN, listing, appendix_start, expect_island)
+}
+
+/// [`check_error_handler_is_last`] with the blob's label and length passed in: the new
+/// driver reads both from the engine description (`engine.toml` `error_handler_blob`,
+/// `error_handler_blob_len`) instead of this module's constants (G0b Task 5).
+pub fn check_error_handler_is_last_with(
+    blob_label: &str,
+    blob_len: u32,
+    listing: &[sigil_link::ListingSymbol],
+    appendix_start: usize,
+    expect_island: bool,
+) -> Result<(), String> {
     // Same lookup idiom the layout walk uses for `EndOfRom` — match by name.
-    let found = listing.iter().find(|l| l.name == ERROR_HANDLER_BLOB_LABEL);
+    let found = listing.iter().find(|l| l.name == blob_label);
     let blob = match (expect_island, found) {
         (false, None) => return Ok(()),
         (true, None) => {
             return Err(format!(
                 "MDDBG island MEMBERSHIP violated: this shape DECLARES the error_handler \
-                 island, but its listing defines no `{ERROR_HANDLER_BLOB_LABEL}` among \
+                 island, but its listing defines no `{blob_label}` among \
                  {} symbol(s), so the blob-end contract has no subject and would have \
                  passed by having nothing to check. The island is either not placed in \
                  this shape (a registry or `order` change), its blob label was renamed in \
@@ -88,7 +101,7 @@ pub fn check_error_handler_is_last(
         (false, Some(b)) => {
             return Err(format!(
                 "MDDBG island MEMBERSHIP violated: this shape declares NO error_handler \
-                 island, yet its listing defines `{ERROR_HANDLER_BLOB_LABEL}` at {:#x}. \
+                 island, yet its listing defines `{blob_label}` at {:#x}. \
                  The island and the lean fault handler are the two arms of one shape \
                  gate and share a placement slot, so a shape carrying both has lost the \
                  split, and the deb2 appendix this shape is not supposed to need would \
@@ -98,15 +111,15 @@ pub fn check_error_handler_is_last(
         }
         (true, Some(b)) => b,
     };
-    let expect = blob.value.wrapping_add(ERROR_HANDLER_BLOB_LEN) as usize;
+    let expect = blob.value.wrapping_add(blob_len) as usize;
     if appendix_start == expect {
         return Ok(());
     }
     let drift = appendix_start as i64 - expect as i64;
     Err(format!(
         "MDDBG blob-end contract VIOLATED: the deb2 appendix starts at EndOfRom \
-         {appendix_start:#x}, but `{ERROR_HANDLER_BLOB_LABEL}` ({:#x}) + blob length \
-         {ERROR_HANDLER_BLOB_LEN:#x} = {expect:#x}, a drift of {drift:+} byte(s). \
+         {appendix_start:#x}, but `{blob_label}` ({:#x}) + blob length \
+         {blob_len:#x} = {expect:#x}, a drift of {drift:+} byte(s). \
          The MD Debugger locates its symbol table with two `lea` displacements BAKED \
          into the vendored blob bytes, both pointing at blob end, so the appendix must \
          start exactly there. {} Fix the `order` list in games/<game>/map.toml so the \
@@ -119,7 +132,7 @@ pub fn check_error_handler_is_last(
              Offset/Caller line will silently print `<unknown>`."
         } else {
             "The appendix starts BEFORE blob end, the blob is truncated or \
-             ERROR_HANDLER_BLOB_LEN no longer matches the vendored binary."
+             the blob length no longer matches the vendored binary."
         }
     ))
 }
@@ -144,12 +157,38 @@ pub fn append_deb2_appendix(
     min_appendix: usize,
     expect_island: bool,
 ) -> Result<Vec<u8>, String> {
+    let facts = AppendixFacts {
+        blob_label: ERROR_HANDLER_BLOB_LABEL,
+        blob_len: ERROR_HANDLER_BLOB_LEN,
+        convsym: aeon.join("tools").join("convsym"),
+    };
+    append_deb2_appendix_with(&facts, rom, listing, debug, min_appendix, expect_island)
+}
+
+/// The engine facts the appendix reads: the MD Debugger blob's label and length, and the
+/// `convsym` binary. The old driver passes this module's constants and `<aeon>/tools/convsym`;
+/// the new driver passes the engine description's values (G0b Task 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendixFacts<'a> {
+    pub blob_label: &'a str,
+    pub blob_len: u32,
+    pub convsym: std::path::PathBuf,
+}
+
+/// [`append_deb2_appendix`] with the engine facts passed in ([`AppendixFacts`]).
+pub fn append_deb2_appendix_with(
+    facts: &AppendixFacts<'_>,
+    rom: &[u8],
+    listing: &[sigil_link::ListingSymbol],
+    debug: bool,
+    min_appendix: usize,
+    expect_island: bool,
+) -> Result<Vec<u8>, String> {
     // PLACEMENT PRECONDITION (checked BEFORE shelling convsym — the contract is about
     // where the appendix will land, so a violation is knowable from the layout alone).
-    check_error_handler_is_last(listing, rom.len(), expect_island)?;
+    check_error_handler_is_last_with(facts.blob_label, facts.blob_len, listing, rom.len(), expect_island)?;
 
-    let tools = aeon.join("tools");
-    let convsym = tools.join("convsym");
+    let convsym = facts.convsym.clone();
     if !convsym.exists() {
         return Err(format!("convsym not found at {}", convsym.display()));
     }

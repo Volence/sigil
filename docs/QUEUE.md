@@ -2228,7 +2228,22 @@ until its row is removed.
      game-name gate, which counts engine ids without gating them): `sigil_build::appendix::ERROR_HANDLER_BLOB_LABEL`
      (`ErrorHandlerBlob`, engine.toml `error_handler_blob`), `ERROR_HANDLER_BLOB_LEN` (0xF56, the vendored blob), and
      `<aeon>/tools/convsym` inside `append_deb2_appendix` / `convsym_resolve`. Task 5 passes them in from the
-     engine description rather than reading the constants.
+     engine description rather than reading the constants. **CLOSED for the new driver in Task 5:** engine.toml
+     gained `error_handler_blob_len = 0xF56` and `convsym = "../tools/convsym"`, and `sigil_build::driver` calls
+     `appendix::append_deb2_appendix_with(AppendixFacts { .. })` with them. The old entry points keep the literals
+     and delegate until Task 11 (`convsym_resolve` still reads `<aeon>/tools/convsym`).
+  6. **What Task 5 replaced, and how (the new driver, `crates/sigil-build/src/driver.rs`).** Items 1-4 still stand
+     for the OLD driver, which stays until the cutover. The new driver re-derives each from the descriptions:
+     defines (`merged_defines`), gating (`roots`, `gating`), the four harvests and the AS side (private to
+     `driver.rs`, duplicates of the harness bodies until Task 11), the synthetic entry (engine `entry_seeds`
+     paired with `entry.game`/`entry.ram`), the fixture relocation (`fixture_placement.relocate` before the
+     first engine `fault_island_heads` row), the deb2 floor (`appendix_floor`), the inapplicable-guard allowlist
+     (empty, as both Rust tables are), the island exclusivity check, and the walk (`walk`, no frozen table). The
+     sound seams and the side tables reach it through `driver::Seams` (`sigil_harness::driver_seams::HarnessSeams`)
+     until G0c. The `SIGIL_EMP_*` AS definedness defines are NOT passed: no residual AS file tests them (grep of
+     aeon for `SIGIL_EMP_` hits only `.emp` comments), and the new driver's ROMs are byte-identical to the old
+     pipeline with only the walk swapped, which still passes them (see G0B-TASK5-WALK-IDENTITY). `SST_interact =
+     sizeof(Sst) - 2` stays a literal derivation in `driver.rs` (a residual-AS twin; no description field).
 
 ## G0B-DESCRIBE-TASK2-RESIDUE
 
@@ -2239,10 +2254,12 @@ until its row is removed.
      resolver `sigil_build::reference::aeon_dir`; the parcel-only `AEON_G0B_DIR` is gone), and are a
      `nightly_source_gates.sh` SOURCE_GATES member. `skip_marker_lint` and `strict_census_lint` were each shown red
      on a mutation of that file.
-  5. **Misspelt define overrides (carry to Task 5).** `resolve_shape` accepts a shape override of a define nobody
+  5. **Misspelt define overrides: CLOSED in Task 5.** `resolve_shape` accepts a shape override of a define nobody
      declared (`defines = { STRES_EVICT = 1 }` resolves to a new define, no error): a hole in closed inputs. The
      check needs the engine's `[defines]` as well as the game's, so Task 5's driver must refuse an override of an
-     undeclared define, by name.
+     undeclared define, by name. `driver::merged_defines` refuses it (`[define.undeclared-override]`), and a game
+     row redeclaring an engine define or a map `[defines]` row redeclaring either (`[define.redeclared]`);
+     `driver::tests::a_shape_override_of_an_undeclared_define_is_refused`.
   6. **G0b landing reference: one red remains, pending a controller ruling.** One strict landing bar against a built
      G0b copy (aeon 351acc8d, sigil bf6f222f) went 6097 passed / 2 failed, both pinned to the 99cb963d reference.
      (1) `build_export_binding::no_build_json_writes_none`: **fixed in Task 2 fix round 2** (ruling: the claim is
@@ -2282,9 +2299,59 @@ until its row is removed.
      baseline is the union engine + sonic4 + demo (item 3); Task 9's two-root corpus removes that union, and the test's
      comment points here. (b) `GateRule.modules` is documented as "a module id, or a glob over ids" but `describe.rs`
      has no matcher; the test matches exact ids and a single `*`. No row uses a glob today; Task 5's closed gating
-     owns the real matcher and must replace the test's. (c) Like item 4 of the Task 2 report, the test reads the
+     owns the real matcher and must replace the test's. **(b) CLOSED in Task 5:** `sigil_build::gating::glob_match`
+     (`*` within a dotted segment, `**` across) is the matcher, and the test imports it. (c) Like item 4 of the Task 2 report, the test reads the
      private Rust tables (`COMPTIME_HELPERS`, `RAM_HELPERS`, `STRUCT_OFFSET_TWINS`, `GROWABLE`, the sound labels, the
      entry seeds) as source text; Task 11 re-homes it when the old tables go. (d) Fields with no Rust counterpart
      (`outputs`, `id`, `engine.suite_path`) and Rust fields with no description counterpart (`frozen_sizes`,
      `inapplicable_guards`, `extra_entries`, `anchor_overlay`, `layout_pass`, the AS definedness defines and the
      even-alignment rows) are not compared; they are listed in the Task 3 report.
+
+## G0B-TASK5-WALK-IDENTITY
+
+- state: **open** 2026-11-19 (found in G0b Task 5)  size: `M`  project: `G0B-GAME-AS-DATA`  needs: controller ruling
+- The new driver builds all seven shipped shapes (every guard green: placement, alignment, budgets, sound fold, bank
+  ids, the blob-end contract), but no shape is byte-identical to the old driver. The cause is one rule, not the
+  descriptions: the new driver's ROMs are byte-identical to the OLD pipeline with only its walk swapped for
+  `sigil_build::walk` (an uncommitted experiment binary, shapes plain/demo/debug/config-b compared, all SAME).
+- The rule: the old walk (`native::packed_true_bases`) measures a section at its packed base only when a FROZEN
+  table names one of its labels; every other section (and every section whose relaxable operands reference one) is
+  measured at a far scratch slot (0x700000+), where short `abs.w` forms cannot reach and the measured length is the
+  `abs.l` one. The section is then emitted at its real base, shorter, and the difference stays in the ROM as zero
+  padding. Example (sonic4 release): `VBlank_Handler` measures 0x1E8 at scratch, 0x1E0 in place, so the old ROM has
+  8 zero bytes at 0x2508..0x2510. Unnamed in the frozen tables, measured at scratch: `Input_Tick` (replay), the
+  effects preset, page_in, page_cache, player_fly/glide/climb/instashield, dust_spindash; referenced from them and
+  so also longer: vblank, game_loop, tile_cache, parallax, load_art, player_common, ojz_scroll_test,
+  compression_selftest. The new walk measures every labeled section in place (no table to consult), so it emits no
+  such padding.
+- Per shape, full file old vs new (bytes): release 850296 vs 850262 (-34), debug 870560 vs 870606 (+46),
+  demo 99994 vs 99980 (-14), demo.debug 106981 vs 106981 (0, content
+  differs), config-a 870972 vs 870972 (0, content differs), config-b 617813 vs 617715 (-98), lean 798202 vs 798198
+  (-4). First difference at file offset 0xB (the vector table) or 0x18E (the checksum).
+- Reaching identity in the new driver needs the frozen tables' label set, which is the port history the spec
+  forbids. Reaching it in the old driver means measuring in place there, which moves every golden. Either is a byte
+  move and the controller's call; Task 5 committed the new driver as it is (DONE_WITH_CONCERNS).
+
+## G0B-TASK5-NEW-PATH-GAPS
+
+- state: **open** 2026-11-19 (found in G0b Task 5)  size: `M`  project: `G0B-GAME-AS-DATA`
+- `sigil build --project <dir|game.toml> --shape <name> -o <rom>` writes the ROM and nothing else. Not yet on the
+  new path: `--emit-lst` (and the lst source digest), the `.build.json` sidecar, the contract gate
+  (`run_contract_gate`), `--check`, `--report`, the warn-tier view (it prints a count). `--emit-lst`, `--check` and
+  `--report` are refused by name; `--no-build-json` is accepted. `--legacy` is accepted on the old grammar and not
+  yet required for `--aeon`/`--game` (controller ruling for Task 5).
+- Candidate scope is the old rule (`engine.` or the game's own module prefix), not the description's source paths;
+  the probe fixture is an ordinary candidate gated `shapes = []`. Task 9's two-root corpus is where a path rule
+  belongs.
+- `.aeon-g0b` carries no `engine/debug/generated/` blobs (untracked build outputs), so a debug shape cannot build
+  from a bare copy of it; the Task 5 comparisons copied them from the 99cb963d reference.
+
+## EXTRA-ENTRY-ONE-TIME-FLAKE
+
+- state: **watching** 2026-11-19 (seen once in G0b Task 4, booked in Task 5)  size: `S`  project: `-`
+- `sigil-cli --test extra_entry a_passing_extra_entry_moves_no_bytes` failed once during Task 4's C6 quick tests, at
+  `extra_entry.rs:352`, in the `unreachable(&base)` precondition, and passed on an immediate rerun, in the full
+  binary twice (iteration copy and a fresh `git clean`ed copy) and in both landing runs. Cause not found; the likely
+  candidate is a concurrent-build race on the shared iteration copy (that run was the only one with other cargo
+  tests running at the same time, and the binary's LOCK covers only its own tests). Reopen with the output if it
+  recurs.

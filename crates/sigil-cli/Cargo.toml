@@ -17,6 +17,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sigil-clownlzss-sys = { path = "../sigil-clownlzss-sys" }
 sigil-frontend-as = { path = "../sigil-frontend-as" }
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }
+sigil-build = { path = "../sigil-build" }
 sigil-harness = { path = "../sigil-harness" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }

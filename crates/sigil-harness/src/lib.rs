@@ -93,7 +93,7 @@ pub use sigil_build::map_placement;
 /// Per-game `[defines]` table reader (`games/<g>/map.toml`) — the game-declared
 /// comptime define rows `native::shape_defines` merges with the profile's
 /// built-in `emp_defines` rows (conflict = loud error, neither source wins).
-pub mod game_defines;
+pub use sigil_build::game_defines;
 
 /// The per-section DECLARED alignment requirement, with the source each requirement
 /// comes from — the explicit rule that replaces inferring a section's quantum from
@@ -134,6 +134,8 @@ pub mod export_files;
 pub mod export_layouts;
 pub mod export_symbols;
 pub mod export_z80;
+/// The new driver's harness seams (G0b Task 5).
+pub mod driver_seams;
 
 use sigil_link::LinkedImage;
 
