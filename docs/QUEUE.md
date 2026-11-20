@@ -2380,6 +2380,17 @@ until its row is removed.
   struct-literal sites. Two builds on two threads each see their own root; a thread nobody handed the root to sees
   none (`generated_root::tests`). Task 9's two-root resolution names roots in the lowering options; fold the
   generated root into that and delete the thread-local then.
+- The mount itself is a PREFIX ALIAS keyed to the checkout, not a named root: `build_dir.rs:65`
+  (`GENERATED_MOUNT = "engine/sound/generated"`) and `:134` (`generated_root_for` mounts the directory at
+  `<checkout>/engine/sound/generated`) redirect a tree path, and the aeon sources keep spelling the tree path.
+  Task 9 replaces the alias with named-root resolution: the embed names the `generated` root and the path inside
+  it, and nothing is keyed to the checkout (under Task 9's roots, `engine` is aeon's `engine/` directory, so the
+  checkout-relative alias would have to be re-derived anyway). (Task 6 review, Minor 1.)
+- Who enters a root (fix round 1): `sigil build` (both drivers), the harness's chained and frozen resolves,
+  `native::build_emp` (always fresh, sound emitted into it), and the focused lowerings (`harvest_*`,
+  `name_env_report`; an enclosing root or an empty one). With no root the sandbox reads a mount path from the
+  tree like any path; the frontend cannot refuse it because it does not know the mount. Task 9's named root
+  removes that gap structurally.
 - `native::emit_generated` / `ensure_generated` still write the tree's own mount. No build calls them; they
   provision a reference tree for STANDALONE port gates (`soundbankhead_port`, `dac_bank_port`, ...) that compile one
   sound module with no build around it. Those go with the seams in G0c (aeon `docs/DEFERRED_WORK.md`, G0c).
