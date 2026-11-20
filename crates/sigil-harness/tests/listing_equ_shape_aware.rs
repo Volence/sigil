@@ -59,7 +59,7 @@ fn fold_under_profile(aeon: &Path, profile: &GameProfile) -> HashMap<String, i64
     let defines = native::shape_defines(profile, aeon)
         .unwrap_or_else(|e| panic!("UNMEASURED: shape `{}` define env: {e}", profile.name));
     let (vals, diags) =
-        sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &defines);
+        sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sigil_frontend_emp::Sandbox::from(aeon)), &defines);
     assert!(
         !diags.iter().any(|d| d.level == sigil_span::Level::Error),
         "UNMEASURED: folding {} under shape `{}`'s defines failed: {:?}",

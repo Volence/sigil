@@ -18,7 +18,7 @@ fn lower(src: &str) -> Module {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let errs: Vec<_> = diags.iter().filter(|d| d.level == Level::Error).collect();
     assert!(errs.is_empty(), "lower errors: {errs:?}");

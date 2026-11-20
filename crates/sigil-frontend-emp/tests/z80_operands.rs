@@ -24,7 +24,7 @@ fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
     assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
     lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     )
 }
 
@@ -498,7 +498,7 @@ fn z80_bytes_with_prelude(prelude: &str, body: &str) -> Vec<u8> {
     assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
     let (module, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         ldiags.iter().all(|d| d.level != Level::Error),
@@ -538,7 +538,7 @@ fn z80_bare_label_still_symbol() {
     assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
     let (module, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower: {ldiags:?}");
     let fx = fixups_of(&module, "s");

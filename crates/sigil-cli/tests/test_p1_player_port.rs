@@ -620,6 +620,7 @@ fn compile_player_common(
     let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/player")),
         embed_base: None,

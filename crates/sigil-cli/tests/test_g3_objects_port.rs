@@ -215,6 +215,7 @@ fn compile_real_file(aeon: &Path, shape: &Shape) -> Compiled {
     let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/objects")),
         embed_base: None,

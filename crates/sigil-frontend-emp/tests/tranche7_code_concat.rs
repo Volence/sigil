@@ -15,6 +15,7 @@ fn emp_bytes(src: &str) -> Vec<u8> {
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -99,6 +100,7 @@ fn cross_fragment_label_fails_loudly() {
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

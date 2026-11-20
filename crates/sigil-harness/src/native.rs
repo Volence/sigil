@@ -200,6 +200,10 @@ pub struct GameProfile {
     /// write a sidecar asks for `Owner` (`sigil build -o` without `--no-build-json`),
     /// and the cross-check gate asks for `Full`.
     pub layout_pass: sigil_frontend_emp::export_side::LayoutPass,
+    /// The build's generated root directory (G0b Task 9), when the caller owns it:
+    /// `sigil build` places the build's reads with it after the build. `None` in every
+    /// shipping profile, so a resolve makes a private one for itself.
+    pub generated: Option<std::path::PathBuf>,
 }
 
 impl GameProfile {
@@ -223,6 +227,28 @@ impl GameProfile {
     pub fn with_layout_pass(mut self, pass: sigil_frontend_emp::export_side::LayoutPass) -> GameProfile {
         self.layout_pass = pass;
         self
+    }
+
+    /// This profile with `dir` as its [`generated`](Self::generated) root.
+    pub fn with_generated(mut self, dir: impl Into<std::path::PathBuf>) -> GameProfile {
+        self.generated = Some(dir.into());
+        self
+    }
+
+    /// The legacy driver's named roots (G0b Task 9): `engine` = `<aeon>/engine`, `game`
+    /// = the profile's game directory, the checkout as the transitional tree, `generated`
+    /// when the lowering has one, and the legacy sound mount, so the step-0 reference
+    /// tree's `engine/sound/generated/...` spellings still read the build's own
+    /// generated files. Dies with this driver (Task 11).
+    pub fn legacy_roots(&self, aeon: &Path, generated: Option<&Path>) -> std::sync::Arc<sigil_span::roots::SourceRoots> {
+        let game_dir = self.game_root(aeon).parent().map(Path::to_path_buf).unwrap_or_else(|| aeon.to_path_buf());
+        let mut r = sigil_span::roots::SourceRoots::new(aeon.join("engine"), game_dir)
+            .with_tree(aeon.to_path_buf())
+            .with_legacy_sound_mount();
+        if let Some(g) = generated {
+            r = r.with_generated(g.to_path_buf());
+        }
+        std::sync::Arc::new(r)
     }
 
     /// This profile with `overlay` as its [`anchor_overlay`](Self::anchor_overlay).
@@ -388,6 +414,7 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
         extra_entries: Vec::new(),
         anchor_overlay: None,
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        generated: None,
     }
 }
 
@@ -435,6 +462,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         extra_entries: Vec::new(),
         anchor_overlay: None,
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        generated: None,
     }
 }
 
@@ -475,6 +503,7 @@ pub fn config_b_profile() -> GameProfile {
         extra_entries: Vec::new(),
         anchor_overlay: None,
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        generated: None,
     }
 }
 
@@ -523,6 +552,7 @@ pub fn config_a_profile() -> GameProfile {
         extra_entries: Vec::new(),
         anchor_overlay: None,
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        generated: None,
     }
 }
 
@@ -575,6 +605,7 @@ pub fn lean_profile() -> GameProfile {
         extra_entries: Vec::new(),
         anchor_overlay: None,
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        generated: None,
     }
 }
 
@@ -690,8 +721,13 @@ pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, 
     crate::game_defines::merge_builtin_and_game(&profile.emp_defines, game_rows, &origin)
 }
 
+/// The tree directory [`emit_generated`] provisions (the old mount, written only for
+/// the step-0 reference tree's standalone port gates and aeon's `build.sh` preflight;
+/// no build reads it: G0c removes it with the seams).
+pub const TREE_SOUND_MOUNT: &str = "engine/sound/generated";
+
 /// Emit every generated sound artifact into the tree's own generated mount,
-/// `<aeon>/engine/sound/generated` ([`sigil_build::build_dir::GENERATED_MOUNT`]). The
+/// `<aeon>/engine/sound/generated` ([`TREE_SOUND_MOUNT`]). The
 /// sound stack is native; the `.bin`s are how those native bytes enter the ROM, through
 /// the `embed`s aeon's sound modules carry.
 ///
@@ -715,7 +751,7 @@ pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, 
 /// same exit status (1) every other build error uses. A panic would exit 101,
 /// which is a crash to any lane reading the status.
 pub fn emit_generated(aeon: &Path) -> Result<(), String> {
-    emit_generated_in(aeon, &aeon.join(sigil_build::build_dir::GENERATED_MOUNT), None).map(|_| ())
+    emit_generated_in(aeon, &aeon.join(TREE_SOUND_MOUNT), None).map(|_| ())
 }
 
 /// Emit every generated sound artifact of `aeon` into `gen`, under an anchor overlay:
@@ -794,10 +830,10 @@ pub fn ensure_generated(aeon: &Path) {
 /// in the listing; and [`harvest_game_constants`] seeds it into the game modules'
 /// folds.
 pub fn harvest_engine_constants(aeon: &Path, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
-    unrooted_read_fails_loud(aeon, || harvest_engine_constants_in(aeon, profile))
+    harvest_engine_constants_in(aeon, profile)
 }
 
-/// [`harvest_engine_constants`] with a generated root already in force.
+/// The body of [`harvest_engine_constants`] (a lowering with no generated root: a `generated/` path is refused by name).
 fn harvest_engine_constants_in(aeon: &Path, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     let path = aeon.join("engine/system/constants.emp");
     let src = sigil_span::read_set::read_to_string(&path)
@@ -813,7 +849,8 @@ fn harvest_engine_constants_in(aeon: &Path, profile: &GameProfile) -> Result<Vec
     // module under. Each harvested value is then the one the ROM encodes, and it is
     // what the residual AS, the link EquSym table and the listing's EQU rows receive.
     let defines = shape_defines(profile, aeon)?;
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &defines);
+    let sandbox = sigil_frontend_emp::Sandbox::from(aeon);
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sandbox), &defines);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: resolve: {:?}", diags.first()));
     }
@@ -842,10 +879,10 @@ fn harvest_engine_constants_in(aeon: &Path, profile: &GameProfile) -> Result<Vec
 /// (`eval_path` falls back to defines after consts/equs), the same pattern the
 /// `-D` seam already uses.
 pub fn harvest_game_constants(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
-    unrooted_read_fails_loud(aeon, || harvest_game_constants_in(aeon, rel, profile))
+    harvest_game_constants_in(aeon, rel, profile)
 }
 
-/// [`harvest_game_constants`] with a generated root already in force.
+/// The body of [`harvest_game_constants`] (a lowering with no generated root: a `generated/` path is refused by name).
 fn harvest_game_constants_in(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     // Seed the engine constants, harvested in this shape, as defines so the game
     // module's lone cross-module reference (`COLLECTED_MASK_BYTES`) folds inside the
@@ -863,7 +900,8 @@ fn harvest_game_constants_in(aeon: &Path, rel: &str, profile: &GameProfile) -> R
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_game_constants: parse: {:?}", pdiags.first()));
     }
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &seed);
+    let sandbox = sigil_frontend_emp::Sandbox::from(aeon);
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sandbox), &seed);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_game_constants: resolve: {:?}", diags.first()));
     }
@@ -906,10 +944,10 @@ const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
 /// record's tail again (bug005 had it at `frame_off - 2` while the cache
 /// was the tail).
 pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
-    unrooted_read_fails_loud(aeon, || harvest_engine_struct_offsets_in(aeon))
+    harvest_engine_struct_offsets_in(aeon)
 }
 
-/// [`harvest_engine_struct_offsets`] with a generated root already in force.
+/// The body of [`harvest_engine_struct_offsets`] (a lowering with no generated root: a `generated/` path is refused by name).
 fn harvest_engine_struct_offsets_in(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     use sigil_frontend_emp::layout::layout_struct_ambient;
 
@@ -987,10 +1025,10 @@ pub fn harvest_engine_ram_addresses(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<Vec<(String, i64)>, String> {
-    unrooted_read_fails_loud(aeon, || harvest_engine_ram_addresses_in(aeon, profile))
+    harvest_engine_ram_addresses_in(aeon, profile)
 }
 
-/// [`harvest_engine_ram_addresses`] with a generated root already in force.
+/// The body of [`harvest_engine_ram_addresses`] (a lowering with no generated root: a `generated/` path is refused by name).
 fn harvest_engine_ram_addresses_in(
     aeon: &Path,
     profile: &GameProfile,
@@ -1040,23 +1078,24 @@ fn harvest_engine_ram_addresses_in(
     let idx = manifest.modules.len();
     manifest.by_id.insert(entry_id.clone(), idx);
     manifest.sources.insert(source, aeon.join("__ram_harvest_entry__.emp"));
-    manifest.modules.push(resolve::manifest::ParsedModule {
+    manifest.modules.push(resolve::manifest::ParsedModule { root: None,
         id: entry_id.clone(),
         file,
         path: aeon.join("__ram_harvest_entry__.emp"),
     });
 
     let defines = shape_defines(profile, aeon)?;
+    // No generated root: the RAM modules embed nothing the build generates, and a
+    // `generated/` path here is refused by name rather than read from anywhere.
     let opts = LowerOptions {
+        roots: Some(profile.legacy_roots(aeon, None)),
         initial_cpu: Cpu::M68000,
-        include_root: Some(aeon.to_path_buf()),
-        embed_base: Some(aeon.to_path_buf()),
+        include_root: None,
+        embed_base: None,
         defines,
     };
-    let aeon_root = aeon.to_path_buf();
-    let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
     let (sections, _asserts, bdiags) =
-        resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);
+        resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &|_| None);
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
         return Err(format!(
@@ -1148,6 +1187,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<AsSide, St
         initial_cpu: Some(Cpu::M68000),
         defines,
         include_root: Some(aeon.to_path_buf()),
+        roots: None,
         guarded_defines,
         cli_defines: Vec::new(),
         share_file: false,
@@ -1260,7 +1300,7 @@ pub fn module_registry(aeon: &Path, profile: &GameProfile) -> Result<Vec<ModuleS
     registry_from_manifest(aeon, &manifest, profile)
 }
 
-fn prepare_program(aeon: &Path, profile: &GameProfile) -> Result<PreparedProgram, String> {
+fn prepare_program(aeon: &Path, profile: &GameProfile, generated: Option<&Path>) -> Result<PreparedProgram, String> {
     let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
     let merr: Vec<_> = mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !merr.is_empty() {
@@ -1339,7 +1379,7 @@ fn prepare_program(aeon: &Path, profile: &GameProfile) -> Result<PreparedProgram
     let idx = manifest.modules.len();
     manifest.by_id.insert(entry_id.clone(), idx);
     manifest.sources.insert(source, aeon.join("__native_flip_entry__.emp"));
-    manifest.modules.push(resolve::manifest::ParsedModule {
+    manifest.modules.push(resolve::manifest::ParsedModule { root: None,
         id: entry_id.clone(),
         file,
         path: aeon.join("__native_flip_entry__.emp"),
@@ -1353,13 +1393,14 @@ fn prepare_program(aeon: &Path, profile: &GameProfile) -> Result<PreparedProgram
     // defines them → 0). The set is the shape_defines merge, so a game's own
     // `map.toml [defines]` rows reach the comptime env here too.
     let defines = shape_defines(profile, aeon)?;
+    // The legacy driver's named roots (G0b Task 9): the checkout-relative spellings
+    // (object_test_state's `embed(...)` blobs, the BINCLUDE path model) resolve against
+    // the transitional tree, and `generated/...` against this build's generated root.
     let opts = LowerOptions {
+        roots: Some(profile.legacy_roots(aeon, generated)),
         initial_cpu: Cpu::M68000,
-        include_root: Some(aeon.to_path_buf()),
-        // object_test_state's `embed(...)` blobs (ring_art.bin, sonic.bin) are
-        // AEON-REPO-ROOT-relative (the BINCLUDE path model), so the embed base is
-        // the aeon root — matching test_t1_harness_states_port.
-        embed_base: Some(aeon.to_path_buf()),
+        include_root: None,
+        embed_base: None,
         defines,
     };
     Ok(PreparedProgram { manifest, mdiags, pdiags, source, registry, removed_import_errors, entry_id, opts })
@@ -1371,20 +1412,10 @@ pub fn name_env_report(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<(Vec<sigil_frontend_emp::resolve::hygiene::NameEnvRow>, Vec<sigil_span::Diagnostic>), String> {
-    unrooted_read_fails_loud(aeon, || {
-        let p = prepare_program(aeon, profile)?;
-        Ok(resolve::name_env_report(&p.manifest, &p.entry_id, None, &p.opts))
-    })
-}
-
-/// Run `f`, a lowering of `aeon` that emits no sound artifacts, under a generated root
-/// for `aeon` ([`sigil_build::build_dir::with_generated_root`]). Inside a build the
-/// build's root is already in force and is reused. Called on its own, `f` gets a fresh
-/// EMPTY root, so an `embed` under the generated mount fails as `[embed.not-found]`
-/// rather than reading whatever an earlier process left in the tree's
-/// `engine/sound/generated/`.
-fn unrooted_read_fails_loud<T>(aeon: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    sigil_build::build_dir::with_generated_root(aeon, |_| f())
+    // Nothing is emitted, so the lowering names no generated root: an `embed` of a
+    // generated artifact is refused by name rather than read from anywhere.
+    let p = prepare_program(aeon, profile, None)?;
+    Ok(resolve::name_env_report(&p.manifest, &p.entry_id, None, &p.opts))
 }
 
 /// The `.emp` program of `profile`, built hermetically: a fresh build directory
@@ -1398,20 +1429,17 @@ fn unrooted_read_fails_loud<T>(aeon: &Path, f: impl FnOnce() -> Result<T, String
 /// chained and frozen resolves emit into their own root and call [`build_emp_in`].
 pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
     let dir = sigil_build::build_dir::BuildDir::create()?;
-    let root = dir.root_for(aeon)?;
-    let generated = root.dir.clone();
-    let _root = sigil_frontend_emp::generated_root::enter(root);
     if profile.sound_on {
-        emit_generated_in(aeon, &generated, profile.anchor_overlay.as_ref())?;
+        emit_generated_in(aeon, &dir.sound()?, profile.anchor_overlay.as_ref())?;
     }
-    build_emp_in(aeon, profile)
+    build_emp_in(aeon, dir.generated(), profile)
 }
 
-/// [`build_emp`] with a generated root already in force, its sound artifacts already
+/// [`build_emp`] with the build's generated root `gen`, its sound artifacts already
 /// emitted into it.
-fn build_emp_in(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
+fn build_emp_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
     let PreparedProgram { manifest, mdiags, pdiags, source, registry, removed_import_errors, entry_id, opts } =
-        prepare_program(aeon, profile)?;
+        prepare_program(aeon, profile, Some(gen))?;
 
     // OPEN program: the `.emp` engine references AS-residual symbols (RAM labels,
     // proc seams) resolved only in the joint link — defer them, don't error here.
@@ -1422,10 +1450,8 @@ fn build_emp_in(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String
     // the corpus advanced past that landing the tolerance is retired. Handing each module
     // its own directory (the transition shape) is WRONG once the fallback is gone: a
     // root-relative path would then join onto the module dir and resolve one level deep.
-    let aeon_root = aeon.to_path_buf();
-    let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
     let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
-        resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, profile.layout_pass, &embed_base_for);
+        resolve::build_program_open_embed_counted(&manifest, &entry_id, None, &opts, profile.layout_pass, &|_| None);
     // The helper imports `normalize_helper_imports` removed, checked above against
     // the pre-rewrite tree, reported for the modules this build contains.
     bdiags.extend(helper_import_errors_in(&manifest, &removed_import_errors, &lowered, &bdiags));
@@ -2262,19 +2288,31 @@ struct ChainedResolve {
 /// the build's own directory and the `.emp` lowering embeds them from there, so the tree
 /// is only read.
 fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
-    sigil_build::build_dir::with_generated_root(aeon, |gen| resolve_chained_in(aeon, gen, profile))
+    with_generated(profile, |gen| resolve_chained_in(aeon, gen, profile))
+}
+
+/// Run `f` with the build's generated root directory: the profile's
+/// ([`GameProfile::generated`]) when the caller owns one, else a fresh private one that
+/// lives exactly as long as `f`.
+fn with_generated<T>(profile: &GameProfile, f: impl FnOnce(&Path) -> Result<T, String>) -> Result<T, String> {
+    if let Some(g) = &profile.generated {
+        return f(g);
+    }
+    let dir = sigil_build::build_dir::BuildDir::create()?;
+    f(dir.generated())
 }
 
 fn resolve_chained_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
     let resident = if profile.sound_on {
-        Some(emit_generated_in(aeon, gen, profile.anchor_overlay.as_ref())?.for_shape(profile.debug))
+        let sound = sigil_build::build_dir::sound_dir(gen)?;
+        Some(emit_generated_in(aeon, &sound, profile.anchor_overlay.as_ref())?.for_shape(profile.debug))
     } else {
         None
     };
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } =
-        build_emp_in(aeon, profile)?;
+        build_emp_in(aeon, gen, profile)?;
     // The AS front end's side table, while its sections are still its own.
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
     let as_code = as_module.named_code_marks();
@@ -2570,20 +2608,20 @@ fn overlaid_placement(
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
-    sigil_build::build_dir::with_generated_root(aeon, |gen| resolve_frozen_sections_in(aeon, gen, profile))
+    with_generated(profile, |gen| resolve_frozen_sections_in(aeon, gen, profile))
 }
 
 /// [`resolve_frozen_sections`] with the generated root directory `gen` in force.
 fn resolve_frozen_sections_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
     if profile.sound_on {
-        emit_generated_in(aeon, gen, profile.anchor_overlay.as_ref())?;
+        emit_generated_in(aeon, &sigil_build::build_dir::sound_dir(gen)?, profile.anchor_overlay.as_ref())?;
     }
     // Warnings are the BUILD's to print; this resolve is a placement helper and
     // renders nothing, so `as_side.warnings` is dropped here on purpose — the
     // same throwaway treatment the drift warnings below get.
     let as_side = assemble_as_side(aeon, profile)?;
     let mut sections: Vec<Section> = as_side.module.sections;
-    sections.extend(build_emp_in(aeon, profile)?.sections);
+    sections.extend(build_emp_in(aeon, gen, profile)?.sections);
     // K5: the declared map order drives the walk, and the declared anchors are its
     // islands — the SAME inputs the emit path feeds it, so this resolve and the build
     // never diverge on a stale provisional gap. Drift warnings are the build's to
@@ -2760,7 +2798,22 @@ pub fn build_native_rom_with_listing_pass(
     debug: bool,
     pass: sigil_frontend_emp::export_side::LayoutPass,
 ) -> Result<RomBuild, String> {
-    build_rom_chained_with_listing(aeon, &sonic4_profile(debug).with_layout_pass(pass))
+    build_native_rom_with_listing_in(aeon, debug, pass, None)
+}
+
+/// [`build_native_rom_with_listing_pass`] with the caller's generated root directory
+/// (`sigil build` owns it, to place the build's reads after the build).
+pub fn build_native_rom_with_listing_in(
+    aeon: &Path,
+    debug: bool,
+    pass: sigil_frontend_emp::export_side::LayoutPass,
+    generated: Option<&Path>,
+) -> Result<RomBuild, String> {
+    let mut profile = sonic4_profile(debug).with_layout_pass(pass);
+    if let Some(g) = generated {
+        profile = profile.with_generated(g);
+    }
+    build_rom_chained_with_listing(aeon, &profile)
 }
 
 /// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
@@ -4091,6 +4144,7 @@ mod helper_import_tests {
         );
         let removed = rewrite_helper_imports(&mut manifest, &["pkg.h"]);
         let opts = LowerOptions {
+            roots: None,
             initial_cpu: sigil_ir::Cpu::M68000,
             include_root: None,
             embed_base: None,

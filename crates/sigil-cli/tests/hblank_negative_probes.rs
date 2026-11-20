@@ -137,6 +137,7 @@ fn place_hblank(src: &str, base: &str) -> Vec<Section> {
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(hblank_dir()),
         embed_base: None,

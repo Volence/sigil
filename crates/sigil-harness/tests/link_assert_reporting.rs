@@ -48,7 +48,7 @@ fn probe(truths: &[(&str, &str)]) -> (Vec<Diagnostic>, SourceTexts) {
     let mut texts = SourceTexts::new();
     let (file, pdiags) = parse_file(GUARDED_SRC, texts.add(Path::new(GUARDED_PATH), GUARDED_SRC));
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "probe parse: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "probe lower: {ldiags:?}");
     let guards = module.link_asserts.iter().filter(|a| a.kind == sigil_ir::AssertKind::Condition).count();

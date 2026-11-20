@@ -28,7 +28,7 @@ fn emp(src: &str) -> Result<Vec<u8>, Vec<String>> {
     assert!(perrs.is_empty(), "parse diagnostics: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let errs: Vec<String> =
         diags.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect();

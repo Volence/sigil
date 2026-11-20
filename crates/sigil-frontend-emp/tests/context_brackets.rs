@@ -560,6 +560,7 @@ fn lower_diags(src: &str) -> Vec<sigil_span::Diagnostic> {
     sigil_frontend_emp::lower::lower_module(
         &file,
         &sigil_frontend_emp::lower::LowerOptions {
+            roots: None,
             initial_cpu: sigil_ir::backend::Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -624,6 +625,7 @@ fn linked(src: &str) -> Vec<u8> {
     let (m, diags) = sigil_frontend_emp::lower::lower_module(
         &file,
         &sigil_frontend_emp::lower::LowerOptions {
+            roots: None,
             initial_cpu: sigil_ir::backend::Cpu::M68000,
             include_root: None,
             embed_base: None,

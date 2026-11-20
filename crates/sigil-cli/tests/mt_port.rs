@@ -163,6 +163,7 @@ fn compile_real_file(
     let embed_root = sigil_harness::seam2::mt_bank_embed_root(aeon, dir, &src)
         .unwrap_or_else(|e| panic!("mt_bank.emp embed root: {e}"));
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(embed_root),
         embed_base: None,

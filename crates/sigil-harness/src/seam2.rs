@@ -564,6 +564,7 @@ fn emit_dac_banks_at(aeon: &Path, blip_lma: u32, shared_lma: u32) -> Result<DacB
     import_verdict(aeon, &file, "dac_samples.emp", &|s| texts.locate(s))?;
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()), // so embed("dac/kick.pcm") / embed("temp_blip.bin") resolve
         embed_base: None,
@@ -683,6 +684,7 @@ fn lower_emp_src(
     }
     import_verdict(aeon, &file, &path.display().to_string(), &|s| texts.locate(s))?;
     let opts = LowerOptions {
+        roots: None,
         initial_cpu,
         include_root: Some(dir.to_path_buf()),
         embed_base: None,
@@ -1429,6 +1431,7 @@ fn pitchtable_at(aeon: &Path, head_lma: u32, doctor: bool) -> Result<Vec<u8>, St
     }
     import_verdict(aeon, &file, "movingtrucks_pitchtable.emp", &|s| texts.locate(s))?;
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
@@ -1614,6 +1617,7 @@ fn emit_mt_bank_at(
     let debug_val: i128 = if debug { 1 } else { 0 };
     let embed_root = mt_bank_embed_root(aeon, &dir, &src)?;
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(embed_root),
         embed_base: None,
@@ -1832,7 +1836,7 @@ fn song_id_carrier_from_src(aeon: &Path, src: &str, debug: bool) -> Result<SongI
         return Err(format!("{SOUND_IDS_REL} parse errors: {pdiags:?}"));
     }
     let defines = [("DEBUG".to_string(), if debug { 1 } else { 0 })];
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &defines);
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sigil_frontend_emp::Sandbox::from(aeon)), &defines);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!(
             "{SOUND_IDS_REL} pub-const resolve errors: {:?}",

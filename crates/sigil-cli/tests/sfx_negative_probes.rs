@@ -167,6 +167,7 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(sfx_dir()),
         embed_base: None,
@@ -246,6 +247,7 @@ fn wrong_bank_cross_seam_label_fires_the_co_residency_ensure() {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(sfx_dir()),
         embed_base: None,
@@ -345,7 +347,7 @@ fn table_length_mismatch_against_sfx_table_len_is_a_clean_error() {
     assert!(pdiags.is_empty(), "expected a clean parse, got: {pdiags:?}");
     let (_module, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         ldiags.iter().any(|d| d.level == Level::Error
@@ -397,7 +399,7 @@ fn wrong_sym_where_null_belongs_lowers_clean_but_emits_different_bytes() {
         assert!(pdiags.is_empty(), "expected a clean parse, got: {pdiags:?}");
         let (module, ldiags) = lower_module(
             &file,
-            &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+            &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
         );
         // The KEY assertion: a wrong sym where a null belongs is a LEGAL
         // lowering — no Error masks the byte drift.
@@ -513,6 +515,7 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
     let (mt_module, mt_ldiags) = lower_module(
         &mt_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             // The base seam-2 itself picks from the module's own embed literals, so
             // the probe lowers mt_bank.emp exactly as the production emit does.
@@ -546,6 +549,7 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
     let (sfx_module, sfx_ldiags) = lower_module(
         &sfx_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(sfx_dir()),
             embed_base: None,

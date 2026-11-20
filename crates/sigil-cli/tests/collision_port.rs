@@ -238,6 +238,7 @@ fn compile_real_file(
     let file = with_ambient(vec![types, sst, constants, aabb, coords], collision);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,

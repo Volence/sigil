@@ -17,7 +17,7 @@ fn lower_cpu(src: &str, cpu: Cpu) -> (Module, Vec<Diagnostic>) {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     lower_module(
         &file,
-        &LowerOptions { initial_cpu: cpu, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: cpu, include_root: None, embed_base: None, defines: vec![] },
     )
 }
 

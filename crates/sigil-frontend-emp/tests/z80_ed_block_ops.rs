@@ -58,6 +58,7 @@ fn lower(src: &str) -> (Module, Vec<sigil_span::Diagnostic>) {
     lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

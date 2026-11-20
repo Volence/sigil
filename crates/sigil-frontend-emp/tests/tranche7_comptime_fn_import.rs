@@ -36,6 +36,7 @@ fn build(files: &[(&str, &str)], entry: &str) -> (Vec<Section>, Vec<Diagnostic>)
         mdiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

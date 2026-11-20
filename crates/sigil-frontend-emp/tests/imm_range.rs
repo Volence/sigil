@@ -31,6 +31,7 @@ fn lowered(src: &str) -> Result<sigil_ir::Module, Vec<String>> {
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -158,6 +159,29 @@ fn typed_const_out_of_range_is_refused() {
         err_mod("const SMALL: i8 = 200"),
         ["[const.out-of-range] 200 does not fit i8 (-128..=127), in 'SMALL'"]
     );
+}
+
+/// A const typed by a NEWTYPE over a primitive carries the primitive's range, as a bare
+/// primitive does (G0b Task 9). Before, `newtype SfxId = u8` let `const X: SfxId = -1`
+/// bind -1 silently (and 300 as well): demo's `SFXID_REV_LOOP = -1` was the first
+/// negative `SfxId`, and its "feature off" meaning rode on a value its own type cannot
+/// hold. In range it binds, so every shipped `SfxId` (sonic4's `$AB`) is unchanged.
+#[test]
+fn newtype_scalar_const_is_range_checked() {
+    assert_eq!(
+        err_mod("newtype SfxId = u8\nconst NEG: SfxId = -1"),
+        ["[const.out-of-range] -1 does not fit SfxId (u8, 0..=255), in 'NEG'"]
+    );
+    assert_eq!(
+        err_mod("newtype SfxId = u8\nconst BIG: SfxId = 300"),
+        ["[const.out-of-range] 300 does not fit SfxId (u8, 0..=255), in 'BIG'"]
+    );
+    assert_eq!(
+        err_mod("newtype Inner = i8\nnewtype Outer = Inner\nconst X: Outer = 200"),
+        ["[const.out-of-range] 200 does not fit Outer (i8, -128..=127), in 'X'"]
+    );
+    emp("module m in m\nnewtype SfxId = u8\nconst OK: SfxId = $AB\nconst LO: SfxId = 0\n")
+        .unwrap_or_else(|e| panic!("an in-range newtype const was refused: {e:?}"));
 }
 
 /// A `vars` label at `$FFFF9EDE` in a `.w` immediate is a LINK-TIME immediate

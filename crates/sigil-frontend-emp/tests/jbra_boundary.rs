@@ -18,6 +18,7 @@ fn text_bytes(src: &str) -> Vec<u8> {
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

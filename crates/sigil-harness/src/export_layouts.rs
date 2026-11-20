@@ -136,6 +136,7 @@ mod tests {
         }
         let (manifest, _) = Manifest::scan(dir.path());
         let opts = LowerOptions {
+            roots: None,
             initial_cpu: sigil_ir::backend::Cpu::M68000,
             include_root: None,
             embed_base: None,

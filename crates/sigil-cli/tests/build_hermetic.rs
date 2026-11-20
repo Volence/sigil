@@ -262,7 +262,7 @@ fn build_emp_never_reads_the_tree_mount() {
     std::fs::create_dir_all(&scratch.0).expect("scratch dir");
     let tree = scratch.0.join("tree");
     fresh_clone(&reference, &tree);
-    let mount = tree.join(sigil_build::build_dir::GENERATED_MOUNT);
+    let mount = tree.join(sigil_harness::native::TREE_SOUND_MOUNT);
     assert!(!mount.exists(), "UNMEASURABLE: the fresh clone already has {}", mount.display());
 
     let profile = native::sonic4_profile(false);

@@ -1158,6 +1158,7 @@ fn an_unresolved_condition_name_is_a_hard_error_in_the_build_path() {
     let (_module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: sigil_ir::backend::Cpu::M68000,
             include_root: None,
             embed_base: None,

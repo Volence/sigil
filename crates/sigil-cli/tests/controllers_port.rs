@@ -319,6 +319,7 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage, Vec
     // NO defines: the controllers block is shape-invariant; the shape lives
     // in the map.
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

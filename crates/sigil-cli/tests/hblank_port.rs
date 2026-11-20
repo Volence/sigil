@@ -179,6 +179,7 @@ fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

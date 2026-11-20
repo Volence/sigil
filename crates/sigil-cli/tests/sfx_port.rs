@@ -166,6 +166,7 @@ fn compile_real_file(
 
     // NO defines: the SFX block is shape-invariant; the shape lives in the map.
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.to_path_buf()),
         embed_base: None,

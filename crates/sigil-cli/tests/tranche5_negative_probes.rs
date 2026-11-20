@@ -79,6 +79,7 @@ fn lower_and_place(
     let (module, mut diags) = lower_module_with_contracts(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -384,6 +385,7 @@ fn lower_sound_api(
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

@@ -71,6 +71,7 @@ fn link_head_at(map_toml: &str, debug: bool) -> (Vec<u8>, u32, i64) {
         "seq_opcode_tab.emp parse errors: {pdiags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

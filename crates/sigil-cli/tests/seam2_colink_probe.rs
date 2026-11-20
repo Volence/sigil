@@ -46,6 +46,7 @@ fn dac_samples_sections() -> Vec<Section> {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "dac_samples.emp parse: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir),
         embed_base: None,
@@ -67,6 +68,7 @@ fn lower_head(src: &str) -> (Option<Section>, Vec<sigil_span::Diagnostic>) {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "probe head parse: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

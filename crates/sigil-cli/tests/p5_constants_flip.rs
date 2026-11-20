@@ -57,7 +57,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     // The residual AS reintroduces `NUM_PLAYERS = 2` — the exact silent-shadow the
     // flip forbids. The guard must fail LOUD naming the constant.
     let src = "cpu 68000\nNUM_PLAYERS = 2\nB:\tdc.b NUM_PLAYERS\n";
-    let opts = Options {
+    let opts = Options { roots: None,
         initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested.clone(),
@@ -77,7 +77,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     // Positive control (t24): the SAME residual AS without the reintroduced line
     // assembles clean and reads the flipped constant from the guarded define.
     let clean = "cpu 68000\nB:\tdc.b NUM_PLAYERS\n";
-    let opts2 = Options {
+    let opts2 = Options { roots: None,
         initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested,

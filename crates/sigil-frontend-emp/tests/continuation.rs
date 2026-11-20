@@ -27,7 +27,7 @@ fn diags68(src: &str) -> Vec<Diagnostic> {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     )
     .1
 }
@@ -124,7 +124,7 @@ pub proc C () clobbers() {\n\
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let ds = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] },
     )
     .1;
     let d = find(&ds, "[continuation.z80-unsupported]");

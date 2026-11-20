@@ -208,6 +208,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let animated_file = with_ambient(vec![types(), sst(), constants, objdef, game_consts], anim);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/objects")),
         embed_base: None,

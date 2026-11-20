@@ -23,6 +23,7 @@ fn lower(src: &str) -> Vec<Diagnostic> {
     let (_module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -123,6 +124,7 @@ fn build(files: &[(&str, &str)], entry: &str, prelude: Option<&str>) -> Vec<Diag
         "manifest errors: {mdiags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

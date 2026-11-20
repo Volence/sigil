@@ -91,6 +91,7 @@ fn emp_image(src: &str) -> Vec<u8> {
     let (m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -243,6 +244,7 @@ fn a_non_condition_suffix_is_refused_by_both_front_ends() {
         let (_, diags) = lower_module(
             &file,
             &LowerOptions {
+                roots: None,
                 initial_cpu: Cpu::M68000,
                 include_root: None,
                 embed_base: None,

@@ -87,6 +87,7 @@ fn place(constants_src: &str, src: &str, base: &str) -> (Vec<Section>, Vec<sigil
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon_dir()),
             embed_base: None,
@@ -228,6 +229,7 @@ fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon_dir()),
             embed_base: None,
@@ -331,6 +333,7 @@ fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon_dir()),
             embed_base: None,

@@ -21,6 +21,7 @@ fn lower_errors(src: &str) -> Vec<String> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse diags: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

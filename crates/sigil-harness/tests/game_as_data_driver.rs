@@ -52,6 +52,7 @@ fn check_shape(aeon: &Path, game_dir: &Path, game: &GameDesc, engine: &EngineDes
         layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
         seams: &seams,
         env: &env,
+        generated: None,
     };
     let out = match driver::build(game_dir, shape, &opts) {
         Ok(o) => o,

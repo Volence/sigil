@@ -30,6 +30,7 @@ fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
     lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -232,6 +233,7 @@ pub proc ZX0R (a0: *u8) clobbers(d0-d7) {\n\
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -293,6 +295,7 @@ pub proc R () clobbers() {\n\
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::Z80,
             include_root: None,
             embed_base: None,
@@ -427,6 +430,7 @@ proc PageIn (a0: *u8) clobbers(d0) {\n\
     let (mut pmod, _pd) = lower_module(
         &provider,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

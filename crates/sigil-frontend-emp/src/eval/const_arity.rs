@@ -19,12 +19,13 @@
 //! drivers.
 //!
 //! SCOPE: array LENGTH, plus (A1) the natural range of a const typed as a bare
-//! primitive (`const LIMIT: u8 = 300` is `[const.out-of-range]`). The walk descends through struct fields, tuple
+//! primitive (`const LIMIT: u8 = 300` is `[const.out-of-range]`), or as a newtype over
+//! one (`newtype SfxId = u8`, so `const X: SfxId = -1` is refused too, G0b Task 9). The walk descends through struct fields, tuple
 //! elements, arrays-of-arrays and newtype/refinement wrappers to reach every
 //! array position a value can occupy, and reports a length mismatch with the same
 //! wording the emitting path uses. It deliberately reports nothing else — a
-//! wrong-TYPE field, or an out-of-range scalar NESTED in a const aggregate
-//! (or under a newtype), is a separate contract that emission owns today.
+//! wrong-TYPE field, or an out-of-range scalar NESTED in a const aggregate, is a
+//! separate contract that emission owns today.
 use super::{run_on_eval_stack, Evaluator};
 use crate::ast;
 use crate::layout::Ty;
@@ -40,7 +41,7 @@ use sigil_span::{Diagnostic, Span};
 pub fn validate_const_arity(
     file: &ast::File,
     defines: &[(String, i128)],
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     contracts: &crate::contract::InterfaceEnv,
 ) -> Vec<Diagnostic> {
     run_on_eval_stack(|| {
@@ -48,7 +49,7 @@ pub fn validate_const_arity(
         ev.seed_defines(defines);
         ev.seed_interfaces(contracts);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let mut seen: Vec<Span> = Vec::new();
         let mut targets: Vec<(&str, &ast::Type, Span)> = Vec::new();
@@ -114,7 +115,14 @@ impl Evaluator<'_> {
             self.diags.truncate(before);
             return;
         }
-        let scalar = matches!(resolved, Ty::Prim { .. });
+        // A newtype over a primitive carries the primitive's range (G0b Task 9): the
+        // newtype is a distinct NAME for the same cells, not a wider value set, so
+        // `newtype SfxId = u8` holds 0..=255 exactly as `u8` does.
+        let through = match &resolved {
+            Ty::Newtype(name) => self.newtype_prim(name, span).map(|p| (name.clone(), p)),
+            _ => None,
+        };
+        let scalar = matches!(resolved, Ty::Prim { .. }) || through.is_some();
         if matches!(resolved, Ty::Poison) || !(scalar || ty_has_array(&resolved)) {
             return;
         }
@@ -124,6 +132,19 @@ impl Evaluator<'_> {
             self.diags.truncate(before);
             if fresh {
                 self.const_memo.remove(name);
+            }
+            return;
+        }
+        if let (Some((newtype, prim @ Ty::Prim { width, signed, .. })), Value::Int(v)) = (&through, &value) {
+            let (lo, hi) = crate::layout::prim_bounds(*width, *signed);
+            if *v < lo || *v > hi {
+                let prim_desc = prim.describe();
+                self.error(
+                    span,
+                    format!(
+                        "[const.out-of-range] {v} does not fit {newtype} ({prim_desc}, {lo}..={hi}), in '{name}'"
+                    ),
+                );
             }
             return;
         }
@@ -145,6 +166,29 @@ impl Evaluator<'_> {
             return;
         }
         self.walk_arity(&value, &resolved, span);
+    }
+
+    /// The primitive a newtype erases to, following newtype-of-newtype chains (bounded,
+    /// so a cyclic chain, which the layout pass reports, ends here silently). `None` when
+    /// the chain ends anywhere but a primitive (a struct, an array, a refinement: their
+    /// contracts are their own).
+    fn newtype_prim(&mut self, name: &str, _span: Span) -> Option<Ty> {
+        let mut current = name.to_string();
+        for _ in 0..32 {
+            let decl = self.newtypes.get(current.as_str()).copied()?;
+            let before = self.diags.len();
+            let underlying = self.resolve_type(&decl.underlying);
+            if self.diags.len() > before {
+                self.diags.truncate(before);
+                return None;
+            }
+            match underlying {
+                Ty::Prim { .. } => return Some(underlying),
+                Ty::Newtype(next) => current = next,
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Walk `value` against `ty`, reporting every array position whose element

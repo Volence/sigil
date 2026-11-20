@@ -40,6 +40,7 @@ fn emp_offsets_ordinals_export_as_equs_the_as_side_reads() {
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

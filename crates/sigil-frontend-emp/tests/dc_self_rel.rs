@@ -24,7 +24,7 @@ fn lower(src: &str) -> (Module, Vec<String>) {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     (module, diags.into_iter().map(|d| d.message).collect())
 }
@@ -229,7 +229,7 @@ fn self_rel_overflow_diagnoses() {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let lower_msgs: Vec<String> = diags.into_iter().map(|d| d.message).collect();
     assert!(lower_msgs.is_empty(), "clean lower expected (overflow is a link check): {lower_msgs:?}");

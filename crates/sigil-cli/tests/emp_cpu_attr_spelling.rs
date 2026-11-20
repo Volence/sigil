@@ -60,7 +60,7 @@ fn lower(src: &str) -> (sigil_ir::Module, Vec<sigil_span::Diagnostic>) {
     assert!(perrs.is_empty(), "the fixture must PARSE, so the outcome is about the `cpu:` value: {perrs:?}");
     lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     )
 }
 
@@ -873,7 +873,7 @@ fn the_first_contact_examples_processor_declarations_all_resolve() {
     assert!(perrs.is_empty(), "the example must parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         refusals(&diags).is_empty(),

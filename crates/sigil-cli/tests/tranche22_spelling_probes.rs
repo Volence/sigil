@@ -51,6 +51,7 @@ fn emp_sections(emp: &str, defines: &[(&str, i128)]) -> Vec<Section> {
         pdiags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

@@ -73,6 +73,7 @@ fn objdef_burst_copy_ensure_chain_passes() {
     let Some(_) = reference_tree(SST_AMBIENT_SOURCES) else { return };
     let file = sst_ambient_with("");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -122,6 +123,7 @@ fn lower_inline(src: &str) -> sigil_ir::Module {
         "parse errors: {diags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -209,6 +211,7 @@ fn objdef_solid_record_bytes_and_fixups() {
              art: vram_art(VRAM_TEST_OBJ), priority: 3, width: 16, height: 16, collision: 8)\n",
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -252,6 +255,7 @@ fn objdef_priority_over_7_is_a_compile_error() {
         "data Bad: ObjDef = objdef(code: \"X\", map: \"Y\", priority: 8)\n",
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -274,6 +278,7 @@ fn vram_art_pal_over_3_is_a_compile_error() {
         "data Bad: ObjDef = objdef(code: \"X\", map: \"Y\", art: vram_art($100, 4))\n",
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -356,6 +361,7 @@ fn objdef_reference_gate(shape: &ObjShape) {
     let file = sigil_frontend_emp::ast::File { module: module_hdr, attrs, items, docs };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

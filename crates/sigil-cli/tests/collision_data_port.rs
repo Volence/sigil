@@ -90,6 +90,7 @@ fn compile(base: u32, len: usize) -> sigil_link::LinkedImage {
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: None,

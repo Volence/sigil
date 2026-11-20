@@ -22,6 +22,7 @@ fn lower_with_debug(src: &str, debug: i128) -> (Module, Vec<String>) {
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -122,7 +123,7 @@ section s (cpu: m68000) {
     let (file, _perrs) = parse_str(src);
     let (_m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let msg = diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("\n");
     assert!(
@@ -382,6 +383,7 @@ section s (cpu: m68000) {
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -411,6 +413,7 @@ section s (cpu: m68000) {
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

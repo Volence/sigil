@@ -33,6 +33,7 @@ fn lower_probe(src: &str) -> (Vec<sigil_span::Diagnostic>, Option<Vec<u8>>) {
         "probe parse errors (probes doctor SEMANTICS, not syntax): {pdiags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

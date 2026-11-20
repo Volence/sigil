@@ -329,6 +329,7 @@ fn compile_real_file_with(
     );
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
@@ -574,6 +575,7 @@ fn zero_disp_collapse_probe() {
     );
     let file = with_ambient(vec![aabb], probe);
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

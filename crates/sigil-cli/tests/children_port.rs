@@ -165,6 +165,7 @@ fn compile_with_seam(
     let file = with_ambient(vec![types, sst, constants, coords, frames], ch);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,

@@ -19,7 +19,7 @@ fn lower_msgs(src: &str) -> Vec<String> {
     assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
     let (_m, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     ldiags.iter().map(|d| d.message.clone()).collect()
 }
@@ -31,7 +31,7 @@ fn text_bytes(src: &str) -> Vec<u8> {
     assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
     let (module, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower: {ldiags:?}");
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve");

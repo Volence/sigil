@@ -199,7 +199,7 @@ fn out_flag_invalid_name_is_diagnosed() {
     );
     let (_m, lerrs) = lower_module(
         &_f,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let all: Vec<_> = diags.iter().chain(lerrs.iter()).collect();
     assert!(
@@ -216,7 +216,7 @@ fn out_cond_invalid_cc_is_diagnosed() {
     );
     let (_m, lerrs) = lower_module(
         &_f,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         lerrs.iter().any(|d| d.message.contains("[proc.out-cond-invalid]")),
@@ -394,7 +394,7 @@ fn flatten(src: &str) -> Vec<u8> {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, lerrs) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         !lerrs.iter().any(|d| matches!(d.level, sigil_span::Level::Error)),

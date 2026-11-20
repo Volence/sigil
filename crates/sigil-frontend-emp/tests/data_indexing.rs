@@ -40,7 +40,7 @@ fn vectors_dir() -> PathBuf {
 fn data(src: &str, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
-    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&vectors_dir()), &[]);
+    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&sigil_frontend_emp::Sandbox::from(vectors_dir().to_path_buf())), &[]);
     (buf, ds)
 }
 
@@ -52,6 +52,7 @@ fn lower_all(src: &str) -> Vec<Diagnostic> {
     let (_module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(vectors_dir()),
             embed_base: None,

@@ -1954,7 +1954,7 @@ pub fn eval_data_with_root(
     file: &ast::File,
     name: &str,
     here: Option<HerePos>,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     let (buf, asserts, _decided, diags) =
@@ -1974,7 +1974,7 @@ pub fn eval_data_with_root_and_base(
     file: &ast::File,
     name: &str,
     here: Option<HerePos>,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     embed_base: Option<&std::path::Path>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, usize, Vec<Diagnostic>) {
@@ -1983,7 +1983,7 @@ pub fn eval_data_with_root_and_base(
         ev.seed_defines(defines);
         ev.apply_here_pos(here);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         if let Some(base) = embed_base {
             ev.set_embed_base(base.to_path_buf());
@@ -2061,13 +2061,13 @@ pub fn eval_data_captures(
     file: &ast::File,
     name: &str,
     here: Option<HerePos>,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
 ) -> (Option<DataBuf>, Vec<Capture>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.apply_here_pos(here);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
@@ -2143,14 +2143,14 @@ pub struct InlineBody {
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<InlineBody>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         // §4.7 inline bodies in declaration order, emitted by the caller
         // AFTER the table.
@@ -2342,14 +2342,14 @@ pub struct TableLowering {
 pub fn eval_table(
     file: &ast::File,
     decl: &ast::TableDecl,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Option<TableLowering>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let attrs = &decl.attrs;
         let index_mode = attrs.cell.is_some();
@@ -2642,14 +2642,14 @@ pub fn eval_table(
 pub fn eval_dispatch_with_root(
     file: &ast::File,
     decl: &ast::DispatchDecl,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let mut buf = DataBuf::empty();
         for member in &decl.members {

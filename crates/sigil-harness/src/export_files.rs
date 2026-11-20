@@ -16,9 +16,10 @@
 //!
 //! A build writes its generated files into its own generated root, a directory outside
 //! the tree ([`sigil_build::build_dir`], G0b Task 6), and the sources reach them through
-//! the root's mount at `engine/sound/generated`. [`mount_generated`] writes each read of
-//! that directory under the mount path the source used, so the table above places it,
-//! and a build's rows do not depend on where its private directory was.
+//! the build's named `generated` root (`generated/sound/...`). [`mount_generated`] writes
+//! each read of that directory under its engine-tree name (`generated/<sub>/<rest>` is
+//! `engine/<sub>/generated/<rest>`, the convention this table states), so the table above
+//! places it, and a build's rows do not depend on where its private directory was.
 //!
 //! `game` paths keep the game's directory name because one build reads more than one
 //! game's modules (the module scan reads every `*.emp`), and two games each have a
@@ -51,7 +52,6 @@
 //! `G0A-SCAN-READS-TOOL-FIXTURES`). Any other read under `tools/` is an error naming
 //! the path, and so is any read that fits no root and is not an aeon-tree data file.
 
-use sigil_frontend_emp::generated_root::GeneratedRoot;
 use sigil_link::export::{FileRecord, InputRead, Lang, RootName, ToolExe};
 use sigil_span::read_set::{FileRead, Snapshot};
 use std::path::{Component, Path, PathBuf};
@@ -181,20 +181,69 @@ fn place_path(aeon: &Path, sigil: &Path, path: &Path) -> Result<Placed, String> 
     ))
 }
 
-/// `snapshot` with every read of `root`'s directory written under its mount path in the
-/// tree ([`GeneratedRoot::mounted`]), the name the build's source used for the file. The
-/// `.lst` source digest and the export both place reads through this, so a generated file
-/// is `origin=generated path=engine/sound/generated/...` in the digest and root
-/// `generated` in the export, as it was when the seams wrote into the tree.
+/// A build's `generated` root as the record layer names its reads (G0b Task 9).
 ///
-/// A read of the mount path in the tree as well is refused naming both: the build would
-/// then have read two different files under one name. The sandbox resolves the mount to
-/// the generated directory only, so this does not happen in a build; the check is what
-/// keeps the rewrite from merging two rows silently if it ever did.
+/// A build reads its generated files from its own generated directory (`<dir>/sound/...`,
+/// named in the source as `generated/sound/...`, [`sigil_span::roots`]). G0a's export
+/// already holds the convention that the `generated` root's `<sub>/<rest>` is the
+/// engine's `<sub>/generated/<rest>` (the table in the module doc), and the `.lst`
+/// digest has written a generated read under that engine-tree name since the seams wrote
+/// into the tree. [`mounted`](Self::mounted) states that equivalence, so the digest and
+/// the export keep naming each generated file as before (`origin=generated
+/// path=engine/sound/generated/...`, root `generated` path `sound/...`) and a build's
+/// rows do not depend on where its private directory was. This is a NAME, not a
+/// resolution: no source path is redirected through it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GeneratedRoot {
+    /// The generated directory itself (canonical).
+    pub dir: PathBuf,
+    /// The engine root (canonical).
+    pub engine: PathBuf,
+}
+
+impl GeneratedRoot {
+    /// The generated root `dir` of a build on the engine root `engine`, both canonical.
+    pub fn new(dir: &Path, engine: &Path) -> Result<GeneratedRoot, String> {
+        let dir = std::fs::canonicalize(dir).map_err(|e| format!("resolve the generated root {}: {e}", dir.display()))?;
+        let engine = std::fs::canonicalize(engine).map_err(|e| format!("resolve the engine root {}: {e}", engine.display()))?;
+        Ok(GeneratedRoot { dir, engine })
+    }
+
+    /// The engine-tree name of a file in the generated directory: `<dir>/<sub>/<rest>` is
+    /// `<engine>/<sub>/generated/<rest>`. `None` for a path outside the directory, or one
+    /// directly in it (no subsystem directory, so no name under the convention).
+    pub fn mounted(&self, physical: &Path) -> Option<PathBuf> {
+        let rest = physical.strip_prefix(&self.dir).ok()?;
+        let mut comps = rest.components();
+        let sub = comps.next()?;
+        let tail = comps.as_path();
+        if tail.as_os_str().is_empty() {
+            return None;
+        }
+        Some(self.engine.join(sub).join("generated").join(tail))
+    }
+}
+
+/// `snapshot` with every read of `root`'s directory written under its engine-tree name
+/// ([`GeneratedRoot::mounted`]). The `.lst` source digest and the export both place reads
+/// through this, so a generated file is `origin=generated path=engine/sound/generated/...`
+/// in the digest and root `generated` in the export.
+///
+/// A read of that engine-tree path as well is refused naming both: the build would then
+/// have read two different files under one name. A build resolves `generated/...` to the
+/// generated directory only, so this does not happen in a build; the check is what keeps
+/// the rewrite from merging two rows silently if it ever did.
 pub fn mount_generated(snapshot: &Snapshot, root: &GeneratedRoot) -> Result<Snapshot, String> {
     let in_tree: std::collections::BTreeSet<&Path> = snapshot.reads.iter().map(|r| r.path.as_path()).collect();
     let mut out = snapshot.clone();
     for r in &mut out.reads {
+        if r.path.starts_with(&root.dir) && root.mounted(&r.path).is_none() {
+            return Err(format!(
+                "the build read {} directly in its generated root {}; a generated file lives in a subsystem directory (`sound/`), which is what names it",
+                r.path.display(),
+                root.dir.display()
+            ));
+        }
         if let Some(mounted) = root.mounted(&r.path) {
             if in_tree.contains(mounted.as_path()) {
                 return Err(format!(
@@ -354,8 +403,8 @@ mod tests {
 
     #[test]
     fn a_read_of_the_generated_root_is_placed_at_its_mount() {
-        let root = GeneratedRoot { mount: PathBuf::from("/a/engine/sound/generated"), dir: PathBuf::from("/b/generated") };
-        let mut gen = read("/b/generated/z80_sound_blob.bin");
+        let root = GeneratedRoot { engine: PathBuf::from("/a/engine"), dir: PathBuf::from("/b/generated") };
+        let mut gen = read("/b/generated/sound/z80_sound_blob.bin");
         gen.generated = true;
         let snap = Snapshot { reads: vec![gen, read("/a/engine/vdp.emp")], ..Default::default() };
         let mounted = mount_generated(&snap, &root).unwrap();
@@ -372,13 +421,16 @@ mod tests {
 
     #[test]
     fn a_tree_read_at_the_mount_beside_its_generated_file_is_refused() {
-        let root = GeneratedRoot { mount: PathBuf::from("/a/engine/sound/generated"), dir: PathBuf::from("/b/generated") };
+        let root = GeneratedRoot { engine: PathBuf::from("/a/engine"), dir: PathBuf::from("/b/generated") };
         let snap = Snapshot {
-            reads: vec![read("/b/generated/x.bin"), read("/a/engine/sound/generated/x.bin")],
+            reads: vec![read("/b/generated/sound/x.bin"), read("/a/engine/sound/generated/x.bin")],
             ..Default::default()
         };
         let e = mount_generated(&snap, &root).unwrap_err();
-        assert!(e.contains("/a/engine/sound/generated/x.bin") && e.contains("/b/generated/x.bin"), "{e}");
+        assert!(e.contains("/a/engine/sound/generated/x.bin") && e.contains("/b/generated/sound/x.bin"), "{e}");
+        let flat = Snapshot { reads: vec![read("/b/generated/x.bin")], ..Default::default() };
+        let e = mount_generated(&flat, &root).unwrap_err();
+        assert!(e.contains("directly in its generated root"), "{e}");
     }
 
     #[test]

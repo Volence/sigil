@@ -434,6 +434,7 @@ fn lower_one(
         .collect();
     defines.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir),
         embed_base: None,
@@ -1277,7 +1278,7 @@ fn eval_pub_consts(path: &Path, aeon: &Path, defines: &[(String, i128)]) -> Vec<
         "{} parse errors: {pdiags:?}",
         path.display()
     );
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), defines);
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sigil_frontend_emp::Sandbox::from(aeon)), defines);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{} pub-const resolve errors: {:?}",

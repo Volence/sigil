@@ -3,22 +3,21 @@
 //!
 //! Each build gets a private directory, created fresh under the system temporary
 //! directory and removed when the build ends. Its `generated/` subdirectory is the
-//! build's `generated` root ([`sigil_frontend_emp::generated_root`]), mounted at
-//! [`GENERATED_MOUNT`] in the tree: the sound seams write there, and an
-//! `embed("engine/sound/generated/...")` reads there. The tree is only read.
+//! build's `generated` root ([`sigil_span::roots`], G0b Task 9): the sound seams write
+//! into its `sound/` subdirectory ([`GENERATED_SOUND`]), and aeon's sources read them as
+//! `embed("generated/sound/<file>")`. The tree is only read.
 //!
-//! The mount path is an engine fact the seams already hold in Rust (they wrote into it
-//! before), and it goes when G0c removes the seams. It is not a description field: the
-//! descriptions carry nothing from the seams (spec §5.4).
+//! The root is a named root of the build's lowering options, not a mount at a tree path:
+//! nothing is keyed to the checkout, and a build that names no generated root refuses a
+//! `generated/` path by name.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sigil_frontend_emp::generated_root::{self, GeneratedRoot};
-
-/// The tree path the generated root is mounted at, relative to the checkout: where
-/// aeon's sources `embed` the sound seams' output from.
-pub const GENERATED_MOUNT: &str = "engine/sound/generated";
+/// The subdirectory of the generated root the sound seams write into. A generated
+/// root holds one directory per subsystem, as G0a's export `files` table names the
+/// `generated` root's rows (`sound/...`, `debug/...`).
+pub const GENERATED_SOUND: &str = "sound";
 
 /// A build's private directory, removed on drop.
 #[derive(Debug)]
@@ -64,9 +63,10 @@ impl BuildDir {
         &self.generated
     }
 
-    /// The generated root this build directory provides for `checkout`.
-    pub fn root_for(&self, checkout: &Path) -> Result<GeneratedRoot, String> {
-        generated_root_for(checkout, &self.generated)
+    /// The directory the sound seams write into: [`GENERATED_SOUND`] under the
+    /// generated root, created on first ask.
+    pub fn sound(&self) -> Result<PathBuf, String> {
+        sound_dir(&self.generated)
     }
 }
 
@@ -76,10 +76,18 @@ impl Drop for BuildDir {
     }
 }
 
-/// The generated root that mounts `dir` at [`GENERATED_MOUNT`] in `checkout`.
-pub fn generated_root_for(checkout: &Path, dir: &Path) -> Result<GeneratedRoot, String> {
+/// The sound seams' directory under the generated root `generated`, created if absent.
+pub fn sound_dir(generated: &Path) -> Result<PathBuf, String> {
+    let dir = generated.join(GENERATED_SOUND);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Refuse a generated root inside the checkout it serves: a build writes nothing into
+/// the tree it builds.
+pub fn check_outside(checkout: &Path, generated: &Path) -> Result<(), String> {
     let tree = std::fs::canonicalize(checkout).map_err(|e| format!("resolve the checkout {}: {e}", checkout.display()))?;
-    let dir = std::fs::canonicalize(dir).map_err(|e| format!("resolve the generated root {}: {e}", dir.display()))?;
+    let dir = std::fs::canonicalize(generated).map_err(|e| format!("resolve the generated root {}: {e}", generated.display()))?;
     if dir.starts_with(&tree) {
         return Err(format!(
             "the generated root {} is inside the checkout {} it is for, and a build writes nothing into the tree it builds",
@@ -87,27 +95,7 @@ pub fn generated_root_for(checkout: &Path, dir: &Path) -> Result<GeneratedRoot, 
             tree.display()
         ));
     }
-    Ok(GeneratedRoot { mount: tree.join(GENERATED_MOUNT), dir })
-}
-
-/// Run `f` with `checkout`'s generated root in force, handing it the generated
-/// directory: the root already entered on this thread when it is `checkout`'s (a caller
-/// that owns the build directory, such as `sigil build`, which also places the build's
-/// reads with it), otherwise a fresh [`BuildDir`] that lives exactly as long as `f`.
-pub fn with_generated_root<T, E: From<String>>(checkout: &Path, f: impl FnOnce(&Path) -> Result<T, E>) -> Result<T, E> {
-    let tree = std::fs::canonicalize(checkout).map_err(|e| E::from(format!("resolve the checkout {}: {e}", checkout.display())))?;
-    if let Some(current) = generated_root::current() {
-        if current.mount == tree.join(GENERATED_MOUNT) {
-            return f(&current.dir);
-        }
-    }
-    let dir = BuildDir::create().map_err(E::from)?;
-    let root = dir.root_for(checkout).map_err(E::from)?;
-    // The directory handed to `f` is the one the root resolves embeds into, so the seams'
-    // writes and the lowering's reads cannot name two places.
-    let generated = root.dir.clone();
-    let _root = generated_root::enter(root);
-    f(&generated)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -131,25 +119,17 @@ mod tests {
         let outer = BuildDir::create().unwrap();
         let inner = outer.path().join("engine/sound/generated");
         std::fs::create_dir_all(&inner).unwrap();
-        let err = generated_root_for(outer.path(), &inner).unwrap_err();
+        let err = check_outside(outer.path(), &inner).unwrap_err();
         assert!(err.contains("inside the checkout"), "{err}");
+        let other = BuildDir::create().unwrap();
+        check_outside(outer.path(), other.generated()).unwrap();
     }
 
     #[test]
-    fn with_generated_root_reuses_the_entered_root_for_its_checkout_only() {
-        let tree = BuildDir::create().unwrap();
-        let owned = BuildDir::create().unwrap();
-        let _g = generated_root::enter(owned.root_for(tree.path()).unwrap());
-        let seen = with_generated_root::<_, String>(tree.path(), |d| Ok(d.to_path_buf())).unwrap();
-        assert_eq!(seen, owned.generated());
-        let other = BuildDir::create().unwrap();
-        let fresh = with_generated_root::<_, String>(other.path(), |d| {
-            assert_eq!(generated_root::current().unwrap().dir, d);
-            Ok(d.to_path_buf())
-        })
-        .unwrap();
-        assert_ne!(fresh, owned.generated());
-        assert!(!fresh.exists(), "a build directory made for one call is removed after it");
-        assert_eq!(generated_root::current().unwrap().dir, owned.generated(), "the outer root is restored");
+    fn the_sound_seams_write_under_the_generated_root() {
+        let d = BuildDir::create().unwrap();
+        let s = d.sound().unwrap();
+        assert_eq!(s, d.generated().join("sound"));
+        assert!(s.is_dir());
     }
 }

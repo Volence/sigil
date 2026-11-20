@@ -48,7 +48,7 @@ fn flatten(src: &str) -> Vec<u8> {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "lower errors: {diags:?}");
     let resolved =
@@ -156,7 +156,7 @@ pub proc ZX0R (a0: *u8, a1: *u8, a3: *u8) clobbers(d0-d2/a2) {\n\
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         !diags.iter().any(|d| d.message.contains("[resumable.stack-op]")),

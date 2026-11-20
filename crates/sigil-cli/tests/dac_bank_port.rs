@@ -47,6 +47,7 @@ fn compile(base: u32, len: usize) -> sigil_link::LinkedImage {
     let (file, pd) = parse_str(&src);
     assert!(pd.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {pd:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: Some(aeon.clone()),

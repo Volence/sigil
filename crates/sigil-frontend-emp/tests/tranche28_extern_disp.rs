@@ -85,7 +85,7 @@ fn read_bytes(disp_form: &str) -> Vec<u8> {
     );
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         !diags.iter().any(|d| d.level == Level::Error),
@@ -133,7 +133,7 @@ fn wrapped_field_arithmetic_disp_parses_but_does_not_lower() {
     );
     let (_module, ldiags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         ldiags.iter().any(|d| d.level == Level::Error && d.message.contains("Act.grid_w")),

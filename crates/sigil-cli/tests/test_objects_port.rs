@@ -292,6 +292,7 @@ fn compile_real_files(
     let particle_file = with_ambient(vec![types(), sst(), constants()], particle);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         // The aeon ROOT, the base the whole-program build joins every module's
         // `embed()` path to (`native::build_emp`'s `embed_base_for`): test_solid.emp

@@ -1822,6 +1822,7 @@ struct Asm {
     /// `SIGIL_CENSUS_INCLUDE`; see `census_include` below.
     include_census: IncludeCensus,
     include_root: Option<std::path::PathBuf>,
+    roots: Option<std::sync::Arc<sigil_span::roots::SourceRoots>>,
     aborted: bool,
     /// `exitm` raised, and no expansion driver has consumed it yet. Checked at
     /// the top of [`Asm::exec`] exactly like `aborted`, so the rest of the body
@@ -2372,6 +2373,7 @@ impl Asm {
                 ..Default::default()
             },
             include_root: opts.include_root.clone(),
+            roots: opts.roots.clone(),
             aborted: false,
             exit_expansion: false,
             expansion_depth: 0,
@@ -5255,6 +5257,26 @@ impl Asm {
         found
     }
 
+    /// The file an `include`/`BINCLUDE` path names: under the build's named roots when
+    /// it has them (G0b Task 9: the first segment names the root, and a path the rule
+    /// refuses is an error here), else `include_root` joined with the path, else the
+    /// path as written.
+    fn source_path(&mut self, rel: &str, span: Span) -> Option<std::path::PathBuf> {
+        if let Some(roots) = &self.roots {
+            return match roots.locate(rel) {
+                Ok(l) => Some(l.file().to_path_buf()),
+                Err(msg) => {
+                    self.err(span, msg);
+                    None
+                }
+            };
+        }
+        Some(match &self.include_root {
+            Some(root) => root.join(rel),
+            None => std::path::PathBuf::from(rel),
+        })
+    }
+
     /// `include "path"`: read a file relative to `include_root`, exec its lines
     /// inline. A TREE, not a DAG — the same file included twice assembles twice
     /// — bounded by [`crate::INCLUDE_NEST_MAX`] levels of nesting.
@@ -5298,9 +5320,8 @@ impl Asm {
         let Some(rel) = self.quoted_path(rest, "include", span) else {
             return;
         };
-        let path = match &self.include_root {
-            Some(root) => root.join(&rel),
-            None => std::path::PathBuf::from(&rel),
+        let Some(path) = self.source_path(&rel, span) else {
+            return;
         };
         self.include_census.seen_total += 1;
         if self.include_census.on {
@@ -5410,9 +5431,8 @@ impl Asm {
         let Some(rel) = self.binclude_path(groups[0], span) else {
             return;
         };
-        let path = match &self.include_root {
-            Some(root) => root.join(&rel),
-            None => std::path::PathBuf::from(&rel),
+        let Some(path) = self.source_path(&rel, span) else {
+            return;
         };
         let mut window = [None, None];
         for (i, g) in groups.iter().enumerate().skip(1) {
@@ -16212,6 +16232,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16235,6 +16256,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16256,7 +16278,7 @@ mod tests {
         //   divs.w d0,d1      = 83 C0
         //   divs.w ($1234).w,d0 = 81 F8 12 34
         let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -16274,7 +16296,7 @@ mod tests {
         //   divu.w d4,d2 = 84 C4
         //   divu.w d3,d5 = 8A C3
         let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -16293,6 +16315,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16315,6 +16338,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16340,6 +16364,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16366,6 +16391,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16390,6 +16416,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16445,6 +16472,7 @@ mod tests {
             initial_cpu: Some(Cpu::Z80),
             defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16508,6 +16536,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16531,6 +16560,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -16554,6 +16584,7 @@ mod tests {
             initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
+            roots: None,
             guarded_defines: vec![],
             cli_defines: vec![],
             share_file: false,
@@ -18469,7 +18500,7 @@ C:\n";
         // No `GetSineCosine` anywhere in this source — exactly the shape a
         // real cross-seam `.emp` proc call takes from the AS side.
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).unwrap_or_else(|d| {
             panic!("expected a deferred compile, not a hard error: {d:?}")
         });
@@ -18488,7 +18519,7 @@ C:\n";
         // section that DOES define the target — the end-to-end proof (mirrors
         // `math_port.rs`'s outbound-consumer harness pattern).
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("deferred compile must succeed");
 
         let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
@@ -18519,7 +18550,7 @@ C:\n";
         // Same source/expectation as
         // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("assemble");
         assert!(
             matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
@@ -18542,7 +18573,7 @@ C:\n";
         // (which named the symbol) to this link-time arm, so the link-time
         // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
-        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, roots: None, guarded_defines: vec![], cli_defines: vec![], share_file: false, };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");

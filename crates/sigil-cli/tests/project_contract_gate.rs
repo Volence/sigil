@@ -255,6 +255,49 @@ fn a_game_missing_a_required_constant_is_refused_by_name() {
     }
 }
 
+/// No engine default (G0b Task 9): an ENGINE module that declares a constant the engine's
+/// `required_consts` names is refused by name, even though the game declares it too (the
+/// engine's value would be a default a game that forgot it builds on). Refused on every
+/// `--project` run, before the gate.
+#[test]
+fn an_engine_default_for_a_required_constant_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), |rel, t| if rel == "engine/eng.emp" { format!("{t}pub const REQ_CONST = 0\n") } else { t });
+    let home = tmp.path().canonicalize().unwrap();
+    for extra in [&["-o", "g.bin"][..], &["--check"][..]] {
+        let mut args = vec!["--project", "games/g", "--shape", "release"];
+        args.extend_from_slice(extra);
+        let out = sigil(tmp.path(), &args, false);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: got:\n{err}");
+        assert!(err.contains("[engine.required-const-default] the engine declares `REQ_CONST` in `engine.eng`"), "{args:?}: got:\n{err}");
+        assert!(err.contains(&home.join("engine/eng.emp").display().to_string()), "{args:?}: names the file, got:\n{err}");
+        assert!(err.contains(&format!("{} `required_consts`", home.join("engine/engine.toml").display())), "{args:?}: names the row, got:\n{err}");
+        assert!(!err.contains("contract closure gate"), "{args:?}: refused before the gate, got:\n{err}");
+    }
+}
+
+/// The other game is not even parsed (G0b Task 9, closes G0a A-I2): a module in `h`'s
+/// sources that would break any scan of the whole checkout (it redeclares the engine's
+/// module id) does not reach `g`'s build, whose gate passes; the profile-driven driver,
+/// which walks the checkout, stops on it.
+#[test]
+fn another_games_broken_module_is_not_scanned() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), |_, t| t);
+    std::fs::write(tmp.path().join("games/h/dup.emp"), "module engine.eng\n").unwrap();
+    let (err, _) = project_build(tmp.path());
+    assert!(err.contains(PASSED), "g's build must not scan h, got:\n{err}");
+    assert!(!err.contains("declared"), "got:\n{err}");
+    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
+    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
+    let abs = tmp.path().canonicalize().unwrap();
+    let legacy = sigil(tmp.path(), &["--aeon", abs.to_str().unwrap(), "--game", "sonic4", "-o", "s4.bin"], false);
+    let lerr = String::from_utf8_lossy(&legacy.stderr);
+    assert_eq!(legacy.status.code(), Some(1), "the whole-checkout scan must stop on h's module, got:\n{lerr}");
+    assert!(lerr.contains("engine.eng"), "the whole-checkout scan names the redeclared id, got:\n{lerr}");
+}
+
 /// A stale row in the game's own file is GONE, refused.
 #[test]
 fn a_stale_row_in_the_games_file_is_refused() {

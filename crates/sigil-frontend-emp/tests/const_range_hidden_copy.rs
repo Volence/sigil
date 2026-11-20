@@ -27,7 +27,7 @@ fn a_hidden_copy_does_not_repeat_the_const_refusal_under_its_hidden_name() {
     );
     w("app/main.emp", "module app.main\nuse engine.helper.{f}\npub proc main () {\n    f()\n    rts\n}\n");
     let (manifest, _) = Manifest::scan(dir.path());
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (_sections, _asserts, diags) = build_program(&manifest, "app.main", None, &opts);
     let errs: Vec<&str> =
         diags.iter().filter(|d| d.level == Level::Error).map(|d| d.message.as_str()).collect();

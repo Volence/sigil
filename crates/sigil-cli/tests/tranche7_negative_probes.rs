@@ -62,6 +62,7 @@ fn lower_with_ambient(dep_srcs: &[&str], main_src: &str) -> Vec<sigil_span::Diag
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

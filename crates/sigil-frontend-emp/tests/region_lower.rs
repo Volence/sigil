@@ -9,7 +9,7 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::Module;
 
 fn opts(defines: Vec<(String, i128)>) -> LowerOptions {
-    LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines }
+    LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines }
 }
 
 /// Lower `src`, asserting zero ERROR diagnostics; returns the module + all diags

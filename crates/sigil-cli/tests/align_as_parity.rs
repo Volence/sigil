@@ -29,7 +29,7 @@ fn emp_image(src: &str) -> Vec<u8> {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(diags.is_empty(), "clean lower: {diags:?}");
     let resolved =
@@ -72,7 +72,7 @@ fn emp_sections(src: &str) -> Vec<sigil_ir::Section> {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(diags.is_empty(), "clean lower: {diags:?}");
     m.sections

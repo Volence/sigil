@@ -20,7 +20,7 @@ fn errs(src: &str) -> Vec<String> {
     }
     let (_m, ds) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     ds.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect()
 }

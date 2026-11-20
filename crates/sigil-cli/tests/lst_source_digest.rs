@@ -101,6 +101,10 @@ fn resolve(aeon: &Path, r: &DigestRead) -> PathBuf {
         DigestRoot::Aeon => aeon.to_path_buf(),
         DigestRoot::Sigil => sigil_harness::source_digest::sigil_source_root(),
         DigestRoot::Filesystem => PathBuf::from("/"),
+        // The profile-driven builds this file runs name no source roots (G0b Task 9).
+        other @ (DigestRoot::Engine | DigestRoot::Game | DigestRoot::Generated) => {
+            panic!("a profile-driven build wrote a {other:?} row for {}", r.file.path)
+        }
     };
     base.join(&r.file.path)
 }
@@ -255,17 +259,18 @@ fn compile_interposer(dir: &Path) -> PathBuf {
 }
 
 /// The file a build-directory path names in the tree: a read of
-/// `<tmp>/sigil-build-*/generated/<rest>` (the build's generated root, G0b Task 6) is the
-/// file the source embeds as `engine/sound/generated/<rest>`, which is where the digest
-/// names it. The build removes its directory when it ends, so these paths are matched
+/// `<tmp>/sigil-build-*/generated/<sub>/<rest>` (the build's generated root, G0b Task 6 and
+/// Task 9) is the file the digest names `engine/<sub>/generated/<rest>`. The build removes its directory when it ends, so these paths are matched
 /// as logged, never canonicalized.
 fn generated_mount_of(aeon: &Path, logged: &Path) -> Option<PathBuf> {
     let parts: Vec<_> = logged.components().collect();
     let at = parts.windows(2).position(|w| {
         w[0].as_os_str().to_string_lossy().starts_with("sigil-build-") && w[1].as_os_str() == "generated"
     })?;
-    let rest: PathBuf = parts[at + 2..].iter().collect();
-    Some(aeon.join(sigil_build::build_dir::GENERATED_MOUNT).join(rest))
+    // `generated/<sub>/<rest>` is the engine's `<sub>/generated/<rest>` (G0b Task 9).
+    let sub = parts.get(at + 2)?;
+    let rest: PathBuf = parts[at + 3..].iter().collect();
+    Some(aeon.join("engine").join(sub).join("generated").join(rest))
 }
 
 /// What the kernel was asked to open read-only, and to spawn, excluding the system

@@ -27,7 +27,7 @@ fn build(files: &[(&str, &str)], entry: &str) -> (Vec<Section>, Vec<Diagnostic>)
     }
     let (manifest, mdiags) = Manifest::scan(dir.path());
     assert!(mdiags.iter().all(|d| d.level != Level::Error), "manifest errors: {mdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (sections, _asserts, diags) = build_program(&manifest, entry, None, &opts);
     (sections, diags)
 }

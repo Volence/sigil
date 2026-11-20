@@ -45,6 +45,7 @@ fn bind_and_lower(engine: &str, game: &str, defines: Vec<(String, i128)>) -> (Mo
         [ContractModule { id: &eid, file: &ef }, ContractModule { id: &gid, file: &gf }];
     let (env, mut diags) = bind(&mods, &defines);
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

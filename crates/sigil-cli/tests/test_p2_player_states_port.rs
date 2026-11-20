@@ -403,6 +403,7 @@ fn compile_region(
     let pc = || player_common_imports(aeon);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         // The full build lowers with BOTH the join base and the containment
         // boundary at the aeon root, so a root-relative `embed("engine/...")`

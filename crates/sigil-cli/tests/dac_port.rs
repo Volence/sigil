@@ -140,6 +140,7 @@ fn compile_real_file(dir: &Path) -> (String, Vec<Section>, sigil_link::LinkedIma
     );
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         // The module's OWN directory, so `embed("dac/kick.pcm")` and
         // `embed("temp_blip.bin")` resolve within the capability sandbox.

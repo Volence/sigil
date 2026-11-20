@@ -79,6 +79,22 @@ pub struct LowerOptions {
     /// `LowerOptions { initial_cpu, include_root, .. }` construction that
     /// predates this field is unaffected in behavior once updated to list it.
     pub defines: Vec<(String, i128)>,
+    /// The build's named roots (G0b Task 9, [`sigil_span::roots`]). When set, every
+    /// `embed`/`import` path names its root by its first segment and resolves there;
+    /// `include_root` and `embed_base` are then not consulted. `None` keeps the
+    /// single-directory form.
+    pub roots: Option<std::sync::Arc<sigil_span::roots::SourceRoots>>,
+}
+
+impl LowerOptions {
+    /// Where this lowering's comptime file reads resolve: the named roots when set,
+    /// else `include_root`.
+    pub fn sandbox(&self) -> Option<crate::Sandbox> {
+        match &self.roots {
+            Some(r) => Some(crate::Sandbox::Roots(r.clone())),
+            None => self.include_root.clone().map(crate::Sandbox::Dir),
+        }
+    }
 }
 
 /// The CPU, physical origin (`here()` base), and sandbox root a `data` item
@@ -93,7 +109,7 @@ struct Placement<'a> {
     /// section's data cells are read byte-wise, so the D2.29 word-parity
     /// check does not apply to its DATA items.
     byte_access: bool,
-    include_root: Option<&'a Path>,
+    include_root: Option<&'a crate::Sandbox>,
     /// See [`LowerOptions::embed_base`] — the join base for relative
     /// `embed`/`import` paths, distinct from the `include_root` boundary.
     embed_base: Option<&'a Path>,
@@ -262,7 +278,7 @@ fn lower_module_inner(
     diags.extend(crate::eval::validate_const_arity(
         file,
         &opts.defines,
-        opts.include_root.as_deref(),
+        opts.sandbox().as_ref(),
         contracts,
     ));
 
@@ -395,7 +411,7 @@ fn lower_module_inner(
                         cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -428,7 +444,7 @@ fn lower_module_inner(
                         cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -446,7 +462,7 @@ fn lower_module_inner(
                         cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -466,7 +482,7 @@ fn lower_module_inner(
                         cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -488,7 +504,7 @@ fn lower_module_inner(
                     next_lma,
                     &module_id,
                     &mut here_anchor_counter,
-                    opts.include_root.as_deref(),
+                    opts.sandbox().as_ref(),
                     &opts.defines,
                     contracts,
                     &mut builder,
@@ -546,7 +562,7 @@ fn lower_module_inner(
                         cpu,
                         origin,
                         byte_access,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -596,7 +612,7 @@ fn lower_module_inner(
                         cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
-                        include_root: opts.include_root.as_deref(),
+                        include_root: opts.sandbox().as_ref(),
                         embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
@@ -617,7 +633,7 @@ fn lower_module_inner(
                 lower_equ_item(
                     file,
                     decl,
-                    opts.include_root.as_deref(),
+                    opts.sandbox().as_ref(),
                     &opts.defines,
                     contracts,
                     &mut builder,
@@ -633,7 +649,7 @@ fn lower_module_inner(
                     next_lma,
                     &module_id,
                     &mut here_anchor_counter,
-                    opts.include_root.as_deref(),
+                    opts.sandbox().as_ref(),
                     &opts.defines,
                     &mut builder,
                     &mut diags,
@@ -855,7 +871,7 @@ fn lower_section_items(
 fn lower_equ_item(
     file: &ast::File,
     decl: &ast::EquDecl,
-    include_root: Option<&Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
     builder: &mut IrBuilder,
@@ -942,7 +958,7 @@ fn lower_align_item(
     origin: u32,
     module_id: &str,
     anchor_counter: &mut u32,
-    include_root: Option<&Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
@@ -955,7 +971,7 @@ fn lower_align_item(
         let mut ev = crate::eval::Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let mut env = crate::eval::Env::new();
         let v = ev.eval_expr(&decl.n, &mut env);
@@ -1284,7 +1300,7 @@ fn lower_item_guard(
     origin: u32,
     module_id: &str,
     here_anchor_counter: &mut u32,
-    include_root: Option<&Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
     builder: &mut IrBuilder,
@@ -1415,7 +1431,7 @@ fn lower_data_align(
         let mut ev = crate::eval::Evaluator::with_file(file);
         ev.seed_defines(placement.defines);
         if let Some(root) = placement.include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let mut env = crate::eval::Env::new();
         let v = ev.eval_expr(align_expr, &mut env);

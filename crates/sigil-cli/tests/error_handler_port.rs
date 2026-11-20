@@ -90,6 +90,7 @@ fn compile(shape: &Shape) -> sigil_link::LinkedImage {
         "error_handler.emp parse errors: {pdiags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/debug")),
         embed_base: None,
@@ -207,6 +208,7 @@ fn vector_labels_resolve_to_emp_ownership() {
     let (module, _) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/debug")),
             embed_base: None,

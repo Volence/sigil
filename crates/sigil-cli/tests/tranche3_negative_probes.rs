@@ -102,6 +102,7 @@ fn place_module(src: &str, twin_src: &str, region: &str, base: &str, size: &str)
         docs: file.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon_dir()),
         embed_base: None,

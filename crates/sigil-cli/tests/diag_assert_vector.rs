@@ -153,6 +153,7 @@ section s (cpu: m68000) {{\n\
     let (m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -267,6 +268,7 @@ section s (cpu: m68000) {{\n\
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

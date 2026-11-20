@@ -52,6 +52,7 @@ fn build_with_asset_base(files: &[(&str, &str)], assets: &[(&str, &[u8])], entry
         mdiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.path().to_path_buf()),
         embed_base: Some(dir.path().join("assets")),
@@ -74,6 +75,7 @@ fn build(files: &[(&str, &str)], entry: &str) -> Build {
         mdiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -160,6 +162,7 @@ data D: u16 = BLOB_LEN
     write(dir.path(), "b.emp", b);
     let (manifest, _m) = Manifest::scan(dir.path());
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.path().to_path_buf()),
         embed_base: None,

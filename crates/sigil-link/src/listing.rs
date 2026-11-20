@@ -215,12 +215,26 @@ pub const SOURCE_DIGEST_HEADER: &str =
 
 /// The base a digest path is written relative to. Declaration order is row order: the
 /// aeon root first, then the named roots by the bytes of their names.
+///
+/// `engine`, `game` and `generated` are the build's named source roots (G0b Task 9,
+/// `sigil_span::roots`). A file is placed under them only when it lies outside the aeon
+/// tree (a game whose directory is not in the engine's checkout): a file inside the tree
+/// keeps its aeon-relative row, so a build whose roots all lie in the tree writes the
+/// rows it always wrote. A row under a named source root is a source like any aeon row,
+/// not `external`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum DigestRoot {
     /// The `--aeon` tree, written with no `root=` field.
     Aeon,
-    /// `/`, for a file under neither other root: `root=filesystem`.
+    /// The build's `engine` root, outside the aeon tree: `root=engine`.
+    Engine,
+    /// `/`, for a file under no other root: `root=filesystem`.
     Filesystem,
+    /// The build's `game` root, outside the aeon tree: `root=game`.
+    Game,
+    /// The build's `generated` root, where it is not named at its mount path:
+    /// `root=generated`.
+    Generated,
     /// The sigil checkout the assembler was compiled from: `root=sigil`.
     Sigil,
 }
@@ -229,17 +243,35 @@ impl DigestRoot {
     fn token(self) -> Option<&'static str> {
         match self {
             DigestRoot::Aeon => None,
+            DigestRoot::Engine => Some("engine"),
             DigestRoot::Filesystem => Some("filesystem"),
+            DigestRoot::Game => Some("game"),
+            DigestRoot::Generated => Some("generated"),
             DigestRoot::Sigil => Some("sigil"),
         }
     }
 
+    /// The `root=` token, `None` for the aeon tree (a scan member outside the tree is
+    /// written `<token>:<path>`).
+    pub fn name(self) -> Option<&'static str> {
+        self.token()
+    }
+
     fn from_token(token: &str) -> Option<DigestRoot> {
         match token {
+            "engine" => Some(DigestRoot::Engine),
             "filesystem" => Some(DigestRoot::Filesystem),
+            "game" => Some(DigestRoot::Game),
+            "generated" => Some(DigestRoot::Generated),
             "sigil" => Some(DigestRoot::Sigil),
             _ => None,
         }
+    }
+
+    /// Is a file under this root outside every source root of the build, so its row is
+    /// `origin=external`? The aeon tree and the named source roots are the build's own.
+    pub fn is_external(self) -> bool {
+        matches!(self, DigestRoot::Filesystem | DigestRoot::Sigil)
     }
 }
 
@@ -252,7 +284,7 @@ pub enum DigestOrigin {
     Generated,
     /// An executable the build ran.
     Tool,
-    /// A file outside the aeon root.
+    /// A file outside the aeon tree and every named source root (`root=filesystem`, `root=sigil`).
     External,
 }
 
@@ -446,10 +478,10 @@ pub fn emit_source_digest(d: &SourceDigest) -> Result<String, String> {
     reads.sort_by(|a, b| a.file.cmp(&b.file));
     for r in &reads {
         digest_path(&r.file)?;
-        if (r.origin == DigestOrigin::External) != (r.file.root != DigestRoot::Aeon) {
+        if (r.origin == DigestOrigin::External) != r.file.root.is_external() {
             return Err(format!(
                 "the digest row for `{}` is origin={} under {:?}, and a row is external exactly \
-                 when it lies outside the aeon root",
+                 when it lies outside the aeon tree and every named source root",
                 r.file.path,
                 r.origin.token(),
                 r.file.root
@@ -689,8 +721,11 @@ pub fn parse_source_digest(text: &str) -> Result<(SourceDigest, &str), String> {
         let file = digest_parse_path(fields.get("root"), path, line)?;
         let origin = DigestOrigin::from_token(f[2])
             .ok_or_else(|| format!("digest line `{line}` has an unknown origin `{}`", f[2]))?;
-        if (origin == DigestOrigin::External) != (file.root != DigestRoot::Aeon) {
-            return Err(format!("digest line `{line}` is external exactly when it names a root, and it does not"));
+        if (origin == DigestOrigin::External) != file.root.is_external() {
+            return Err(format!(
+                "digest line `{line}` is external exactly when it names a root outside the build's sources \
+                 (filesystem, sigil), and it does not"
+            ));
         }
         if reads.last().is_some_and(|prev: &DigestRead| prev.file >= file) {
             return Err(format!("digest line `{line}` is out of order or repeats a file"));

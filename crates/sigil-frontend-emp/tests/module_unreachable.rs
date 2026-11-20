@@ -20,7 +20,7 @@ fn write(dir: &std::path::Path, rel: &str, src: &str) {
 }
 
 fn opts() -> LowerOptions {
-    LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] }
+    LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] }
 }
 
 /// A guard in an UNREACHED module is reported; the identical guard in a REACHED

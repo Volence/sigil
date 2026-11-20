@@ -29,6 +29,7 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
         pdiags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

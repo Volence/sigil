@@ -234,6 +234,7 @@ fn compile_real_file(
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
@@ -422,6 +423,7 @@ fn jump_lock_off_compiles_without_game_symbols() {
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

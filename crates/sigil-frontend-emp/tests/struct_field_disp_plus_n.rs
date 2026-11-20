@@ -75,7 +75,7 @@ fn disp_bytes(disp_form: &str) -> Result<Vec<u8>, Vec<String>> {
     }
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     let errs = errors(&diags);
     if !errs.is_empty() {

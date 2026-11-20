@@ -187,6 +187,10 @@ pub struct BuildOptions<'a> {
     pub seams: &'a dyn Seams,
     /// The environment (the engine checkout variable); injected so a test owns it.
     pub env: &'a dyn Fn(&str) -> Option<OsString>,
+    /// The build's generated root directory, when the caller owns it (`sigil build`
+    /// places the build's reads with it); `None` gives the build a private
+    /// [`crate::build_dir::BuildDir`] removed when the build returns.
+    pub generated: Option<&'a Path>,
 }
 
 /// A built shape.
@@ -241,6 +245,35 @@ impl Project {
     pub fn closure_roots(&self) -> Vec<PathBuf> {
         [self.engine_dir.clone(), self.sources_root()].into_iter().map(|d| std::fs::canonicalize(&d).unwrap_or(d)).collect()
     }
+    /// The roots a build scans for modules, named (G0b Task 9): the engine root, then the
+    /// game's sources root. The same two directories [`closure_roots`](Self::closure_roots)
+    /// analyses, so the modules a build may place and the modules its contract gate
+    /// analyses come from one scan rule.
+    pub fn scan_roots(&self) -> Vec<(sigil_span::roots::RootName, PathBuf)> {
+        vec![(sigil_span::roots::RootName::Engine, self.engine_dir.clone()), (sigil_span::roots::RootName::Game, self.sources_root())]
+    }
+    /// The build's module corpus: every `*.emp` under [`scan_roots`](Self::scan_roots)
+    /// and nothing else in the checkout (another game's sources, aeon's
+    /// `tools/fixtures/`), each module tagged with its root.
+    pub fn scan(&self) -> (resolve::manifest::Manifest, Vec<sigil_span::Diagnostic>) {
+        resolve::manifest::Manifest::scan_roots(&self.scan_roots())
+    }
+    /// The build's named roots (G0b Task 9, [`sigil_span::roots`]): `engine` is the
+    /// engine's root, `game` the game's directory, `generated` the build's own generated
+    /// directory when the build has one. A game inside the engine's checkout (aeon's own
+    /// `games/*`) also gets that checkout as the transitional tree its unrooted paths
+    /// resolve against; a game in its own repository gets none, so an unrooted path is
+    /// refused by name there.
+    pub fn source_roots(&self, generated: Option<&Path>) -> std::sync::Arc<sigil_span::roots::SourceRoots> {
+        let mut r = sigil_span::roots::SourceRoots::new(self.engine_dir.clone(), self.game_dir.clone());
+        if let Some(g) = generated {
+            r = r.with_generated(g.to_path_buf());
+        }
+        if self.game_dir.starts_with(&self.checkout) {
+            r = r.with_tree(self.checkout.clone());
+        }
+        std::sync::Arc::new(r)
+    }
 }
 
 /// Does `path` (a scanned module's file) sit under one of `roots` (canonical directories)?
@@ -263,6 +296,46 @@ fn declared_pub_consts<'a>(items: &'a [sigil_frontend_emp::ast::Item], out: &mut
     }
 }
 
+/// Refuse a placed module that the contract closure does not analyse (G0b Task 9:
+/// placed ⊆ analysed). The closure analyses the modules under
+/// [`Project::closure_roots`] ([`under_roots`], the predicate the gate's corpus uses); a
+/// module a shape places from anywhere else would ship code no contract ever checked.
+/// The build scans exactly those roots ([`Project::scan`]), so in a sound build this
+/// never fires; it is the check that ties the two scopes together, so that widening
+/// either one alone is refused by name instead of shipping silently.
+pub fn check_placed_in_analysed(
+    placed: &[ModuleSpec],
+    manifest: &resolve::manifest::Manifest,
+    analysed_roots: &[PathBuf],
+) -> Result<(), BuildError> {
+    let mut outside: Vec<String> = Vec::new();
+    for spec in placed {
+        let row = match manifest.by_id.get(&spec.module_id) {
+            Some(&i) => {
+                let m = &manifest.modules[i];
+                if m.root.is_some() && under_roots(&m.path, analysed_roots) {
+                    continue;
+                }
+                format!("`{}` ({})", m.id, m.path.display())
+            }
+            None => format!("`{}` (in no scanned file)", spec.module_id),
+        };
+        if !outside.contains(&row) {
+            outside.push(row);
+        }
+    }
+    if outside.is_empty() {
+        return Ok(());
+    }
+    Err(BuildError::Context(format!(
+        "[gate.placed-not-analysed] {} placed module(s) lie outside the roots the contract closure analyses ({}), \
+         so they would ship unchecked:\n  - {}",
+        outside.len(),
+        analysed_roots.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "),
+        outside.join("\n  - ")
+    )))
+}
+
 /// Refuse a game that does not declare every constant the engine description's
 /// `required_consts` names (G0b Task 9a), naming each missing constant, the engine.toml row
 /// and the game. A constant is declared when a module in the game's sources root holds a
@@ -273,6 +346,26 @@ fn declared_pub_consts<'a>(items: &'a [sigil_frontend_emp::ast::Item], out: &mut
 pub fn check_required_consts(p: &Project, manifest: &resolve::manifest::Manifest) -> Result<(), BuildError> {
     if p.engine.required_consts.is_empty() {
         return Ok(());
+    }
+    // No engine default (G0b Task 9): a required constant is the GAME's. An engine module
+    // that declares one would make every game's declaration a redeclaration, or let a
+    // game that forgot it build on the engine's value; neither may pass silently.
+    let engine_root = std::fs::canonicalize(&p.engine_dir).unwrap_or_else(|_| p.engine_dir.clone());
+    let mut defaults: Vec<String> = Vec::new();
+    for m in manifest.modules.iter().filter(|m| under_roots(&m.path, std::slice::from_ref(&engine_root))) {
+        let mut names = std::collections::BTreeSet::new();
+        declared_pub_consts(&m.file.items, &mut names);
+        for c in p.engine.required_consts.iter().filter(|c| names.contains(c.as_str())) {
+            defaults.push(format!("`{c}` in `{}` ({})", m.id, m.path.display()));
+        }
+    }
+    if !defaults.is_empty() {
+        return Err(BuildError::Desc(format!(
+            "[engine.required-const-default] the engine declares {} as a `pub const`; {} `required_consts` names it a \
+             constant every game declares, with no engine default, so the engine may not declare it",
+            defaults.join(", "),
+            p.engine_path.display(),
+        )));
     }
     let root = p.sources_root();
     let root = std::fs::canonicalize(&root).unwrap_or(root);
@@ -339,7 +432,10 @@ pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> R
     if !project.engine.required_consts.is_empty() {
         // Description time, before any front end or the closure reads a required name: the
         // scan's own errors are reported by the stage that uses it.
-        let (manifest, _) = resolve::manifest::Manifest::scan(&project.checkout);
+        let (manifest, sdiags) = project.scan();
+        if let Some(e) = sdiags.iter().find(|d| d.level == sigil_span::Level::Error) {
+            return Err(BuildError::Desc(format!("[engine.required-const] the module scan failed before the required constants could be checked: {}", e.message)));
+        }
         check_required_consts(&project, &manifest)?;
     }
     Ok(project)
@@ -425,7 +521,10 @@ fn parse_emp(path: &Path, what: &str) -> Result<sigil_frontend_emp::ast::File, B
 
 fn pub_consts(p: &Project, path: &Path, seed: &[(String, i128)], what: &str) -> Result<Vec<(String, i64)>, BuildError> {
     let file = parse_emp(path, what)?;
-    let (vals, d) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&p.checkout), seed);
+    // A constants module embeds nothing generated: no generated root, so a `generated/`
+    // path here is refused by name rather than read from anywhere.
+    let sandbox = sigil_frontend_emp::Sandbox::Roots(p.source_roots(None));
+    let (vals, d) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sandbox), seed);
     if let Some(e) = d.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("{what}: resolve {}: {e:?}", path.display())));
     }
@@ -468,8 +567,8 @@ fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
 
 /// The RAM labels and equates the engine RAM and the game RAM place (the AS side's plain
 /// defines), from a focused build of those two modules.
-fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)]) -> Result<Vec<(String, i64)>, BuildError> {
-    let (mut manifest, md) = resolve::manifest::Manifest::scan(&p.checkout);
+fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)], generated: Option<&Path>) -> Result<Vec<(String, i64)>, BuildError> {
+    let (mut manifest, md) = p.scan();
     if let Some(e) = md.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("ram harvest: manifest scan: {e:?}")));
     }
@@ -478,10 +577,8 @@ fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)]) -> Res
     let entry_id = "__ram_harvest_entry__".to_string();
     let src = format!("module __ram_harvest_entry__\n\nuse {ram_seed}\nuse {}\n", p.game.entry.ram);
     push_synthetic(&mut manifest, &entry_id, &src, &p.checkout)?;
-    let opts = lower_options(p, defines);
-    let root = p.checkout.clone();
-    let embed = move |_: &str| Some(root.clone());
-    let (sections, _, bd) = resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed);
+    let opts = lower_options(p, defines, generated);
+    let (sections, _, bd) = resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &|_| None);
     if let Some(e) = bd.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("ram harvest: build: {e:?}")));
     }
@@ -502,11 +599,15 @@ fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)]) -> Res
     Ok(out)
 }
 
-fn lower_options(p: &Project, defines: &[(String, i128)]) -> LowerOptions {
+/// The lowering options of every `.emp` lowering a build makes: the shape's defines and
+/// the build's named roots ([`Project::source_roots`]), with `generated` the build's
+/// generated root when it has one.
+fn lower_options(p: &Project, defines: &[(String, i128)], generated: Option<&Path>) -> LowerOptions {
     LowerOptions {
+        roots: Some(p.source_roots(generated)),
         initial_cpu: Cpu::M68000,
-        include_root: Some(p.checkout.clone()),
-        embed_base: Some(p.checkout.clone()),
+        include_root: None,
+        embed_base: None,
         defines: defines.to_vec(),
     }
 }
@@ -523,12 +624,12 @@ fn push_synthetic(manifest: &mut resolve::manifest::Manifest, id: &str, src: &st
     let path = checkout.join(format!("__{id}__.emp"));
     manifest.by_id.insert(id.to_string(), manifest.modules.len());
     manifest.sources.insert(source, path.clone());
-    manifest.modules.push(resolve::manifest::ParsedModule { id: id.to_string(), file, path });
+    manifest.modules.push(resolve::manifest::ParsedModule { root: None, id: id.to_string(), file, path });
     Ok(source)
 }
 
 /// The residual AS side, assembled with the defines the descriptions derive.
-fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], seeds: (&str, &str)) -> Result<crate::harvest::AsSide, BuildError> {
+fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], seeds: (&str, &str), generated: &Path) -> Result<crate::harvest::AsSide, BuildError> {
     let engine = engine_constants(p, defines)?;
     let mut guarded = engine.clone();
     guarded.extend(struct_offsets(p)?);
@@ -538,7 +639,7 @@ fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], s
     for rel in [&e.constants, &e.sound_ids, &e.sfx_bank].into_iter().flatten() {
         guarded.extend(pub_consts(p, &p.game_dir.join(rel), &seed, "game constants")?);
     }
-    let mut plain = ram_addresses(p, seeds.1, defines)?;
+    let mut plain = ram_addresses(p, seeds.1, defines, Some(generated))?;
     if shape.features.sound {
         plain.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
     }
@@ -551,7 +652,8 @@ fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], s
     let opts = sigil_frontend_as::Options {
         initial_cpu: Some(Cpu::M68000),
         defines: plain,
-        include_root: Some(p.checkout.clone()),
+        include_root: None,
+        roots: Some(p.source_roots(Some(generated))),
         guarded_defines: guarded,
         cli_defines: Vec::new(),
         share_file: false,
@@ -591,8 +693,9 @@ fn prepare_emp(
     order: &[String],
     defines: &[(String, i128)],
     opts: &BuildOptions<'_>,
+    generated: Option<&Path>,
 ) -> Result<PreparedEmp, BuildError> {
-    let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(&p.checkout);
+    let (mut manifest, mdiags) = p.scan();
     if let Some(e) = mdiags.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("manifest scan: {e:?}")));
     }
@@ -609,6 +712,7 @@ fn prepare_emp(
         terminus: &p.engine.terminus,
         map_name: &map_name,
     })?;
+    check_placed_in_analysed(&registry, &manifest, &p.closure_roots())?;
     let helpers: Vec<&str> = p.engine.helpers.iter().map(String::as_str).collect();
     let removed = rewrite_helper_imports(&mut manifest, &helpers);
     let extra: Vec<String> = opts
@@ -627,7 +731,7 @@ fn prepare_emp(
         src.push_str(&format!("use {s}\n"));
     }
     let source = push_synthetic(&mut manifest, entry_id, &src, &p.checkout)?;
-    let lopts = lower_options(p, defines);
+    let lopts = lower_options(p, defines, generated);
     Ok(PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts })
 }
 
@@ -637,12 +741,12 @@ fn build_emp(
     order: &[String],
     defines: &[(String, i128)],
     opts: &BuildOptions<'_>,
+    generated: &Path,
 ) -> Result<EmpSide, BuildError> {
-    let PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts } = prepare_emp(p, gate_shape, order, defines, opts)?;
-    let root = p.checkout.clone();
-    let embed = move |_: &str| Some(root.clone());
+    let PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts } =
+        prepare_emp(p, gate_shape, order, defines, opts, Some(generated))?;
     let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
-        resolve::build_program_open_embed_counted(&manifest, entry_id, None, &lopts, opts.layout_pass, &embed);
+        resolve::build_program_open_embed_counted(&manifest, entry_id, None, &lopts, opts.layout_pass, &|_| None);
     bdiags.extend(helper_import_errors_in(&manifest, &removed, &lowered, &bdiags));
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
@@ -694,11 +798,10 @@ pub fn build(project: &Path, shape: &str, opts: &BuildOptions<'_>) -> Result<Bui
 }
 
 /// [`build`] over a loaded [`Project`]. The build reads the checkout and writes what it
-/// generates into its generated root ([`crate::build_dir::with_generated_root`]): the
-/// caller's, when one is in force for this checkout, otherwise a private build directory
-/// removed when the build returns.
+/// generates into its generated root: [`BuildOptions::generated`] when the caller owns
+/// it, otherwise a private build directory removed when the build returns.
 pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<BuildOutput, BuildError> {
-    match crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated, Run::Build))? {
+    match with_generated(p, opts, |generated| build_project_in(p, shape_name, opts, generated, Run::Build))? {
         Outcome::Built(out) => Ok(*out),
         Outcome::Checked(_) => unreachable!("Run::Build returns Outcome::Built"),
     }
@@ -719,10 +822,22 @@ pub struct CheckOutput {
 /// listing, no appendix, no checksum, no ROM. The profile-driven driver's `--check`
 /// (sigil-harness `native::check_chained`) is the same cut of its own pipeline.
 pub fn check_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<CheckOutput, BuildError> {
-    match crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated, Run::Check))? {
+    match with_generated(p, opts, |generated| build_project_in(p, shape_name, opts, generated, Run::Check))? {
         Outcome::Checked(out) => Ok(out),
         Outcome::Built(_) => unreachable!("Run::Check returns Outcome::Checked"),
     }
+}
+
+/// Run `f` with the build's generated root directory: the caller's
+/// ([`BuildOptions::generated`], refused when it lies inside the checkout), else a fresh
+/// private one that lives exactly as long as `f`.
+fn with_generated<T>(p: &Project, opts: &BuildOptions<'_>, f: impl FnOnce(&Path) -> Result<T, BuildError>) -> Result<T, BuildError> {
+    if let Some(g) = opts.generated {
+        crate::build_dir::check_outside(&p.checkout, g).map_err(ctx)?;
+        return f(g);
+    }
+    let dir = crate::build_dir::BuildDir::create().map_err(ctx)?;
+    f(dir.generated())
 }
 
 /// How far [`build_project_in`] runs.
@@ -760,11 +875,16 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let align = AlignTable::new([(engine_origin.as_str(), &p.engine.align[..]), (game_origin.as_str(), &p.game.align[..])]).map_err(ctx)?;
 
     // ── Front ends. ──
-    let resident = if sound { Some(opts.seams.emit_sound(&p.checkout, generated, opts.anchor_overlay.as_ref(), debug).map_err(ctx)?) } else { None };
+    let resident = if sound {
+        let sound_dir = crate::build_dir::sound_dir(generated).map_err(ctx)?;
+        Some(opts.seams.emit_sound(&p.checkout, &sound_dir, opts.anchor_overlay.as_ref(), debug).map_err(ctx)?)
+    } else {
+        None
+    };
     let seeds = entry_seeds(p)?;
     let crate::harvest::AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
-        assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]))?;
-    let EmpSide { program } = build_emp(p, &gate_shape, &pmap.order, &defines, opts)?;
+        assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]), generated)?;
+    let EmpSide { program } = build_emp(p, &gate_shape, &pmap.order, &defines, opts, generated)?;
     let crate::harvest::EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } = program;
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
     let as_code = as_module.named_code_marks();
@@ -884,19 +1004,17 @@ fn plan(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<Plan, 
 
 /// `sigil build --project ... --report name-env` (A4): the name environment of the
 /// program `shape_name` lowers, over the same prepared program the build lowers (the
-/// placed modules, the helper rewrite, the synthetic entry). Nothing is emitted: the
-/// generated root is a fresh, empty one, so an `embed` of a generated artifact fails
-/// loudly rather than reading a stale tree copy (the profile-driven report's rule).
+/// placed modules, the helper rewrite, the synthetic entry). Nothing is emitted, so the
+/// lowering names no generated root: an `embed` of a generated artifact is refused by
+/// name rather than read from anywhere.
 pub fn name_env_report(
     p: &Project,
     shape_name: &str,
     opts: &BuildOptions<'_>,
 ) -> Result<(Vec<resolve::hygiene::NameEnvRow>, Vec<sigil_span::Diagnostic>), BuildError> {
-    crate::build_dir::with_generated_root(&p.checkout, |_| {
-        let Plan { defines, gate_shape, pmap, .. } = plan(p, shape_name, opts)?;
-        let PreparedEmp { manifest, entry_id, lopts, .. } = prepare_emp(p, &gate_shape, &pmap.order, &defines, opts)?;
-        Ok(resolve::name_env_report(&manifest, entry_id, None, &lopts))
-    })
+    let Plan { defines, gate_shape, pmap, .. } = plan(p, shape_name, opts)?;
+    let PreparedEmp { manifest, entry_id, lopts, .. } = prepare_emp(p, &gate_shape, &pmap.order, &defines, opts, None)?;
+    Ok(resolve::name_env_report(&manifest, entry_id, None, &lopts))
 }
 
 /// The shape's define environment as the build uses it ([`merged_defines`] over the
@@ -959,6 +1077,51 @@ fn declares_island(p: &Project, shape: &ResolvedShape, registry: &[ModuleSpec]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// placed ⊆ analysed (G0b Task 9): a placed module scanned under an analysed root
+    /// passes; one tagged with no root, one under a root the closure does not analyse,
+    /// and one in no scanned file are each refused, by name, in one refusal.
+    #[test]
+    fn a_placed_module_outside_the_analysed_roots_is_refused_by_name() {
+        use crate::place::ModuleSpec;
+        use resolve::manifest::{Manifest, ParsedModule};
+        use sigil_span::roots::RootName;
+        let tmp = crate::build_dir::BuildDir::create().unwrap();
+        let root = tmp.path().to_path_buf();
+        let (engine, game, other) = (root.join("engine"), root.join("games/g"), root.join("games/h"));
+        let module = |id: &str, dir: &Path, tag: Option<RootName>| {
+            std::fs::create_dir_all(dir).unwrap();
+            let path = dir.join(format!("{}.emp", id.rsplit('.').next().unwrap()));
+            let src = format!("module {id}\n");
+            std::fs::write(&path, &src).unwrap();
+            ParsedModule { id: id.to_string(), file: sigil_frontend_emp::parse_str(&src).0, path, root: tag }
+        };
+        let modules = vec![
+            module("engine.eng", &engine, Some(RootName::Engine)),
+            module("games.g.gmod", &game, Some(RootName::Game)),
+            module("games.g.synth", &game, None),
+            module("games.h.hmod", &other, Some(RootName::Game)),
+        ];
+        let by_id = modules.iter().enumerate().map(|(i, m)| (m.id.clone(), i)).collect();
+        let manifest = Manifest { modules, by_id, sources: Default::default() };
+        let spec = |id: &str| ModuleSpec { module_id: id.to_string(), section: "s".to_string() };
+        let analysed = vec![engine.clone(), game.clone()];
+
+        check_placed_in_analysed(&[spec("engine.eng"), spec("games.g.gmod")], &manifest, &analysed)
+            .expect("modules under the analysed roots are placed");
+        let err = check_placed_in_analysed(
+            &[spec("engine.eng"), spec("games.g.synth"), spec("games.h.hmod"), spec("games.g.gone"), spec("games.h.hmod")],
+            &manifest,
+            &analysed,
+        )
+        .expect_err("a placed module outside the analysed roots must be refused")
+        .to_string();
+        assert!(err.contains("[gate.placed-not-analysed] 3 placed module(s)"), "{err}");
+        assert!(err.contains("`games.g.synth`"), "a module tagged with no root, {err}");
+        assert!(err.contains(&format!("`games.h.hmod` ({})", other.join("hmod.emp").display())), "{err}");
+        assert!(err.contains("`games.g.gone` (in no scanned file)"), "{err}");
+        assert!(!err.contains("`engine.eng`"), "{err}");
+    }
 
     const ENGINE: &str = r#"format = 1
         helpers = []

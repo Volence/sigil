@@ -16,6 +16,7 @@ fn lower_errors(emp: &str) -> Vec<String> {
         pdiags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -47,6 +48,7 @@ fn unknown_local_label_disp_fails_at_link() {
     let (file, pdiags) = parse_str(src);
     assert!(!pdiags.iter().any(|d| d.level == Level::Error), "parse: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,

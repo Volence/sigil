@@ -414,7 +414,7 @@ pub struct Evaluator<'a> {
     /// `[sandbox.no-root]`. Set via
     /// [`set_include_root`](Self::set_include_root) by the
     /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam.
-    include_root: Option<PathBuf>,
+    include_root: Option<crate::Sandbox>,
     /// The join BASE a relative `embed`/`import` path resolves against
     /// (port #2, `math.emp`'s `embed("../data/sine.bin")`): distinct from
     /// `include_root`, which stays the boundary. `None` means "same as
@@ -1683,7 +1683,7 @@ pub fn eval_expr_in_file_ambient(
 pub fn eval_const_with_root(
     file: &crate::ast::File,
     name: &str,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Option<Value>, Vec<Diagnostic>) {
     eval_const_with_root_and_contracts(
@@ -1703,7 +1703,7 @@ pub fn eval_const_with_root(
 pub fn eval_const_with_root_and_contracts(
     file: &crate::ast::File,
     name: &str,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<Value>, Vec<Diagnostic>) {
@@ -1722,7 +1722,7 @@ pub fn eval_const_with_root_and_contracts(
 pub fn eval_const_in_partial_scope(
     file: &crate::ast::File,
     name: &str,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<Value>, Vec<Diagnostic>) {
@@ -1734,7 +1734,7 @@ pub fn eval_const_in_partial_scope(
 fn eval_const_scoped(
     file: &crate::ast::File,
     name: &str,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
     partial_scope: bool,
@@ -1748,7 +1748,7 @@ fn eval_const_scoped(
         ev.seed_defines(defines);
         ev.seed_interfaces(contracts);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         if let Some(v) = ev.defines.get(name).copied() {
             return (Some(Value::Int(v)), ev.diags);
@@ -1782,14 +1782,14 @@ fn eval_const_scoped(
 /// mutates `file` or emits anything.
 pub fn eval_all_pub_consts(
     file: &crate::ast::File,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> (Vec<(String, i64)>, Vec<Diagnostic>) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let names: Vec<String> = file
             .items
@@ -1836,7 +1836,7 @@ pub struct TestOutcome {
 ///   the body actually said.
 pub fn run_module_tests(
     file: &crate::ast::File,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
 ) -> Vec<TestOutcome> {
     let mut out = Vec::new();
@@ -1862,7 +1862,7 @@ pub fn run_module_tests(
             let mut ev = Evaluator::with_file(file);
             ev.seed_defines(defines);
             if let Some(root) = include_root {
-                ev.set_include_root(root.to_path_buf());
+                ev.set_include_root(root.clone());
             }
             let mut env = Env::new();
             let _ = ev.exec_stmts(&t.body, &mut env);
@@ -1940,16 +1940,10 @@ where
     F: FnOnce() -> T + Send,
     T: Send,
 {
-    // The build's generated root is thread-scoped (crate::generated_root): the evaluation
-    // thread runs under the root of the thread that asked for it.
-    let generated = crate::generated_root::current();
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
             .stack_size(EVAL_STACK_BYTES)
-            .spawn_scoped(scope, move || {
-                let _root = crate::generated_root::inherit(generated);
-                f()
-            })
+            .spawn_scoped(scope, f)
             .expect("failed to spawn comptime evaluation thread");
         match handle.join() {
             Ok(v) => v,

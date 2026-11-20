@@ -20,7 +20,7 @@ fn build_with(files: &[(&str, &str)], pass: LayoutPass) -> BuiltProgram {
         std::fs::write(p, src).unwrap();
     }
     let (manifest, _) = Manifest::scan(dir.path());
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let built = build_program_recorded_with_layouts(&manifest, "app.main", None, &opts, pass);
     let errs: Vec<_> = built.diags.iter().filter(|d| d.level == Level::Error).map(|d| &d.message).collect();
     assert!(errs.is_empty(), "{errs:?}");
@@ -179,7 +179,7 @@ fn an_owner_constant_that_does_not_evaluate_is_a_fault_not_a_gap() {
         std::fs::write(p, src).unwrap();
     }
     let (manifest, _) = Manifest::scan(dir.path());
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let built = build_program_recorded_with_layouts(&manifest, "app.main", None, &opts, LayoutPass::Owner);
     match emp_consts(&built.layouts) {
         Err(EmpExportError::Const { module, name, .. }) => assert_eq!((module.as_str(), name.as_str()), ("app.bad", "BROKEN")),

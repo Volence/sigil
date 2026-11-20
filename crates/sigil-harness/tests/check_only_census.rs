@@ -95,7 +95,7 @@ fn lower_at(path: &str, src: &str) -> (Module, Vec<Diagnostic>, SourceTexts) {
     let mut texts = SourceTexts::new();
     let (file, pdiags) = parse_file(src, texts.add(Path::new(path), src));
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "probe parse: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     (module, ldiags, texts)
 }

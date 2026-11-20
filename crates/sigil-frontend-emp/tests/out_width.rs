@@ -39,6 +39,7 @@ fn lower_diag_messages(src: &str) -> Vec<String> {
     let (_, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

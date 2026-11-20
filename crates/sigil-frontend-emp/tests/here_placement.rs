@@ -24,7 +24,7 @@ use sigil_ir::{LinkAssert, Module, Section, SymbolTable};
 use sigil_span::{Diagnostic, Level};
 
 fn opts() -> LowerOptions {
-    LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] }
+    LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] }
 }
 
 fn errors(diags: &[Diagnostic]) -> Vec<String> {

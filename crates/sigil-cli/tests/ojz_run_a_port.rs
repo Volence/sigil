@@ -176,6 +176,7 @@ fn compile_section(
 
     // embed() paths in these modules are aeon-root-relative.
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: None,

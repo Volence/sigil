@@ -28,7 +28,7 @@ fn build(files: &[(&str, &str)], entry: &str) -> (Vec<Section>, Vec<Diagnostic>)
     let (manifest, mdiags) = Manifest::scan(dir.path());
     assert!(mdiags.iter().all(|d| d.level != Level::Error), "manifest errors: {mdiags:?}");
     let opts =
-        LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+        LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     // The OPEN build path the real aeon conversion uses: a hook's target is a
     // cross-seam symbol the engine module does not `use` (it resolves at the joint
     // link), so unresolved references defer rather than error — exactly like

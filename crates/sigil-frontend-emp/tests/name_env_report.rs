@@ -14,7 +14,7 @@ fn report(files: &[(&str, &str)]) -> Vec<NameEnvRow> {
     let (manifest, d) = Manifest::scan(dir.path());
     assert!(d.iter().all(|d| d.level != Level::Error), "{d:?}");
     let opts =
-        LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+        LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (rows, diags) = name_env_report(&manifest, "main", None, &opts);
     assert!(diags.iter().all(|d| d.level != Level::Error), "{diags:?}");
     rows

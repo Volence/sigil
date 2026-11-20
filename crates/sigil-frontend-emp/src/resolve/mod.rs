@@ -124,7 +124,7 @@ impl ConstFoldCache {
         def_file: &ast::File,
         name: &str,
         defines: &[(String, i128)],
-        include_root: Option<&Path>,
+        include_root: Option<&crate::Sandbox>,
     ) -> Option<i64> {
         let key = (def_id.to_string(), name.to_string());
         if let Some(&hit) = self.by_const.get(&key) {
@@ -215,7 +215,7 @@ fn fold_const_literal(
     def_file: &ast::File,
     name: &str,
     defines: &[(String, i128)],
-    include_root: Option<&Path>,
+    include_root: Option<&crate::Sandbox>,
 ) -> ConstFold {
     // PARTIAL SCOPE: `def_file` alone, without the defining module's own `use`
     // imports, so the D-PP.3 label fallback would be inferring a link symbol from
@@ -464,7 +464,7 @@ pub fn build_ram_report(
     let mut diags: Vec<Diagnostic> = Vec::new();
     // Scoped to THIS report and dropped with it — see `ConstFoldCache`.
     let folds = RefCell::new(ConstFoldCache::default());
-    let mut memo = hygiene::HygieneMemo::new(None, &opts.defines, opts.include_root.as_deref(), &folds);
+    let mut memo = hygiene::HygieneMemo::new(None, &opts.defines, opts.sandbox().as_ref(), &folds);
 
     // Gather each named module, ambient-prepended so its `use`d comptime sizes resolve.
     let mut region_modules: Vec<(&str, ast::File)> = Vec::new();
@@ -586,7 +586,7 @@ pub fn name_env_report(
     let mut diags = Vec::new();
     let folds = RefCell::new(ConstFoldCache::default());
     let mut memo =
-        hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.include_root.as_deref(), &folds);
+        hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.sandbox().as_ref(), &folds);
     let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
     let prelude_pm = prelude_id.and_then(|pid| manifest.by_id.get(pid)).map(|&i| &manifest.modules[i]);
     let mut rows = Vec::new();
@@ -824,7 +824,7 @@ fn build_program_with(
     let folds = RefCell::new(ConstFoldCache::default());
     // A4: the definition-site analysis of every injected comptime item, once per
     // program (scoped to this build like the fold memo).
-    let mut memo = hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.include_root.as_deref(), &folds);
+    let mut memo = hygiene::HygieneMemo::new(prelude_id, &opts.defines, opts.sandbox().as_ref(), &folds);
     // Deferred link-time assertions (D-H.4) from every reachable module,
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
@@ -1097,7 +1097,7 @@ fn build_program_with(
         // Zero-clone common path when nothing is injected; `region_ends` is empty for
         // region-free builds.
         let (mut module, ldiags) = lower_one(view, &mut expansions);
-        layouts.record_importer(view, &source_home, &opts.defines, &iface_env, opts.include_root.as_deref(), layout_pass);
+        layouts.record_importer(view, &source_home, &opts.defines, &iface_env, opts.sandbox().as_ref(), layout_pass);
         // A diagnostic about a spliced line names the line as WRITTEN, the template
         // body, exactly as before splices recorded expansions: the expansion ids are
         // for the build export's line table, and they never reach the diagnostics

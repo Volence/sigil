@@ -225,6 +225,7 @@ fn place_controllers_with_asserts(src: &str, base: &str) -> (Vec<Section>, Vec<s
         docs: file.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(engine_system_dir()),
         embed_base: None,
@@ -324,6 +325,7 @@ fn place_math(src: &str, base: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon_dir().join("engine")),
         embed_base: Some(aeon_dir()),

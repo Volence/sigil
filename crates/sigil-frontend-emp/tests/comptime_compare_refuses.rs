@@ -50,7 +50,7 @@ fn errors(src: &str) -> Vec<String> {
     assert!(perrs.is_empty(), "expected a clean parse, got {perrs:?}");
     let (_module, diags): (_, Vec<Diagnostic>) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     diags.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect()
 }

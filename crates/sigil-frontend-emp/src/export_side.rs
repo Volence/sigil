@@ -392,7 +392,7 @@ impl ProgramLayouts {
         home: &HashMap<SourceId, String>,
         defines: &[(String, i128)],
         contracts: &crate::contract::InterfaceEnv,
-        include_root: Option<&std::path::Path>,
+        include_root: Option<&crate::Sandbox>,
         pass: LayoutPass,
     ) {
         if pass == LayoutPass::Off {
@@ -470,7 +470,7 @@ fn resolve_importer(
     home: &HashMap<SourceId, String>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     owner_only: bool,
     skew: bool,
 ) -> Vec<Seen> {
@@ -480,7 +480,7 @@ fn resolve_importer(
     ev.seed_defines(defines);
     ev.seed_interfaces(contracts);
     if let Some(root) = include_root {
-        ev.set_include_root(root.to_path_buf());
+        ev.set_include_root(root.clone());
     }
     // `(declaring module, plain name)` of an item, from its home span or hidden spelling.
     let key = |span: Span, name: &str| -> Option<(String, String, bool)> {

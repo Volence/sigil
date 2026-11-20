@@ -38,7 +38,7 @@ fn lower_module_with_include_root_resolves_embed() {
 
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), embed_base: None, defines: vec![] },
     );
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
@@ -58,7 +58,7 @@ fn lower_module_without_include_root_reports_no_root() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[sandbox.no-root]")),
         "expected [sandbox.no-root], got {diags:?}"
@@ -74,7 +74,7 @@ fn eval_data_captures_records_exactly_one_edge_with_pinned_hash() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
     let (buf, captures, diags) =
-        eval_data_captures(&file, "X", None, Some(&vectors_dir()));
+        eval_data_captures(&file, "X", None, Some(&sigil_frontend_emp::Sandbox::from(vectors_dir())));
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(buf.expect("data buf").size, 12);
 
@@ -99,8 +99,8 @@ fn eval_data_captures_is_deterministic_across_runs() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (buf1, captures1, diags1) = eval_data_captures(&file, "X", None, Some(&vectors_dir()));
-    let (buf2, captures2, diags2) = eval_data_captures(&file, "X", None, Some(&vectors_dir()));
+    let (buf1, captures1, diags1) = eval_data_captures(&file, "X", None, Some(&sigil_frontend_emp::Sandbox::from(vectors_dir())));
+    let (buf2, captures2, diags2) = eval_data_captures(&file, "X", None, Some(&sigil_frontend_emp::Sandbox::from(vectors_dir())));
 
     assert!(diags1.is_empty() && diags2.is_empty());
     assert_eq!(buf1.expect("buf1").cells, buf2.expect("buf2").cells);

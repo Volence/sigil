@@ -1243,6 +1243,7 @@ fn compile_emp(
     }
     diags.extend(single_file_import_errors(&file));
     let opts = sigil_frontend_emp::lower::LowerOptions {
+        roots: None,
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: include_root.map(std::path::Path::to_path_buf),
         embed_base: None,
@@ -1552,7 +1553,7 @@ fn run_test(entry: &Entry, args: &[String]) {
             }
         };
         let results =
-            sigil_frontend_emp::eval::run_module_tests(&file, include_root.as_deref(), &defines);
+            sigil_frontend_emp::eval::run_module_tests(&file, include_root.map(sigil_frontend_emp::Sandbox::Dir).as_ref(), &defines);
         let mut map = sigil_span::SourceMap::new();
         map.add(src.clone());
         for r in results {
@@ -1752,6 +1753,7 @@ fn run_emp_program(
 
     let include_root = std::fs::canonicalize(root_dir).ok();
     let opts = sigil_frontend_emp::lower::LowerOptions {
+        roots: None,
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root,
         embed_base: None,
@@ -1963,6 +1965,7 @@ fn run_ram_report_over(aeon: &std::path::Path, label: &str, defines: &[(String, 
     let manifest = scan_or_exit(aeon);
 
     let opts = sigil_frontend_emp::lower::LowerOptions {
+        roots: None,
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: std::fs::canonicalize(aeon).ok(),
         embed_base: None,
@@ -1991,8 +1994,15 @@ fn run_ram_report_over(aeon: &std::path::Path, label: &str, defines: &[(String, 
 /// goes through the one `SIGIL_WARNINGS` channel. A report that swallows the
 /// manifest's warnings shows a cleaner tree than the build does.
 fn scan_or_exit(aeon: &std::path::Path) -> sigil_frontend_emp::resolve::manifest::Manifest {
-    use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
-    let (manifest, mdiags) = Manifest::scan(aeon);
+    scanned_or_exit(sigil_frontend_emp::resolve::manifest::Manifest::scan(aeon))
+}
+
+/// [`scan_or_exit`] over a scan already made (a `--project` shape's named roots).
+fn scanned_or_exit(
+    scanned: (sigil_frontend_emp::resolve::manifest::Manifest, Vec<sigil_span::Diagnostic>),
+) -> sigil_frontend_emp::resolve::manifest::Manifest {
+    use sigil_frontend_emp::resolve::manifest::SourceIndex;
+    let (manifest, mdiags) = scanned;
     let errors: Vec<_> =
         mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
     render_program_diags(&manifest, &errors);
@@ -2220,7 +2230,12 @@ fn corpus_closure_or_exit(
     use sigil_frontend_emp::corpus_contracts;
 
     let defines = &subject.defines;
-    let manifest = scan_or_exit(aeon);
+    // A `--project` shape scans its two named roots and nothing else (G0b Task 9): another
+    // game's sources are not even parsed. The profile-driven driver walks the checkout.
+    let manifest = match &subject.scan {
+        Some(roots) => scanned_or_exit(sigil_frontend_emp::resolve::manifest::Manifest::scan_roots(roots)),
+        None => scan_or_exit(aeon),
+    };
 
     // The corpus: for the profile-driven driver, every module the scan finds, both games
     // and any fixture (`--report contracts`'s documented SCOPE above); for a game-as-data
@@ -2274,6 +2289,9 @@ struct ClosureSubject {
     /// ([`sigil_build::driver::Project::closure_roots`], G0b Task 9a); the profile-driven
     /// driver analyses the whole scan.
     roots: Option<Vec<std::path::PathBuf>>,
+    /// The named roots a `--project` shape scans ([`sigil_build::driver::Project::scan_roots`],
+    /// G0b Task 9), or `None` to walk the whole checkout (the profile-driven driver).
+    scan: Option<Vec<(sigil_span::roots::RootName, std::path::PathBuf)>>,
     /// The game's own source directory (`--closure-scope game` takes it as the game root).
     game_root: std::path::PathBuf,
     baseline: sigil_harness::contract_baseline::ShapeBaseline,
@@ -2314,6 +2332,7 @@ fn target_subject(aeon: &std::path::Path, target: &BuildTarget) -> ClosureSubjec
         defines: shape_defines_or_exit(&profile, aeon),
         game_prefix: profile.game_module_prefix().to_string(),
         roots: None,
+        scan: None,
         baseline: sigil_harness::contract_baseline::ShapeBaseline::for_profile(&profile),
         label,
     }
@@ -2335,6 +2354,7 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
         defines,
         game_prefix: project.game_prefix().to_string(),
         roots: Some(project.closure_roots()),
+        scan: Some(project.scan_roots()),
         game_root: project.sources_root(),
         baseline: sigil_harness::contract_baseline::ShapeBaseline {
             z80_out_unverified: b.z80_out_unverified,
@@ -3551,6 +3571,7 @@ fn project_build_options<'a>(
         },
         seams,
         env,
+        generated: None,
     }
 }
 
@@ -3629,7 +3650,7 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
             std::process::exit(1);
         }
     };
-    let generated = match build_dir.root_for(&project.checkout) {
+    let generated = match sigil_harness::export_files::GeneratedRoot::new(build_dir.generated(), &project.engine_dir) {
         Ok(r) => r,
         Err(err) => {
             drop(build_dir);
@@ -3637,12 +3658,11 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
             std::process::exit(1);
         }
     };
-    let generated_scope = sigil_frontend_emp::generated_root::enter(generated.clone());
     let sidecar = !opts.no_build_json;
     let seams = sigil_harness::driver_seams::HarnessSeams;
-    let bopts = project_build_options(opts, anchor_overlay, &seams, &env);
+    let mut bopts = project_build_options(opts, anchor_overlay, &seams, &env);
+    bopts.generated = Some(build_dir.generated());
     let built = driver::build_project(project, &opts.shape, &bopts);
-    drop(generated_scope);
     drop(build_dir);
     let out = match built {
         Ok(o) => o,
@@ -3664,6 +3684,7 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
         &out.listing,
         &out.export_inputs,
         &generated,
+        &[(sigil_link::DigestRoot::Engine, project.engine_dir.clone()), (sigil_link::DigestRoot::Game, project.sources_root())],
     );
     println!(
         "Built {} ({} bytes, assembled {}, {} warning(s)) from {} shape `{}`",
@@ -3907,7 +3928,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     };
-    let generated = match build_dir.root_for(aeon) {
+    let generated = match sigil_harness::export_files::GeneratedRoot::new(build_dir.generated(), &aeon.join("engine")) {
         Ok(r) => r,
         Err(err) => {
             drop(build_dir);
@@ -3915,7 +3936,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     };
-    let generated_scope = sigil_frontend_emp::generated_root::enter(generated.clone());
+    let gen_dir = build_dir.generated().to_path_buf();
 
     // The LABEL comes from the same place the reports read it, so a build and a
     // report over one target can never name it differently.
@@ -3928,8 +3949,9 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     let extra = &opts.extra_entries;
     // The export's layout registry is computed only for a build that will write a sidecar.
     let pass = layout_pass_for(opts);
-    let with_extra =
-        |p: native::GameProfile| p.with_extra_entries(extra.iter().cloned()).with_layout_pass(pass);
+    let with_extra = |p: native::GameProfile| {
+        p.with_extra_entries(extra.iter().cloned()).with_layout_pass(pass).with_generated(gen_dir.clone())
+    };
     // `--anchor-overlay` also rides the profile. Parse-time refusals keep it to the
     // `--game` shapes, the only arms that apply it; with it, canonical sonic4 leaves
     // its own entry point for the chainer, as with an extra entry.
@@ -3942,7 +3964,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         BuildTarget::Sonic4 { debug } if extra.is_empty() && opts.anchor_overlay.is_none() => (
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_native_rom_with_listing_pass(aeon, *debug, pass),
+            native::build_native_rom_with_listing_in(aeon, *debug, pass, Some(&gen_dir)),
         ),
         BuildTarget::Sonic4 { debug } => (
             *debug,
@@ -3988,7 +4010,6 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
         ),
     };
-    drop(generated_scope);
     drop(build_dir);
     let native::RomBuild { rom, listing, warnings, registry, export_inputs } = match built {
         Ok(build) => build,
@@ -4049,7 +4070,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         emit_lst: opts.emit_lst.as_deref(),
         sidecar: writes_sidecar(opts),
     };
-    write_build_artifacts(aeon, &label, &identity, &artifacts, &full, assembled_len, &listing, &export_inputs, &generated);
+    write_build_artifacts(aeon, &label, &identity, &artifacts, &full, assembled_len, &listing, &export_inputs, &generated, &[]);
     println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
@@ -4109,7 +4130,8 @@ fn write_build_artifacts(
     assembled_len: usize,
     listing: &[sigil_link::ListingSymbol],
     export_inputs: &sigil_link::export::ExportInputs,
-    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
+    generated: &sigil_harness::export_files::GeneratedRoot,
+    named_roots: &[(sigil_link::DigestRoot, std::path::PathBuf)],
 ) {
     // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested, opens with
     // the source digest, which names the FULL shipped file above, appendix included. So
@@ -4118,7 +4140,7 @@ fn write_build_artifacts(
     // The digest is rendered before either artifact is written, so a read set that
     // cannot be stated (a file that changed while the build read it) leaves neither.
     let digest = match arts.emit_lst {
-        Some(_) => match lst_source_digest(aeon, identity, arts.output, full, generated) {
+        Some(_) => match lst_source_digest(aeon, named_roots, identity, arts.output, full, generated) {
             Ok(section) => Some(section),
             Err(err) => {
                 eprintln!("error: native build ({label}) source digest: {err}");
@@ -4257,7 +4279,7 @@ fn export_shape_names(target: &BuildTarget) -> (String, String) {
 fn prepare_export(
     aeon: &std::path::Path,
     identity: &BuildIdentity,
-    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
+    generated: &sigil_harness::export_files::GeneratedRoot,
 ) -> Result<ExportParts, String> {
     use sigil_link::export::*;
     let defines_wide = &identity.defines;
@@ -4342,10 +4364,11 @@ fn to_u32(n: usize, what: &str) -> Result<u32, String> {
 /// build configuration, and the identity of the ROM about to be written to `-o`.
 fn lst_source_digest(
     aeon: &std::path::Path,
+    named_roots: &[(sigil_link::DigestRoot, std::path::PathBuf)],
     identity: &BuildIdentity,
     output: Option<&str>,
     full: &[u8],
-    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
+    generated: &sigil_harness::export_files::GeneratedRoot,
 ) -> Result<String, String> {
     use sigil_harness::source_digest;
 
@@ -4353,6 +4376,7 @@ fn lst_source_digest(
     let snapshot = sigil_harness::export_files::mount_generated(&sigil_span::read_set::snapshot(), generated)?;
     let digest = source_digest::source_digest(
         aeon,
+        named_roots,
         &source_digest::AssemblerIdentity {
             version: env!("CARGO_PKG_VERSION"),
             revision: env!("SIGIL_REVISION"),

@@ -137,6 +137,7 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(mt_embed_root(&src)),
         embed_base: None,
@@ -227,6 +228,7 @@ fn table_length_mismatch_in_mt_style_dual_table_composition_is_clean_error() {
     let (_module, ldiags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
@@ -267,6 +269,7 @@ fn missing_debug_define_is_a_clean_unknown_name_error_not_a_panic() {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(mt_embed_root(&src)),
         embed_base: None,

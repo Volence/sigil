@@ -141,6 +141,7 @@ fn compile(debug: bool) -> sigil_link::LinkedImage {
         "vectors.emp parse errors: {pdiags:?}"
     );
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/system")),
         embed_base: None,
@@ -221,6 +222,7 @@ fn compile_comma_list(vmas: [u32; 4]) -> Vec<u8> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "probe parse: {pdiags:?}");
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -298,6 +300,7 @@ fn vector_labels_resolve_to_error_handler_emp() {
     let (v_mod, _) = lower_module(
         &v_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/system")),
             embed_base: None,
@@ -312,6 +315,7 @@ fn vector_labels_resolve_to_error_handler_emp() {
     let (eh_mod, _) = lower_module(
         &eh_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/debug")),
             embed_base: None,

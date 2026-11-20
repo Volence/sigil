@@ -13,7 +13,6 @@ pub mod cycle_budget;
 pub mod export_side;
 pub mod eval;
 pub mod flag_check;
-pub mod generated_root;
 pub mod layout;
 pub mod lexer;
 pub mod lower;
@@ -34,6 +33,32 @@ pub mod z80_cycles;
 pub mod z80_out_verify;
 
 use sigil_span::{Diagnostic, SourceId};
+
+/// Where a comptime file read (`embed`/`import`) resolves: one directory every path
+/// joins (the single-root form, for `sigil emp --root`, a seam's own sound directory and
+/// single-module port tests), or a build's named roots (G0b Task 9,
+/// [`sigil_span::roots`]). The build's `generated` root is one of the named roots, so a
+/// build's generated files are reached only through a lowering's own options, never
+/// through state outside them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Sandbox {
+    /// One directory: a relative path joins it (or the lowering's `embed_base`).
+    Dir(std::path::PathBuf),
+    /// Named roots: a path names its root by its first segment.
+    Roots(std::sync::Arc<sigil_span::roots::SourceRoots>),
+}
+
+impl From<std::path::PathBuf> for Sandbox {
+    fn from(dir: std::path::PathBuf) -> Sandbox {
+        Sandbox::Dir(dir)
+    }
+}
+
+impl From<&std::path::Path> for Sandbox {
+    fn from(dir: &std::path::Path) -> Sandbox {
+        Sandbox::Dir(dir.to_path_buf())
+    }
+}
 
 /// Convenience entry: lex + parse one source string as `SourceId(0)`.
 pub fn parse_str(src: &str) -> (ast::File, Vec<Diagnostic>) {

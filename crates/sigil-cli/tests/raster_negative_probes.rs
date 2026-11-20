@@ -230,6 +230,7 @@ fn compile(
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(raster_dir()),
         embed_base: None,

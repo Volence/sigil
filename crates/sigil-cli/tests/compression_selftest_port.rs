@@ -123,7 +123,7 @@ fn scanned_manifest(aeon: &Path, doctor_sum: Option<&str>) -> (Manifest, String)
     let idx = manifest.modules.len();
     manifest.by_id.insert(entry_id.clone(), idx);
     manifest.sources.insert(source, aeon.join("__compression_selftest_gate_entry__.emp"));
-    manifest.modules.push(ParsedModule {
+    manifest.modules.push(ParsedModule { root: None,
         id: entry_id.clone(),
         file,
         path: aeon.join("__compression_selftest_gate_entry__.emp"),
@@ -145,6 +145,7 @@ fn compile_at(
     let (manifest, entry_id) = scanned_manifest(&aeon, doctor_sum);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: Some(aeon.clone()),

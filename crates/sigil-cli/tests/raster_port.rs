@@ -275,6 +275,7 @@ pub fn compile_real_file(debug: bool, carriers_override: Option<Vec<Section>>) -
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

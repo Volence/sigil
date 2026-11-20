@@ -321,6 +321,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let enemy_file = with_ambient(vec![types(), sst(), constants()], enemy);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/objects")),
         embed_base: None,

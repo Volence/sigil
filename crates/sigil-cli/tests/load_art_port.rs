@@ -240,6 +240,7 @@ fn compile_real_file(
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
@@ -386,6 +387,7 @@ fn flip_lower(
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,

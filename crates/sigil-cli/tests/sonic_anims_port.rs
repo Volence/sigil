@@ -161,6 +161,7 @@ fn compile_real_file(
     };
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
@@ -332,6 +333,7 @@ fn rep_helper_compiles_and_repeats() {
         docs: file.docs.clone(),
     };
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

@@ -234,6 +234,7 @@ fn compile_real_file(
     // synthetic AS equ seam (as_constant_equs). Z80_RAM (engine.constants) is the
     // base of SND_Z80_BASE — the auto-glob provides it in the real build.
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,

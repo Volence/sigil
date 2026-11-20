@@ -209,6 +209,11 @@ pub struct Options {
     /// Directory that `include` paths resolve against. Set automatically by
     /// [`assemble_root`] from the root file's parent when left `None`.
     pub include_root: Option<std::path::PathBuf>,
+    /// The build's named roots (G0b Task 9, [`sigil_span::roots`]). When set, an
+    /// `include`/`BINCLUDE` path names its root by its first segment (`engine/...`,
+    /// `game/...`, `generated/...`) and resolves there, and `include_root` is not
+    /// consulted; a path the root rule refuses is an error naming the rule.
+    pub roots: Option<std::sync::Arc<sigil_span::roots::SourceRoots>>,
     /// Whether the caller writes a share file, asl's `-c`. With it, each
     /// `shared` directive records its symbols in [`Assembled::shared`]; without
     /// it, each `shared` line is a warning that nothing was shared, as asl

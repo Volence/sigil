@@ -72,7 +72,7 @@ section s (cpu: m68000) {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

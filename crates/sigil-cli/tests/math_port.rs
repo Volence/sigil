@@ -219,6 +219,7 @@ fn compile_real_file(aeon: &Path, debug: bool) -> (Vec<Section>, sigil_link::Lin
     // boundary); embed_base = the module's OWN dir (`engine/system/`, the
     // join point) — see `math_include_root`/`math_embed_base`'s docs.
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(math_include_root(aeon)),
         embed_base: Some(math_embed_base(aeon)),

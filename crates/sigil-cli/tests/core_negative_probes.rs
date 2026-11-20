@@ -149,6 +149,7 @@ fn cross_seam_groups() -> Vec<Vec<Section>> {
 fn place_core(src: &str, base: &str) -> Vec<Section> {
     let file = core_with_ambient(src);
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(core_dir()),
         embed_base: None,

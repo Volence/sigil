@@ -60,8 +60,8 @@ impl<'a> Evaluator<'a> {
     /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam
     /// calls this before resolving a data item, mirroring
     /// [`set_here_base`](Self::set_here_base)'s per-evaluation setter pattern.
-    pub(crate) fn set_include_root(&mut self, root: PathBuf) {
-        self.include_root = Some(root);
+    pub(crate) fn set_include_root(&mut self, root: impl Into<crate::Sandbox>) {
+        self.include_root = Some(root.into());
     }
 
     /// Set the join BASE relative `embed`/`import` paths resolve against
@@ -89,12 +89,16 @@ impl<'a> Evaluator<'a> {
     /// itself canonicalized, so a root reached via a symlink still contains
     /// every path resolved against it).
     pub(crate) fn resolve_sandbox_path(&mut self, path: &str, span: Span) -> Option<PathBuf> {
-        let Some(root) = self.include_root.clone() else {
-            self.error(
-                span,
-                "[sandbox.no-root] embed/import needs a source directory to resolve paths against",
-            );
-            return None;
+        let root = match self.include_root.clone() {
+            None => {
+                self.error(
+                    span,
+                    "[sandbox.no-root] embed/import needs a source directory to resolve paths against",
+                );
+                return None;
+            }
+            Some(crate::Sandbox::Roots(roots)) => return self.resolve_rooted_path(&roots, path, span),
+            Some(crate::Sandbox::Dir(root)) => root,
         };
         let candidate = Path::new(path);
         if candidate.is_absolute() {
@@ -140,16 +144,6 @@ impl<'a> Evaluator<'a> {
             );
             return None;
         }
-        // The build's generated root (crate::generated_root): a path under its mount
-        // names a file the build generated, which lives in the build's own directory
-        // outside the tree. It resolves there and only there, so neither a missing
-        // generated file nor a stale copy an earlier process left in the tree can stand
-        // in for this build's output.
-        if let Some(generated) = crate::generated_root::current() {
-            if let Some(file) = generated.redirect(&resolved) {
-                return Some(file);
-            }
-        }
         // Symlink containment (T5, closing T1-review finding #1): the LEXICAL
         // check above only catches a `..`-escape written directly in `path` —
         // it says nothing about a symlink INSIDE the root whose target points
@@ -175,6 +169,57 @@ impl<'a> Evaluator<'a> {
                     self.error(
                         span,
                         "[sandbox.path-escape] embed/import path must stay within the source directory",
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(resolved)
+    }
+
+    /// [`resolve_sandbox_path`](Self::resolve_sandbox_path) under a build's named roots
+    /// (G0b Task 9, [`sigil_span::roots`]): the path names its root by its first
+    /// segment and resolves inside that root and nowhere else, so the build's generated
+    /// files are read from the build's own `generated` root, and a missing one is a
+    /// missing file, never a fall-back to a copy somewhere in a source tree. A refusal is
+    /// the root rule's own diagnostic.
+    ///
+    /// The file is the CANONICAL root directory joined with the rest of the path (as the
+    /// single-directory form returns the canonical root joined with the path), and an
+    /// existing file must still canonicalize inside that directory, so a symlink inside a
+    /// root cannot reach out of it.
+    fn resolve_rooted_path(
+        &mut self,
+        roots: &sigil_span::roots::SourceRoots,
+        path: &str,
+        span: Span,
+    ) -> Option<PathBuf> {
+        use sigil_span::roots::Located;
+        let located = match roots.locate(path) {
+            Ok(l) => l,
+            Err(msg) => {
+                self.error(span, msg);
+                return None;
+            }
+        };
+        let (dir, rel): (PathBuf, PathBuf) = match &located {
+            Located::Root { root, rel, .. } => {
+                (roots.dir(*root).expect("a located root exists").to_path_buf(), PathBuf::from(rel))
+            }
+            Located::Tree { file } => {
+                let tree = roots.tree().expect("a tree path has a tree").to_path_buf();
+                let rel = file.strip_prefix(&tree).map(Path::to_path_buf).unwrap_or_else(|_| file.clone());
+                (tree, rel)
+            }
+        };
+        let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+        let resolved = dir.join(rel);
+        if resolved.exists() {
+            if let Ok(canon) = std::fs::canonicalize(&resolved) {
+                if !canon.starts_with(&dir) {
+                    self.error(
+                        span,
+                        format!("[root.escape] `{path}` is a link that leads out of the root it names"),
                     );
                     return None;
                 }
@@ -720,35 +765,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    /// The build's generated root: a path under its mount resolves into the generated
-    /// directory, even when the tree carries a file of the same name (a stale copy an
-    /// earlier process left), and a path beside the mount still resolves in the tree.
+    /// Named roots (G0b Task 9): a `generated/` path reads the build's generated root
+    /// even when a source tree carries a file of that name (a stale copy an earlier
+    /// process left at the old mount), a missing generated file stays missing, and the
+    /// old mount spelling is an ordinary engine path.
     #[test]
-    fn resolve_sandbox_path_under_the_generated_mount_reads_the_generated_dir() {
+    fn a_generated_path_reads_the_generated_root_and_nothing_else() {
         let scratch = scratch_dir("generated-root");
         let tree = scratch.join("tree");
         let in_tree = tree.join("engine/sound/generated");
         let gen = scratch.join("build/generated");
         std::fs::create_dir_all(&in_tree).expect("create tree mount dir");
-        std::fs::create_dir_all(&gen).expect("create generated dir");
+        std::fs::create_dir_all(tree.join("games/g")).expect("create game dir");
+        std::fs::create_dir_all(gen.join("sound")).expect("create generated dir");
         std::fs::write(in_tree.join("blob.bin"), b"stale").expect("write stale");
-        std::fs::write(gen.join("blob.bin"), b"fresh").expect("write fresh");
-        std::fs::write(tree.join("engine/sound/beside.bin"), b"tree").expect("write beside");
+        std::fs::write(gen.join("sound/blob.bin"), b"fresh").expect("write fresh");
         let tree = std::fs::canonicalize(&tree).unwrap();
         let gen = std::fs::canonicalize(&gen).unwrap();
+        let roots = sigil_span::roots::SourceRoots::new(tree.join("engine"), tree.join("games/g"))
+            .with_generated(gen.clone())
+            .with_tree(tree.clone());
 
-        let _root = crate::generated_root::enter(crate::generated_root::GeneratedRoot {
-            mount: tree.join("engine/sound/generated"),
-            dir: gen.clone(),
-        });
         let mut ev = Evaluator::new();
-        ev.set_include_root(tree.clone());
-        let got = ev.resolve_sandbox_path("engine/sound/generated/blob.bin", span()).expect("resolves");
-        assert_eq!(got, gen.join("blob.bin"));
-        let missing = ev.resolve_sandbox_path("engine/sound/generated/absent.bin", span()).expect("resolves");
-        assert_eq!(missing, gen.join("absent.bin"), "a missing generated file must not fall back to the tree");
-        let beside = ev.resolve_sandbox_path("engine/sound/beside.bin", span()).expect("resolves");
-        assert_eq!(beside, tree.join("engine/sound/beside.bin"));
+        ev.set_include_root(crate::Sandbox::Roots(std::sync::Arc::new(roots)));
+        let got = ev.resolve_sandbox_path("generated/sound/blob.bin", span()).expect("resolves");
+        assert_eq!(got, gen.join("sound/blob.bin"));
+        let missing = ev.resolve_sandbox_path("generated/sound/absent.bin", span()).expect("resolves");
+        assert_eq!(missing, gen.join("sound/absent.bin"), "a missing generated file must not fall back to a tree");
+        let old = ev.resolve_sandbox_path("engine/sound/generated/blob.bin", span()).expect("resolves");
+        assert_eq!(old, tree.join("engine/sound/generated/blob.bin"), "no mount: the old spelling is an engine path");
         assert!(ev.diags.is_empty(), "{:?}", ev.diags);
 
         let _ = std::fs::remove_dir_all(&scratch);

@@ -200,6 +200,7 @@ fn compile_real_file(
     let file = with_ambient(vec![types, sst, frame_piece_count(&aeon)], dplc);
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
@@ -404,6 +405,7 @@ fn flip_lower_and_place(
     let main = parse_file(emp_path);
     let file = with_ambient(ambient, main);
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,

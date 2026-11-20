@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 pub mod phase;
 pub mod read_set;
+pub mod roots;
 
 /// The bit that marks a [`SourceId`] as an EXPANSION rather than a file. File
 /// ids count up from 0 in the order files are added, so they never reach it,

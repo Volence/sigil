@@ -47,6 +47,7 @@ fn build(text: &str) -> (Vec<Row>, BuiltProgram, ChainSources) {
     let (manifest, mdiags) = Manifest::scan(dir.path());
     assert!(mdiags.iter().all(|d| d.level != Level::Error), "scan: {mdiags:?}");
     let opts = sigil_frontend_emp::lower::LowerOptions {
+        roots: None,
         initial_cpu: sigil_ir::backend::Cpu::M68000,
         include_root: None,
         embed_base: None,
@@ -265,6 +266,7 @@ fn a_diagnostic_inside_a_spliced_template_names_the_written_line() {
     std::fs::write(dir.path().join("m.emp"), BAD_IN_TEMPLATE).unwrap();
     let (manifest, _) = Manifest::scan(dir.path());
     let opts = sigil_frontend_emp::lower::LowerOptions {
+        roots: None,
         initial_cpu: sigil_ir::backend::Cpu::M68000,
         include_root: None,
         embed_base: None,

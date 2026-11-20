@@ -12,7 +12,7 @@ fn errs(body: &str) -> Vec<String> {
     if perrs.iter().any(|d| d.level == Level::Error) {
         return perrs.iter().filter(|d| d.level == Level::Error).map(|d| format!("PARSE: {}", d.message)).collect();
     }
-    let (_m, ds) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
+    let (_m, ds) = lower_module(&file, &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     ds.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect()
 }
 
@@ -253,6 +253,7 @@ fn errs_m68k(body: &str) -> Vec<String> {
     let (_m, ds) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

@@ -14,7 +14,7 @@ fn lower(src: &str) -> (Module, Vec<String>) {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+        &LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     );
     (module, diags.into_iter().map(|d| d.message).collect())
 }

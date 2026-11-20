@@ -38,7 +38,7 @@ pub(crate) fn eval_item_guard(
     file: &crate::ast::File,
     decl: &crate::ast::EnsureDecl,
     here: crate::layout::HerePos,
-    include_root: Option<&std::path::Path>,
+    include_root: Option<&crate::Sandbox>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> ItemGuardOutcome {
@@ -58,7 +58,7 @@ pub(crate) fn eval_item_guard(
         ev.seed_interfaces(contracts);
         ev.apply_here_pos(Some(here));
         if let Some(root) = include_root {
-            ev.set_include_root(root.to_path_buf());
+            ev.set_include_root(root.clone());
         }
         let mut env = Env::new();
         let _ = ev.eval_expr(&decl.call, &mut env);

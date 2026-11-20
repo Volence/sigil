@@ -21,6 +21,7 @@ fn lower(src: &str) -> Vec<Diagnostic> {
     let (_module, diags) = lower_module(
         &file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,

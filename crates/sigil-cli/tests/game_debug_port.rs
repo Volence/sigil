@@ -147,6 +147,7 @@ fn compile_emp() -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAs
     ];
     defines.extend(id_defines());
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
@@ -261,6 +262,7 @@ fn two_module_flip_resolves_debug_music_toggle() {
     let (gl_mod, gld) = lower_module_with_contracts(
         &gl_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/system")),
             embed_base: None,
@@ -275,6 +277,7 @@ fn two_module_flip_resolves_debug_music_toggle() {
     let (gd_mod, gdd) = lower_module(
         &gd_file,
         &LowerOptions {
+            roots: None,
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("games/sonic4/debug")),
             embed_base: None,

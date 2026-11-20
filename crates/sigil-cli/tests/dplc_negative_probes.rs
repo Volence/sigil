@@ -133,6 +133,7 @@ fn as_queue_dma_labels() -> Vec<Section> {
 fn place_dplc(src: &str, base: &str) -> Vec<Section> {
     let file = dplc_with_ambient(src);
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dplc_dir()),
         embed_base: None,

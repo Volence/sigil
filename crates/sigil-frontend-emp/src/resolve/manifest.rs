@@ -18,6 +18,11 @@ pub struct ParsedModule {
     pub file: ast::File,
     /// Path the module was read from.
     pub path: PathBuf,
+    /// The named root the module was scanned under ([`Manifest::scan_roots`], G0b Task
+    /// 9), which is what a build's scope asks about: the module's identity follows its
+    /// root, never its id's prefix. `None` for a single-directory [`Manifest::scan`] and
+    /// for a module a caller synthesizes.
+    pub root: Option<sigil_span::roots::RootName>,
 }
 
 /// An index of every `.emp` module found under a root directory, keyed by
@@ -48,9 +53,6 @@ impl Manifest {
     /// over the sorted file list) so downstream diagnostics keyed to a module's
     /// header span resolve to the right file via [`Manifest::sources`].
     pub fn scan(root: &Path) -> (Manifest, Vec<Diagnostic>) {
-        let mut modules = Vec::new();
-        let mut by_id = HashMap::new();
-        let mut sources = HashMap::new();
         let mut diags = Vec::new();
         let mut files = Vec::new();
         collect_emp(root, root, &mut files, &mut diags);
@@ -59,7 +61,71 @@ impl Manifest {
         // under the root later changes the next build without changing any file
         // this one read.
         sigil_span::read_set::record_scan(root, &files);
-        for (i, path) in files.iter().enumerate() {
+        let walked: Vec<(Option<sigil_span::roots::RootName>, &Path, PathBuf)> =
+            files.into_iter().map(|f| (None, root, f)).collect();
+        Self::parse_walked(walked, diags)
+    }
+
+    /// Scan each of a build's named roots (G0b Task 9, spec §5.3): every `*.emp` under
+    /// each root, the roots in the order given and each root's files sorted, each module
+    /// tagged with the root it came from ([`ParsedModule::root`]). Nothing outside the
+    /// roots is read, so a game's build never parses another game's sources or a fixture
+    /// elsewhere in the engine's checkout. A module id declared under two roots is the
+    /// ordinary `declared twice` error.
+    ///
+    /// Refused, as an error diagnostic and an empty manifest: a root named twice, and a
+    /// root inside another (its files would be scanned twice, under two roots).
+    pub fn scan_roots(roots: &[(sigil_span::roots::RootName, PathBuf)]) -> (Manifest, Vec<Diagnostic>) {
+        let mut diags = Vec::new();
+        let canon: Vec<PathBuf> = roots.iter().map(|(_, d)| sigil_span::read_set::canonical(d)).collect();
+        for (i, (a, da)) in roots.iter().enumerate() {
+            for (j, (b, db)) in roots.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                if a == b && i < j {
+                    diags.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!("[root.twice] the `{a}` root is named twice ({} and {})", da.display(), db.display()),
+                        primary: no_span(),
+                    });
+                } else if canon[i].starts_with(&canon[j]) && a != b {
+                    diags.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "[root.nested] the `{a}` root {} lies inside the `{b}` root {}, so its modules would be scanned under both",
+                            da.display(),
+                            db.display()
+                        ),
+                        primary: no_span(),
+                    });
+                }
+            }
+        }
+        if !diags.is_empty() {
+            return (Manifest { modules: Vec::new(), by_id: HashMap::new(), sources: HashMap::new() }, diags);
+        }
+        let mut walked = Vec::new();
+        for (name, dir) in roots {
+            let mut files = Vec::new();
+            collect_emp(dir, dir, &mut files, &mut diags);
+            files.sort();
+            sigil_span::read_set::record_scan(dir, &files);
+            walked.extend(files.into_iter().map(|f| (Some(*name), dir.as_path(), f)));
+        }
+        Self::parse_walked(walked, diags)
+    }
+
+    /// Parse every walked file, in order, under sequential [`SourceId`]s.
+    fn parse_walked(
+        walked: Vec<(Option<sigil_span::roots::RootName>, &Path, PathBuf)>,
+        mut diags: Vec<Diagnostic>,
+    ) -> (Manifest, Vec<Diagnostic>) {
+        let mut modules = Vec::new();
+        let mut by_id = HashMap::new();
+        let mut sources = HashMap::new();
+        for (i, (root_name, root, path)) in walked.into_iter().enumerate() {
+            let path = &path;
             // Allocate the SourceId and register its path BEFORE the fallible read,
             // so EVERY allocated id has a `sources` entry. Otherwise a file that
             // fails to read (TOCTOU: removed/chmod'd between the dir-walk and the
@@ -106,7 +172,7 @@ impl Manifest {
                     primary: file.module.span,
                 });
             }
-            modules.push(ParsedModule { id, file, path: path.clone() });
+            modules.push(ParsedModule { id, file, path: path.clone(), root: root_name });
         }
         (Manifest { modules, by_id, sources }, diags)
     }

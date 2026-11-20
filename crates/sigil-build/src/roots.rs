@@ -10,10 +10,14 @@
 //! row ships everywhere; here every candidate module goes through
 //! [`crate::gating::gate_modules`], which refuses a module no rule names.
 //!
-//! Scope: a candidate is a module under `engine.` or under the game's own prefix (the
-//! prefix of its `entry.game` module), the old rule. The old rule also hid the
-//! `sigil_objroutine_probe` fixture by a hardcoded id; here it is an ordinary candidate
-//! that its game's `[[gate]]` row places in no shape.
+//! Scope: a candidate is a module the build scanned under one of its named roots
+//! ([`ParsedModule::root`](sigil_frontend_emp::resolve::manifest::ParsedModule::root), G0b
+//! Task 9): its identity follows its root, never its id's prefix. The old rule (a module
+//! under `engine.` or the game's prefix) let a module with a game's id anywhere in the
+//! checkout be a candidate and kept a module under the game's root with another id out;
+//! the contract closure scoped by file root meanwhile, so the two scopes could disagree.
+//! The old rule also hid the `sigil_objroutine_probe` fixture by a hardcoded id; here it
+//! is an ordinary candidate that its game's `[[gate]]` row places in no shape.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -110,20 +114,18 @@ pub struct RootsInput<'a> {
     pub map_name: &'a str,
 }
 
-/// Is module `id` in a game's scope: under `engine.` or under the game's own prefix
-/// (`games.sonic4`)? The one scope rule for the candidates a shape may place
-/// ([`derive_roots`], [`gate_scan`]). Task 9's two-root corpus replaces the prefix test
-/// with the description's roots (the contract closure already scopes by them:
-/// [`crate::driver::Project::closure_roots`]).
-pub fn in_candidate_scope(id: &str, game_prefix: &str) -> bool {
-    id.starts_with("engine.") || id.strip_prefix(game_prefix).is_some_and(|rest| rest.starts_with('.'))
+/// Is module `pm` in the build's scope: scanned under one of its named roots? The one
+/// scope rule for the candidates a shape may place ([`derive_roots`], [`gate_scan`]), and
+/// the same scan the contract closure analyses ([`crate::driver::Project::scan`]).
+pub fn in_candidate_scope(pm: &sigil_frontend_emp::resolve::manifest::ParsedModule) -> bool {
+    pm.root.is_some()
 }
 
 /// The module roots `input.shape` places, one [`ModuleSpec`] per declared section, in
 /// `order` order with the terminus last.
 pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildError> {
     let RootsInput { manifest, order, game_prefix, rules, shape, seeds, terminus, map_name } = *input;
-    let in_scope = |id: &str| in_candidate_scope(id, game_prefix);
+    let in_scope = |id: &str| manifest.by_id.get(id).is_some_and(|&i| in_candidate_scope(&manifest.modules[i]));
 
     let mut by_label: HashMap<String, Vec<usize>> = HashMap::new();
     let mut by_section: HashMap<String, Vec<usize>> = HashMap::new();
@@ -261,8 +263,7 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
 
 /// Every module the closed gate is asked about for `order` (what an aeon description's
 /// `[[gate]]` rows must cover): the in-scope candidates of every row, and the terminus.
-pub fn gate_scan(manifest: &Manifest, order: &[String], game_prefix: &str, terminus: &str) -> Vec<ModuleId> {
-    let in_scope = |id: &str| in_candidate_scope(id, game_prefix);
+pub fn gate_scan(manifest: &Manifest, order: &[String], terminus: &str) -> Vec<ModuleId> {
     let mut out: Vec<ModuleId> = Vec::new();
     let mut push = |id: &str| {
         if !out.iter().any(|o| o == id) {
@@ -271,7 +272,7 @@ pub fn gate_scan(manifest: &Manifest, order: &[String], game_prefix: &str, termi
     };
     let mut labels_of: Vec<(usize, Vec<String>, Vec<String>)> = Vec::new();
     for (i, pm) in manifest.modules.iter().enumerate() {
-        if in_scope(&pm.id) {
+        if in_candidate_scope(pm) {
             let mut l = Vec::new();
             item_labels(&pm.file.items, &mut l);
             labels_of.push((i, l, declared_sections(&pm.file)));

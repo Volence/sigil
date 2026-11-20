@@ -38,7 +38,6 @@ use crate::ast;
 use sigil_span::{Diagnostic, Level, Span};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::PathBuf;
 use std::rc::Rc;
 
 /// The hidden spelling of item `name` defined in module `def_id`: `$def_id$name`.
@@ -688,7 +687,7 @@ struct Node {
 pub(crate) struct HygieneMemo<'f> {
     prelude_id: Option<String>,
     defines: Vec<(String, i128)>,
-    include_root: Option<PathBuf>,
+    include_root: Option<crate::Sandbox>,
     folds: &'f RefCell<ConstFoldCache>,
     bindings: HashMap<String, Rc<HashMap<String, Binding>>>,
     nodes: HashMap<(String, String), Rc<Node>>,
@@ -700,13 +699,13 @@ impl<'f> HygieneMemo<'f> {
     pub(crate) fn new(
         prelude_id: Option<&str>,
         defines: &[(String, i128)],
-        include_root: Option<&std::path::Path>,
+        include_root: Option<&crate::Sandbox>,
         folds: &'f RefCell<ConstFoldCache>,
     ) -> Self {
         HygieneMemo {
             prelude_id: prelude_id.map(str::to_string),
             defines: defines.to_vec(),
-            include_root: include_root.map(|p| p.to_path_buf()),
+            include_root: include_root.cloned(),
             folds,
             bindings: HashMap::new(),
             nodes: HashMap::new(),
@@ -772,7 +771,7 @@ impl<'f> HygieneMemo<'f> {
                     &def.file,
                     &e.name,
                     &self.defines,
-                    self.include_root.as_deref(),
+                    self.include_root.as_ref(),
                 ) {
                     super::ConstFold::Literal(n) => ast::Expr::Int(n, e.span),
                     _ => e.value.clone(),
@@ -870,7 +869,7 @@ impl<'f> HygieneMemo<'f> {
                 &def.file,
                 &c.name,
                 &self.defines,
-                self.include_root.as_deref(),
+                self.include_root.as_ref(),
             );
             if let Some(lit) = folded {
                 c.value = ast::Expr::Int(lit, c.span);

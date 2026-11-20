@@ -131,6 +131,7 @@ fn compile_real_file(
     let file = parse_file(&dir.join("s4lz.emp"));
 
     let opts = LowerOptions {
+        roots: None,
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
