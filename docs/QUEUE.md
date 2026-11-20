@@ -2648,7 +2648,11 @@ until its row is removed.
 
 ## G0B-HELPER-CLOSURE-LOCATOR
 
-- state: open 2026-11-20 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
+- state: **closed** 2026-11-20, G0b Task 11 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **Closed by deletion of the input.** Task 11 deleted `COMPTIME_HELPERS` with the profile-driven driver; aeon
+  50a96ab9 (`feat/g0b-descriptions`) makes the gate read `engine/engine.toml` `helpers` (the list the game-as-data
+  driver reads) from its own tree, so no sigil checkout is located at all; a description without a non-empty
+  `helpers` list is refused, red-first on 3 tests. The original finding, kept as the record:
 - aeon `tools/emp_helper_closure.py::default_native_rs` finds "the sigil checkout paired with this aeon checkout" only
   for the `<root>/aeon/.worktrees/NAME` layout; for any other aeon tree (every G0b proof copy, which sits at
   `/home/volence/sonic_hacks/.g0b-*`, and `.aeon-g0b` itself) it falls through to `<parent>/sigil`, the MAIN sigil
@@ -2659,6 +2663,39 @@ until its row is removed.
   across 14 helpers; the 22 tests with `SIGIL_NATIVE` set to the branch's `native.rs`: OK). Fix on aeon's side: take
   the native.rs from the `SIGIL_BUILD` binary's reported source dir (build.sh already reads it as `SIGIL_SRC`), and
   refuse rather than fall through when no paired checkout is found.
+
+## G0B-TASK11-RESIDUE
+
+- state: open 2026-11-20 (found in G0b Task 11)  size: `M`  project: `G0B-GAME-AS-DATA`
+- What Task 11 (the profile-driven driver's deletion) left, each its own small item:
+  1. **The residual AS feature defines are byte-inert on every shipped shape.** `as_feature_defines`
+     (`SOUND_DRIVER_ENABLED` / `__DEBUG__` / `__MDDBG__`, engine.toml) moved out of the driver at 2cef7f08 and is
+     held only by unit tests: narrowing `__MDDBG__` to debug left step0 7/7, so no byte gate can see a wrong row.
+     Either the AS residual stops reading them (and the rows go), or a gate that reads the AS symbol environment
+     holds them.
+  2. **`.target-land/tmp` leaks.** Measured 39G during Task 11; test scratch trees under `CARGO_TARGET_TMPDIR`
+     are not removed on success. Find the writers (`grep -rn CARGO_TARGET_TMPDIR crates/*/tests`) and drop on
+     success, or have `scripts/landing-run.sh` clear it first.
+  3. **`/./` in rendered game-root paths.** The game-as-data driver renders game-root paths as
+     `games/sonic4/./data/...` because the description's `sources.root = "."` is joined unnormalised; digest rows
+     carry no `/./`. Cosmetic, but it is listing/diagnostic text a consumer may key on: normalise in one place
+     (`Project::sources_root`) and re-pin what that moves, as its own change.
+  4. **Old-driver surface still `pub` in `sigil-build`:** `place.rs` was written for the profile-driven driver;
+     after the deletion every `pub fn` there has a caller in the new driver or walk except `lens_pinned` (called
+     only inside `place.rs`, so it can be private). `game_defines`'s builtin-merge machinery is game-independent
+     and still used by tests and the define audit, so it stays, but its "built-in row" has one caller now. A
+     visibility pass, no behaviour change.
+  5. **`scripts/walk_inplace_proof.sh` is historical.** It drives `--aeon`, which no longer parses;
+     `golden/provenance.toml` cites it, so it is kept with a HISTORICAL header note rather than rewritten.
+  6. **`driver_comparison`'s listing column went red at 87540c32 and stayed red through ec859616**, and the prep
+     commits landed anyway (the column was not in the per-commit 7/7). Cause and the last outputs are in
+     `docs/superpowers/notes/2026-11-17-g0b-game-as-data.md`. The gate is retired; the lesson is that a parcel's
+     per-commit evidence must name every gate the parcel's own work can turn red.
+  7. **clippy was not clean at the Task 11 base:** `-D warnings --all-targets` failed on five lints introduced by
+     0df8f9a9 and 87540c32 (`too_many_arguments` on `Seams::validate_sound`, an orphan doc comment, a single-element
+     loop, `&PathBuf` params, a manual `contains`). Fixed in a265daf1. `scripts/landing-run.sh` (7) runs the
+     lint bar, so a LANDING would have caught them; the prep commits' per-commit evidence (tests + step0) did not
+     run clippy, so each commit carried them silently. Per-commit evidence on a parcel should include the lint bar.
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
