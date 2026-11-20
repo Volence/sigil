@@ -34,8 +34,8 @@
 //! Loud on unmeasurable: a sidecar with no rows, a listing without `EndOfRom`, or a ROM
 //! too short for a header fails the gate rather than passing it.
 //!
-//! Real `sigil build` runs over a COPY of the reference tree (`AEON_DIR`), because
-//! `sigil build` rewrites files in the tree it builds.
+//! Real `sigil build` runs over a COPY of the reference tree (`AEON_DIR`), the house
+//! pattern for a gate that may doctor its tree.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -573,7 +573,14 @@ fn every_rom_byte_is_covered_once() {
             assert!(count("code") > 0, "s4 plain has no code rows");
             // The Z80 bridge: over exactly the generated blob's bytes, the driver's own rows
             // replace the embedding line's single data row.
-            let blob = std::fs::metadata(tree.join("engine/sound/generated/z80_sound_blob.bin")).expect("the blob").len();
+            // The build wrote the blob into its own build directory, not the tree (G0b
+            // Task 6), so it is emitted again here, from the same tree, for its length.
+            let gen = sigil_build::build_dir::BuildDir::create().expect("a build directory");
+            let blob = sigil_harness::native::emit_generated_in(&tree, gen.generated(), None)
+                .expect("emit the sound artifacts")
+                .for_shape(false)
+                .bytes
+                .len() as u64;
             let start = b
                 .listing
                 .lines()

@@ -2,8 +2,7 @@
 //! the ROM's full SHA-256, in the write order of spec 4.2.
 //!
 //! Real `sigil build` runs over the reference tree (`AEON_DIR`; `SIGIL_STRICT_GATE`
-//! hard-fails a missing tree), COPIED once, because `sigil build` rewrites files inside
-//! the tree it builds. One tree serves every test; they run one at a time (`LOCK`), and
+//! hard-fails a missing tree), COPIED once, because one test edits a source in it. One tree serves every test; they run one at a time (`LOCK`), and
 //! the one test that edits a source restores it when it ends, pass or fail.
 //!
 //! The schema check shells out to python3 with the vendored schema (`contract/build`).

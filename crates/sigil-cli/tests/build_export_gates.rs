@@ -13,8 +13,8 @@
 //!  * `tool_revision_names_the_checkout_head`: `tool.revision` is the commit the binary
 //!    was built from or the honest `unknown`, never a stale one.
 //!
-//! Real `sigil build` runs over COPIES of the reference tree (`AEON_DIR`), because
-//! `sigil build` rewrites files in the tree it builds. `SIGIL_STRICT_GATE=1` hard-fails a
+//! Real `sigil build` runs over COPIES of the reference tree (`AEON_DIR`), the house
+//! pattern for gates that build (before G0b Task 6 it rewrote files in its tree). `SIGIL_STRICT_GATE=1` hard-fails a
 //! missing tree. python3 + jsonschema are REQUIRED: missing fails, never skips.
 //!
 //! Runner: these are ordinary tests, so `scripts/landing-run.sh` (`cargo test --workspace`

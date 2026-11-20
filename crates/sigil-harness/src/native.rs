@@ -690,31 +690,42 @@ pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, 
     crate::game_defines::merge_builtin_and_game(&profile.emp_defines, game_rows, &origin)
 }
 
-/// Emit every generated BINCLUDE the DAC + MT + SFX + resident-blob AS arms read
-/// (identical to `seam2_sfx_rom`'s `ensure_generated`). The sound stack is native;
-/// the `.bin`s are how those native bytes enter the AS-assembled residual.
+/// Emit every generated sound artifact into the tree's own generated mount,
+/// `<aeon>/engine/sound/generated` ([`sigil_build::build_dir::GENERATED_MOUNT`]). The
+/// sound stack is native; the `.bin`s are how those native bytes enter the ROM, through
+/// the `embed`s aeon's sound modules carry.
 ///
-/// The output directory is INSIDE `aeon`, so this is a WRITE into the reference
-/// tree. It refuses up front when that tree is not there
-/// ([`seam2::require_reference_tree`]) rather than creating the path and failing
-/// afterwards: a manufactured `$AEON_DIR` root turns every root-probing skip guard
-/// in the suite into a run against an empty tree, which makes an absent-tree run
-/// behave differently the second time than the first. Each emitter re-checks the
-/// same precondition, so the `emit_sound_blob` binary and direct callers get the
-/// refusal too.
+/// NO BUILD CALLS THIS. A build writes into its own generated root
+/// ([`emit_generated_in`] from [`resolve_chained`] / [`resolve_frozen_sections`], and
+/// the new driver's seam), never into the tree it builds (G0b Task 6). This is the
+/// provisioning step for a STANDALONE port gate that compiles one sound module against a
+/// reference tree with no build around it, so its `embed`s find the files in the tree.
 ///
-/// A failure is the build's `Err`, never a panic: an emitter's guard firing (a
+/// It is therefore a WRITE into the reference tree. It refuses up front when that tree
+/// is not there, or was not named ([`seam2::require_reference_tree_for`]), rather than
+/// creating the path and failing afterwards: a manufactured `$AEON_DIR` root turns every
+/// root-probing skip guard in the suite into a run against an empty tree, which makes an
+/// absent-tree run behave differently the second time than the first. Each emitter
+/// re-checks the same precondition, so the `emit_sound_blob` binary and direct callers
+/// get the refusal too.
+///
+/// A failure is the caller's `Err`, never a panic: an emitter's guard firing (a
 /// `.emp` `ensure(extern(..))` co-residency or drift guard) is a diagnostic about
 /// the source, and it reaches the reader as one, on the same channel and with the
 /// same exit status (1) every other build error uses. A panic would exit 101,
 /// which is a crash to any lane reading the status.
 pub fn emit_generated(aeon: &Path) -> Result<(), String> {
-    emit_generated_in(aeon, None).map(|_| ())
+    emit_generated_in(aeon, &aeon.join(sigil_build::build_dir::GENERATED_MOUNT), None).map(|_| ())
 }
 
-/// [`emit_generated`] under an anchor overlay: every artifact whose bytes derive from
-/// the bank anchors is emitted from the overlaid ones. The seq-opcode table reads no
-/// anchor (its cells are resident handler VMAs), so it has no overlay variant.
+/// Emit every generated sound artifact of `aeon` into `gen`, under an anchor overlay:
+/// every artifact whose bytes derive from the bank anchors is emitted from the overlaid
+/// ones. The seq-opcode table reads no anchor (its cells are resident handler VMAs), so
+/// it has no overlay variant.
+///
+/// A build passes its generated root directory ([`sigil_build::build_dir`]), outside
+/// the tree, and its `.emp` lowering reads the files back through that root's mount, so
+/// the tree is only read. [`emit_generated`] passes the tree's own mount.
 ///
 /// Returns seam 1's two resident links ([`seam1::ResidentBlobs`]): the blob leaves this
 /// process as a file and re-enters the ROM as embedded bytes, so the driver's symbols
@@ -722,28 +733,27 @@ pub fn emit_generated(aeon: &Path) -> Result<(), String> {
 /// [`crate::export_z80`]).
 pub fn emit_generated_in(
     aeon: &Path,
+    gen: &Path,
     ov: Option<&crate::map_placement::AnchorOverlay>,
 ) -> Result<seam1::ResidentBlobs, String> {
-    seam2::require_reference_tree(aeon)
-        .map_err(|e| format!("ensure_generated writes into the reference tree: {e}"))?;
-    let gen = aeon.join("engine/sound/generated");
+    seam2::require_reference_tree_for(aeon, gen).map_err(|e| format!("emit_generated: {e}"))?;
     let resident =
-        seam1::emit_sound_blob_in(aeon, ov, &gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
-    seam2::emit_dac_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
-    seam2::emit_mt_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
-    seam2::emit_sfx_artifacts_in(aeon, ov, &gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
-    seam2::emit_seq_opcode_artifacts(aeon, &gen)
+        seam1::emit_sound_blob_in(aeon, ov, gen).map_err(|e| format!("emit_sound_blob (blob): {e}"))?;
+    seam2::emit_dac_artifacts_in(aeon, ov, gen).map_err(|e| format!("emit_dac_artifacts: {e}"))?;
+    seam2::emit_mt_artifacts_in(aeon, ov, gen).map_err(|e| format!("emit_mt_artifacts: {e}"))?;
+    seam2::emit_sfx_artifacts_in(aeon, ov, gen).map_err(|e| format!("emit_sfx_artifacts: {e}"))?;
+    seam2::emit_seq_opcode_artifacts(aeon, gen)
         .map_err(|e| format!("emit_seq_opcode_artifacts: {e}"))?;
-    seam2::emit_sound_tables_artifacts_in(aeon, ov, &gen)
+    seam2::emit_sound_tables_artifacts_in(aeon, ov, gen)
         .map_err(|e| format!("emit_sound_tables_artifacts: {e}"))?;
-    seam2::emit_pitchtable_artifacts_in(aeon, ov, &gen)
+    seam2::emit_pitchtable_artifacts_in(aeon, ov, gen)
         .map_err(|e| format!("emit_pitchtable_artifacts: {e}"))?;
     Ok(resident)
 }
 
 /// [`emit_generated`] for a TEST that wants a failure to be its own failure: the
-/// gates run it as a precondition step, where a panic is the right outcome. The
-/// build drivers call [`emit_generated`] directly and report its `Err`.
+/// gates run it as a precondition step, where a panic is the right outcome. It writes
+/// the reference tree's mount, as [`emit_generated`] does; no build calls it.
 pub fn ensure_generated(aeon: &Path) {
     emit_generated(aeon).unwrap_or_else(|e| panic!("{e}"));
 }
@@ -2186,9 +2196,17 @@ struct ChainedResolve {
     resident: Option<seam1::ResidentLink>,
 }
 
+/// The chained resolve, under `aeon`'s generated root
+/// ([`sigil_build::build_dir::with_generated_root`]): the sound artifacts are written into
+/// the build's own directory and the `.emp` lowering embeds them from there, so the tree
+/// is only read.
 fn resolve_chained(aeon: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
+    sigil_build::build_dir::with_generated_root(aeon, |gen| resolve_chained_in(aeon, gen, profile))
+}
+
+fn resolve_chained_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<ChainedResolve, String> {
     let resident = if profile.sound_on {
-        Some(emit_generated_in(aeon, profile.anchor_overlay.as_ref())?.for_shape(profile.debug))
+        Some(emit_generated_in(aeon, gen, profile.anchor_overlay.as_ref())?.for_shape(profile.debug))
     } else {
         None
     };
@@ -2491,8 +2509,13 @@ fn overlaid_placement(
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
+    sigil_build::build_dir::with_generated_root(aeon, |gen| resolve_frozen_sections_in(aeon, gen, profile))
+}
+
+/// [`resolve_frozen_sections`] with the generated root directory `gen` in force.
+fn resolve_frozen_sections_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
     if profile.sound_on {
-        emit_generated_in(aeon, profile.anchor_overlay.as_ref())?;
+        emit_generated_in(aeon, gen, profile.anchor_overlay.as_ref())?;
     }
     // Warnings are the BUILD's to print; this resolve is a placement helper and
     // renders nothing, so `as_side.warnings` is dropped here on purpose — the

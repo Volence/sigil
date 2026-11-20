@@ -1902,17 +1902,14 @@ fn run_build(entry: &Entry, args: &[String]) {
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
 
-    // A native build emits the sound artifacts INTO this tree
-    // (`native::ensure_generated`), and that write's precondition
-    // (`seam2::require_named_reference_tree`) asks the tree to have been NAMED rather
-    // than resolved from a hardcoded fallback. `--aeon` names it — aeon's `build.sh`
-    // runs `sigil build --aeon . --native` from the tree it is building — so the
-    // argument is published as this process's `AEON_DIR`. One rule then covers every
-    // writing process, and the argv caller is not an exception to it. Set before any
-    // build work, while the process is still single-threaded.
-    if std::env::var_os("AEON_DIR").is_none() {
-        std::env::set_var("AEON_DIR", aeon_path);
-    }
+    // No `AEON_DIR` is published from `--aeon`. It used to be, because the sound seams
+    // wrote INTO this tree and that write asks for a named tree
+    // (`seam2::require_named_reference_tree`). A build now writes its generated files into
+    // its own build directory outside the tree (`sigil_build::build_dir`, G0b Task 6), so
+    // the tree is only read, and the seams' precondition asks for a name only of a write
+    // that lands inside the tree (`seam2::require_reference_tree_for`). The build reads
+    // the tree through `--aeon` alone (`build_hermetic` runs every build with the
+    // variable removed).
 
     match opts.report {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
@@ -3298,11 +3295,8 @@ fn run_project_build(opts: &ProjectOpts) {
             std::process::exit(1);
         }
     };
-    // The sound seams write into the checkout and ask that it be NAMED (see run_build);
-    // the project's own checkout is the name. load_project has refused a conflicting one.
-    if std::env::var_os("AEON_DIR").is_none() {
-        std::env::set_var("AEON_DIR", &project.checkout);
-    }
+    // No `AEON_DIR` is published from the project's checkout: the sound seams write into
+    // the build's own directory, never the checkout (see run_build).
     let anchor_overlay = match &opts.anchor_overlay {
         None => None,
         Some(path) => match sigil_harness::map_placement::load_anchor_overlay(std::path::Path::new(path)) {
@@ -3502,8 +3496,8 @@ fn run_check_native(aeon: &std::path::Path, opts: &BuildOpts) {
     );
     if profile.sound_on {
         eprintln!(
-            "check: {label}: emit_generated writes the sound artifacts into {} (a precondition \
-             of the .emp build), the one write this run makes",
+            "check: {label}: the sound artifacts (a precondition of the .emp build) are written \
+             into a private build directory outside {}, which this run reads and never writes",
             aeon.display()
         );
     }
@@ -3543,6 +3537,28 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // second, not a full link, and it must not leave a fresh artifact on disk
     // that looks like it passed.
     run_contract_gate(aeon, &opts.target);
+
+    // The build's generated root (G0b Task 6): the sound seams write into this private
+    // directory outside the tree, the `.emp` lowering embeds from it, and the digest and
+    // the export place its reads at their mount path. The directory is removed as soon as
+    // the build has run, before any exit below: what follows reads only the recorded
+    // read set, and `generated` names the root by path alone.
+    let build_dir = match sigil_build::build_dir::BuildDir::create() {
+        Ok(d) => d,
+        Err(err) => {
+            eprintln!("error: native build: {err}");
+            process::exit(1);
+        }
+    };
+    let generated = match build_dir.root_for(aeon) {
+        Ok(r) => r,
+        Err(err) => {
+            drop(build_dir);
+            eprintln!("error: native build: {err}");
+            process::exit(1);
+        }
+    };
+    let generated_scope = sigil_frontend_emp::generated_root::enter(generated.clone());
 
     // The LABEL comes from the same place the reports read it, so a build and a
     // report over one target can never name it differently.
@@ -3615,6 +3631,8 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
         ),
     };
+    drop(generated_scope);
+    drop(build_dir);
     let native::RomBuild { rom, listing, warnings, registry, export_inputs } = match built {
         Ok(build) => build,
         Err(err) => {
@@ -3669,7 +3687,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // The digest is rendered before either artifact is written, so a read set that
     // cannot be stated (a file that changed while the build read it) leaves neither.
     let digest = match &opts.emit_lst {
-        Some(_) => match lst_source_digest(aeon, opts, &full) {
+        Some(_) => match lst_source_digest(aeon, opts, &full, &generated) {
             Ok(section) => Some(section),
             Err(err) => {
                 eprintln!("error: native build ({label}) source digest: {err}");
@@ -3691,7 +3709,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            match prepare_export(aeon, opts)
+            match prepare_export(aeon, opts, &generated)
                 .and_then(|parts| render_export(parts, &export_inputs, rom_name, &full, assembled_len))
             {
                 Ok(text) => Some(text),
@@ -3809,6 +3827,7 @@ fn export_shape_names(target: &BuildTarget) -> (String, String) {
 fn prepare_export(
     aeon: &std::path::Path,
     opts: &BuildOpts,
+    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
 ) -> Result<ExportParts, String> {
     use sigil_link::export::*;
     let (_, profile) = opts.target.label_and_profile();
@@ -3823,7 +3842,8 @@ fn prepare_export(
     let aeon_root = std::fs::canonicalize(aeon)
         .map_err(|e| format!("resolve the aeon root {}: {e}", aeon.display()))?;
     let sigil_root = sigil_harness::source_digest::sigil_source_root();
-    let rooted = sigil_harness::export_files::export_files(&aeon_root, &sigil_root, &sigil_span::read_set::snapshot())?;
+    let snapshot = sigil_harness::export_files::mount_generated(&sigil_span::read_set::snapshot(), generated)?;
+    let rooted = sigil_harness::export_files::export_files(&aeon_root, &sigil_root, &snapshot)?;
     let files = rooted.files;
     let tool = ToolRecord {
         name: "sigil".into(),
@@ -3896,6 +3916,7 @@ fn lst_source_digest(
     aeon: &std::path::Path,
     opts: &BuildOpts,
     full: &[u8],
+    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
 ) -> Result<String, String> {
     use sigil_harness::{native, source_digest};
 
@@ -3903,7 +3924,8 @@ fn lst_source_digest(
     // Everything this reads happens before the snapshot below, so the digest names it.
     let defines = native::shape_defines(&profile, aeon)?;
     let (target, game) = digest_target(&opts.target);
-    let snapshot = sigil_span::read_set::snapshot();
+    // The build's generated files are named at their mount path, as the source names them.
+    let snapshot = sigil_harness::export_files::mount_generated(&sigil_span::read_set::snapshot(), generated)?;
     let digest = source_digest::source_digest(
         aeon,
         &source_digest::AssemblerIdentity {

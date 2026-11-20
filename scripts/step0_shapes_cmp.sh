@@ -9,8 +9,8 @@
 #   SHAPE <name> <crc32>/<size> <crc32>/<size> SAME|DIFFER
 # row per shape, then `SHAPES <k>/7 IDENTICAL`, then `STEP0_CMP_END rc=<n>`.
 #
-# `sigil build` rewrites files inside the tree it builds (Sigil audit finding 9), so
-# each binary gets its own `cp -a` of the reference tree under a run-unique scratch
+# A `sigil build` from before G0b Task 6 rewrites files inside the tree it builds (Sigil
+# audit finding 9), and a BASE binary may be one, so each binary gets its own `cp -a` of the reference tree under a run-unique scratch
 # dir. The scratch goes ON DISK in the worktree (.scratch-cmp-*), not /tmp (RAM), and
 # is removed at the end of every run.
 #

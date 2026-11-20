@@ -176,6 +176,59 @@ pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
 /// condition instead of a mutation of the thing under test.
 pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
     require_named_reference_tree(aeon)?;
+    require_sound_inputs(aeon)
+}
+
+/// The precondition an emitter checks before it writes into `out_dir`: the
+/// [`require_reference_tree`] checks when `out_dir` lies inside `aeon` (a write into the
+/// tree must name the tree), and only the content probe when it does not.
+///
+/// A build writes into its own generated root, a private directory outside the tree
+/// ([`sigil_build::build_dir`], G0b Task 6), so the naming argument above (a write into
+/// a tree nobody named leaves no trace) is not about it: the tree is only READ, and a read
+/// keeps the resolver's fallback like every other read. The content probe still runs:
+/// the emit derives its placement from [`SOUND_PLACEMENT_MAP_REL`], and an absent tree is
+/// refused by name before anything is created.
+///
+/// "Inside" is decided on the paths as far as they exist (each canonicalized when it can
+/// be), so a relative or symlinked spelling of an in-tree `out_dir` still counts as
+/// in-tree.
+pub fn require_reference_tree_for(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    let tree = std::fs::canonicalize(aeon).unwrap_or_else(|_| std::path::absolute(aeon).unwrap_or(aeon.to_path_buf()));
+    let out = existing_prefix_canonical(out_dir);
+    if out.starts_with(&tree) {
+        return require_reference_tree(aeon);
+    }
+    require_sound_inputs(aeon)
+}
+
+/// `path` absolute, with its longest existing prefix canonicalized (the rest appended
+/// as spelled), so a path that does not exist yet is compared like one that does.
+fn existing_prefix_canonical(path: &Path) -> std::path::PathBuf {
+    let abs = std::path::absolute(path).unwrap_or(path.to_path_buf());
+    let mut head = abs.as_path();
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(c) = std::fs::canonicalize(head) {
+            let mut out = c;
+            for seg in tail.iter().rev() {
+                out.push(seg);
+            }
+            return out;
+        }
+        match (head.parent(), head.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name.to_os_string());
+                head = parent;
+            }
+            _ => return abs,
+        }
+    }
+}
+
+/// The content half of [`require_reference_tree`]: `aeon` carries
+/// [`SOUND_PLACEMENT_MAP_REL`].
+fn require_sound_inputs(aeon: &Path) -> Result<(), String> {
     if aeon.join(SOUND_PLACEMENT_MAP_REL).is_file() {
         return Ok(());
     }
@@ -843,7 +896,7 @@ pub fn emit_dac_artifacts_in(
     ov: Option<&AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let out = emit_dac_body_and_head_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
@@ -1311,7 +1364,7 @@ pub fn emit_sound_tables_artifacts_in(
     ov: Option<&AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let bytes = emit_sound_tables_z80_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("sound_tables_z80.bin");
@@ -1429,7 +1482,7 @@ pub fn emit_pitchtable_artifacts_in(
     ov: Option<&AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let bytes = emit_pitchtable_in(aeon, ov)?;
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("movingtrucks_pitchtable.bin");
@@ -1441,7 +1494,7 @@ pub fn emit_pitchtable_artifacts_in(
 /// `seq_opcode_tab{,_debug}.bin` (the 64-byte jump table, shape-dependent — the
 /// resident handlers re-base in the debug shape).
 pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let mut artifacts = Vec::new();
     for (debug, name) in [(false, "seq_opcode_tab.bin"), (true, "seq_opcode_tab_debug.bin")] {
         artifacts.push((name, emit_seq_opcode_tab(aeon, debug)?));
@@ -1472,7 +1525,7 @@ pub fn emit_sfx_artifacts_in(
     ov: Option<&AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let mut artifacts = Vec::new();
     for (debug, body_name, head_name) in [
         (false, "sfx_bank.bin", "sfx_blob_win_tab.bin"),
@@ -1847,7 +1900,7 @@ pub fn emit_mt_artifacts_in(
     ov: Option<&AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<(), String> {
-    require_reference_tree(aeon)?;
+    require_reference_tree_for(aeon, out_dir)?;
     let mut artifacts: Vec<(&str, Vec<u8>)> = Vec::new();
     let mut absent: Vec<&str> = Vec::new();
     for (debug, body_name, st_name, spt_name) in [

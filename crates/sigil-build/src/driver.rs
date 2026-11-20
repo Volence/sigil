@@ -16,7 +16,8 @@
 //!     section it `holds` ([`crate::walk`]), with no frozen size table;
 //!   * the deb2 appendix's engine facts (`engine.toml`) and floor (`game.toml`).
 //!
-//! What it does not own yet: the sound seams (the generated sound artifacts, the sound
+//! What it does not own yet: the sound seams (the generated sound artifacts, written into
+//! the build's generated root and never into the checkout, [`crate::build_dir`]; the sound
 //! bank id and fold checks) and the build-data side tables live in sigil-harness and
 //! reach this driver through [`Seams`](crate::driver::Seams), which sigil-cli wires. The pipeline between them
 //! is the old driver's, step for step.
@@ -123,6 +124,13 @@ impl From<describe::DescError> for BuildError {
     }
 }
 
+/// A context message (the generated-root helpers report in `String`).
+impl From<String> for BuildError {
+    fn from(m: String) -> Self {
+        BuildError::Context(m)
+    }
+}
+
 fn ctx(e: impl std::fmt::Display) -> BuildError {
     BuildError::Context(e.to_string())
 }
@@ -130,9 +138,17 @@ fn ctx(e: impl std::fmt::Display) -> BuildError {
 /// The pieces that still live in sigil-harness, behind a seam this crate can name without
 /// depending on it (`tests/no_harness_edge.rs`). sigil-cli passes the harness's.
 pub trait Seams {
-    /// A sound-on shape: write the generated sound artifacts into `checkout` and return the
-    /// resident driver link the shape embeds (handed back to [`Seams::side_tables`]).
-    fn emit_sound(&self, checkout: &Path, overlay: Option<&AnchorOverlay>, debug: bool) -> Result<Box<dyn Any>, String>;
+    /// A sound-on shape: write the generated sound artifacts of `checkout` into
+    /// `generated`, the build's generated root directory (never into the checkout:
+    /// [`crate::build_dir`]), and return the resident driver link the shape embeds
+    /// (handed back to [`Seams::side_tables`]).
+    fn emit_sound(
+        &self,
+        checkout: &Path,
+        generated: &Path,
+        overlay: Option<&AnchorOverlay>,
+        debug: bool,
+    ) -> Result<Box<dyn Any>, String>;
     /// The post-link sound checks: the bank id constants and the sound fold.
     fn validate_sound(
         &self,
@@ -581,8 +597,15 @@ pub fn build(project: &Path, shape: &str, opts: &BuildOptions<'_>) -> Result<Bui
     build_project(&p, shape, opts)
 }
 
-/// [`build`] over a loaded [`Project`].
+/// [`build`] over a loaded [`Project`]. The build reads the checkout and writes what it
+/// generates into its generated root ([`crate::build_dir::with_generated_root`]): the
+/// caller's, when one is in force for this checkout, otherwise a private build directory
+/// removed when the build returns.
 pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<BuildOutput, BuildError> {
+    crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated))
+}
+
+fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, generated: &Path) -> Result<BuildOutput, BuildError> {
     let shape = describe::resolve_shape(&p.game, shape_name)?;
     let sound = shape.features.sound;
     let debug = shape.features.debug;
@@ -622,7 +645,7 @@ pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> 
     let align = AlignTable::new([(engine_origin.as_str(), &p.engine.align[..]), (game_origin.as_str(), &p.game.align[..])]).map_err(ctx)?;
 
     // ── Front ends. ──
-    let resident = if sound { Some(opts.seams.emit_sound(&p.checkout, opts.anchor_overlay.as_ref(), debug).map_err(ctx)?) } else { None };
+    let resident = if sound { Some(opts.seams.emit_sound(&p.checkout, generated, opts.anchor_overlay.as_ref(), debug).map_err(ctx)?) } else { None };
     let seeds = entry_seeds(p)?;
     let crate::harvest::AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]))?;

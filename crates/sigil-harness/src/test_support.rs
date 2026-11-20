@@ -2920,7 +2920,8 @@ pub fn schema_errors(instance: &std::path::Path) -> Vec<String> {
 }
 
 /// `cp -a from to`: a copy of a reference tree that keeps modes and mtimes, for the gates
-/// that run `sigil build` (which rewrites files inside the tree it builds).
+/// that run `sigil build` or doctor a source (a `sigil build` from before G0b Task 6 also
+/// rewrote files inside the tree it built).
 pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
     let st = std::process::Command::new("cp").arg("-a").arg(from).arg(to).status().expect("cp");
     assert!(st.success(), "cp -a {} {}", from.display(), to.display());

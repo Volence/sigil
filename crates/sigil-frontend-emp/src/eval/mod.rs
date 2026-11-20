@@ -1940,10 +1940,16 @@ where
     F: FnOnce() -> T + Send,
     T: Send,
 {
+    // The build's generated root is thread-scoped (crate::generated_root): the evaluation
+    // thread runs under the root of the thread that asked for it.
+    let generated = crate::generated_root::current();
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
             .stack_size(EVAL_STACK_BYTES)
-            .spawn_scoped(scope, f)
+            .spawn_scoped(scope, move || {
+                let _root = crate::generated_root::inherit(generated);
+                f()
+            })
             .expect("failed to spawn comptime evaluation thread");
         match handle.join() {
             Ok(v) => v,

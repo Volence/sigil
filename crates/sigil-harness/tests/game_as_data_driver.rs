@@ -19,8 +19,8 @@
 //!     the header fold computes over the file;
 //!   * every `[[anchor]]` in force puts the head label of the row it `holds` at its `at`.
 //!
-//! The build writes the generated sound artifacts into the reference tree, as the old
-//! driver's tests do (`seam2::require_reference_tree` guards that write).
+//! The build writes the generated sound artifacts into its own build directory, never into
+//! the reference tree (G0b Task 6, `sigil_build::build_dir`); `build_hermetic` holds it.
 
 use std::path::{Path, PathBuf};
 

@@ -1043,10 +1043,11 @@ pub fn emit_sound_blob_in(
     ov: Option<&crate::map_placement::AnchorOverlay>,
     out_dir: &Path,
 ) -> Result<ResidentBlobs, String> {
-    // Before anything is created: `out_dir` lives under `aeon` in every build, so an
-    // eager mkdir inside an absent reference tree would manufacture that tree's root
-    // and flip the suite's root-probing skip guards. Validate, then read, then create.
-    crate::seam2::require_reference_tree(aeon)?;
+    // Before anything is created: `out_dir` may live under `aeon` (the standalone
+    // provisioning path, `native::emit_generated`), so an eager mkdir inside an absent
+    // reference tree would manufacture that tree's root and flip the suite's
+    // root-probing skip guards. Validate, then read, then create.
+    crate::seam2::require_reference_tree_for(aeon, out_dir)?;
     // Before any placement: the placement step's own import check is a panic (its
     // other callers have no error channel), and this is the caller with one.
     resident_import_verdict(aeon, &file_specs())?;

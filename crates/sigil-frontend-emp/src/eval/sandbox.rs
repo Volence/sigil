@@ -140,6 +140,16 @@ impl<'a> Evaluator<'a> {
             );
             return None;
         }
+        // The build's generated root (crate::generated_root): a path under its mount
+        // names a file the build generated, which lives in the build's own directory
+        // outside the tree. It resolves there and only there, so neither a missing
+        // generated file nor a stale copy an earlier process left in the tree can stand
+        // in for this build's output.
+        if let Some(generated) = crate::generated_root::current() {
+            if let Some(file) = generated.redirect(&resolved) {
+                return Some(file);
+            }
+        }
         // Symlink containment (T5, closing T1-review finding #1): the LEXICAL
         // check above only catches a `..`-escape written directly in `path` —
         // it says nothing about a symlink INSIDE the root whose target points
@@ -706,6 +716,40 @@ mod tests {
         let got = ev.resolve_sandbox_path("../../etc/passwd", span());
         assert!(got.is_none(), "embed_base must not grant reach beyond include_root");
         assert!(ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")));
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The build's generated root: a path under its mount resolves into the generated
+    /// directory, even when the tree carries a file of the same name (a stale copy an
+    /// earlier process left), and a path beside the mount still resolves in the tree.
+    #[test]
+    fn resolve_sandbox_path_under_the_generated_mount_reads_the_generated_dir() {
+        let scratch = scratch_dir("generated-root");
+        let tree = scratch.join("tree");
+        let in_tree = tree.join("engine/sound/generated");
+        let gen = scratch.join("build/generated");
+        std::fs::create_dir_all(&in_tree).expect("create tree mount dir");
+        std::fs::create_dir_all(&gen).expect("create generated dir");
+        std::fs::write(in_tree.join("blob.bin"), b"stale").expect("write stale");
+        std::fs::write(gen.join("blob.bin"), b"fresh").expect("write fresh");
+        std::fs::write(tree.join("engine/sound/beside.bin"), b"tree").expect("write beside");
+        let tree = std::fs::canonicalize(&tree).unwrap();
+        let gen = std::fs::canonicalize(&gen).unwrap();
+
+        let _root = crate::generated_root::enter(crate::generated_root::GeneratedRoot {
+            mount: tree.join("engine/sound/generated"),
+            dir: gen.clone(),
+        });
+        let mut ev = Evaluator::new();
+        ev.set_include_root(tree.clone());
+        let got = ev.resolve_sandbox_path("engine/sound/generated/blob.bin", span()).expect("resolves");
+        assert_eq!(got, gen.join("blob.bin"));
+        let missing = ev.resolve_sandbox_path("engine/sound/generated/absent.bin", span()).expect("resolves");
+        assert_eq!(missing, gen.join("absent.bin"), "a missing generated file must not fall back to the tree");
+        let beside = ev.resolve_sandbox_path("engine/sound/beside.bin", span()).expect("resolves");
+        assert_eq!(beside, tree.join("engine/sound/beside.bin"));
+        assert!(ev.diags.is_empty(), "{:?}", ev.diags);
 
         let _ = std::fs::remove_dir_all(&scratch);
     }

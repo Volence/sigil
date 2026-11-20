@@ -13,6 +13,7 @@ pub mod cycle_budget;
 pub mod export_side;
 pub mod eval;
 pub mod flag_check;
+pub mod generated_root;
 pub mod layout;
 pub mod lexer;
 pub mod lower;

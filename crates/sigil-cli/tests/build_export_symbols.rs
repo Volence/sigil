@@ -9,8 +9,8 @@
 //! trailer counts disagree with the rows parsed, fails the gate as unmeasurable.
 //!
 //! Real `sigil build` runs over a COPY of the reference tree (`AEON_DIR`;
-//! `SIGIL_STRICT_GATE` hard-fails a missing tree), because `sigil build` rewrites files in
-//! the tree it builds. The tests share the copy and run one at a time (`LOCK`).
+//! `SIGIL_STRICT_GATE` hard-fails a missing tree), the house pattern for gates that build
+//! (before G0b Task 6 `sigil build` rewrote files in its tree). The tests share the copy and run one at a time (`LOCK`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

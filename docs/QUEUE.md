@@ -2371,6 +2371,30 @@ until its row is removed.
 - `.aeon-g0b` carries no `engine/debug/generated/` blobs (untracked build outputs), so a debug shape cannot build
   from a bare copy of it; the Task 5 comparisons copied them from the 99cb963d reference.
 
+## G0B-GENERATED-ROOT-SCOPE
+
+- state: **open** 2026-11-19 (G0b Task 6)  size: `S`  project: `G0B-GAME-AS-DATA`  closed by: G0b Task 9
+- A build's generated root (`sigil_frontend_emp::generated_root`) is THREAD-SCOPED: the build enters it, and
+  `run_on_eval_stack` carries it to the comptime evaluation thread. It is not a `LowerOptions` field because the
+  sandbox is reached from data lowering, constant folding and layout registration, and `LowerOptions` has 372
+  struct-literal sites. Two builds on two threads each see their own root; a thread nobody handed the root to sees
+  none (`generated_root::tests`). Task 9's two-root resolution names roots in the lowering options; fold the
+  generated root into that and delete the thread-local then.
+- `native::emit_generated` / `ensure_generated` still write the tree's own mount. No build calls them; they
+  provision a reference tree for STANDALONE port gates (`soundbankhead_port`, `dac_bank_port`, ...) that compile one
+  sound module with no build around it. Those go with the seams in G0c (aeon `docs/DEFERRED_WORK.md`, G0c).
+
+## G0B-TASK5-AEON-DIR-LEAK: CLOSED
+
+- state: **CLOSED** 2026-11-19 (G0b Task 6)  size: `S`  project: `G0B-GAME-AS-DATA`
+- Found in the Task 5 review: `main.rs` published `--aeon` (old path) and the project checkout (`--project`) as the
+  process-global `AEON_DIR`, bypassing the seam's `checkout` parameter. The only reader was the seams' write
+  precondition (`seam2::require_named_reference_tree`), which asks a write INTO a tree to name it. Task 6 moved
+  every build write into the build directory and made the precondition ask for a name only when the output lands
+  inside the tree (`seam2::require_reference_tree_for`), so both sets are deleted. Proof: `build_hermetic` runs
+  `--check`, two full builds and two `--project` builds with `AEON_DIR` removed from the child environment, and
+  the new driver's ROMs are identical before and after on all 7 shipped shapes (Task 6 report).
+
 ## EXTRA-ENTRY-ONE-TIME-FLAKE
 
 - state: **watching** 2026-11-19 (seen once in G0b Task 4, booked in Task 5)  size: `S`  project: `-`
@@ -2380,3 +2404,6 @@ until its row is removed.
   candidate is a concurrent-build race on the shared iteration copy (that run was the only one with other cargo
   tests running at the same time, and the binary's LOCK covers only its own tests). Reopen with the output if it
   recurs.
+- G0b Task 6 removed one such race: before it, every sound-on build in any process rewrote the shared copy's
+  `engine/sound/generated/`, and a build reading those files while another rewrote them could see a short file.
+  Builds now write only into their own build directory.

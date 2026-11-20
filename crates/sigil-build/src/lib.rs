@@ -29,6 +29,10 @@ pub mod roots;
 /// name and the engine description, beside the old profile-driven driver.
 pub mod driver;
 
+/// The build directory: a private directory outside the tree for what a build
+/// generates, and the `generated` root mounted from it (G0b Task 6).
+pub mod build_dir;
+
 /// The per-game `[defines]` table reader and the define listing rows (G0b Task 5, from
 /// sigil-harness, re-exported there).
 pub mod game_defines;

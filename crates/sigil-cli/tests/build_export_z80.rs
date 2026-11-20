@@ -22,8 +22,8 @@
 //!  * [`sound_off_shapes_have_no_z80_rows`]: a shape whose defines say the driver is not
 //!    built has no row and no symbol from it; one whose defines say it is has both.
 //!
-//! Real `sigil build` runs over a COPY of the reference tree (`AEON_DIR`), because
-//! `sigil build` rewrites files in the tree it builds. Shapes are built once and shared.
+//! Real `sigil build` runs over a COPY of the reference tree (`AEON_DIR`), the house
+//! pattern for gates that build (before G0b Task 6 it rewrote files in its tree). Shapes are built once and shared.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};

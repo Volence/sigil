@@ -14,6 +14,12 @@
 //! | `games/<game>/...`                        | `game`      | `games/`, so `<game>/...`  |
 //! | under the sigil source checkout           | `sigil`     | the checkout               |
 //!
+//! A build writes its generated files into its own generated root, a directory outside
+//! the tree ([`sigil_build::build_dir`], G0b Task 6), and the sources reach them through
+//! the root's mount at `engine/sound/generated`. [`mount_generated`] writes each read of
+//! that directory under the mount path the source used, so the table above places it,
+//! and a build's rows do not depend on where its private directory was.
+//!
 //! `game` paths keep the game's directory name because one build reads more than one
 //! game's modules (the module scan reads every `*.emp`), and two games each have a
 //! `config/game.emp`: relative to a single game's directory those two would collide.
@@ -45,6 +51,7 @@
 //! `G0A-SCAN-READS-TOOL-FIXTURES`). Any other read under `tools/` is an error naming
 //! the path, and so is any read that fits no root and is not an aeon-tree data file.
 
+use sigil_frontend_emp::generated_root::GeneratedRoot;
 use sigil_link::export::{FileRecord, InputRead, Lang, RootName, ToolExe};
 use sigil_span::read_set::{FileRead, Snapshot};
 use std::path::{Component, Path, PathBuf};
@@ -172,6 +179,36 @@ fn place_path(aeon: &Path, sigil: &Path, path: &Path) -> Result<Placed, String> 
         aeon.display(),
         sigil.display()
     ))
+}
+
+/// `snapshot` with every read of `root`'s directory written under its mount path in the
+/// tree ([`GeneratedRoot::mounted`]), the name the build's source used for the file. The
+/// `.lst` source digest and the export both place reads through this, so a generated file
+/// is `origin=generated path=engine/sound/generated/...` in the digest and root
+/// `generated` in the export, as it was when the seams wrote into the tree.
+///
+/// A read of the mount path in the tree as well is refused naming both: the build would
+/// then have read two different files under one name. The sandbox resolves the mount to
+/// the generated directory only, so this does not happen in a build; the check is what
+/// keeps the rewrite from merging two rows silently if it ever did.
+pub fn mount_generated(snapshot: &Snapshot, root: &GeneratedRoot) -> Result<Snapshot, String> {
+    let in_tree: std::collections::BTreeSet<&Path> = snapshot.reads.iter().map(|r| r.path.as_path()).collect();
+    let mut out = snapshot.clone();
+    for r in &mut out.reads {
+        if let Some(mounted) = root.mounted(&r.path) {
+            if in_tree.contains(mounted.as_path()) {
+                return Err(format!(
+                    "the build read {} and also the generated file {} mounted at that path, so one name \
+                     would stand for two files",
+                    mounted.display(),
+                    r.path.display()
+                ));
+            }
+            r.path = mounted;
+        }
+    }
+    out.reads.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
 }
 
 /// The export's file rows, hashed inputs and helper executables for `snapshot`. `aeon`
@@ -313,6 +350,35 @@ mod tests {
         assert!(e.contains("/a/other/x.emp"), "{e}");
         let e = rows(&["/elsewhere/y.asm"]).unwrap_err();
         assert!(e.contains("/elsewhere/y.asm"), "{e}");
+    }
+
+    #[test]
+    fn a_read_of_the_generated_root_is_placed_at_its_mount() {
+        let root = GeneratedRoot { mount: PathBuf::from("/a/engine/sound/generated"), dir: PathBuf::from("/b/generated") };
+        let mut gen = read("/b/generated/z80_sound_blob.bin");
+        gen.generated = true;
+        let snap = Snapshot { reads: vec![gen, read("/a/engine/vdp.emp")], ..Default::default() };
+        let mounted = mount_generated(&snap, &root).unwrap();
+        let paths: Vec<&Path> = mounted.reads.iter().map(|r| r.path.as_path()).collect();
+        assert_eq!(paths, [Path::new("/a/engine/sound/generated/z80_sound_blob.bin"), Path::new("/a/engine/vdp.emp")]);
+        assert!(mounted.reads[0].generated, "the generated mark survives the rename");
+        let e = export_files(Path::new("/a"), Path::new("/s"), &mounted).unwrap();
+        let got: Vec<(&str, &str)> = e.inputs.iter().map(|i| (i.root.as_str(), i.path.as_str())).collect();
+        assert_eq!(got, vec![("engine", "vdp.emp"), ("generated", "sound/z80_sound_blob.bin")]);
+        // Unmounted, the same read is an external data file named by its file name only.
+        let raw = export_files(Path::new("/a"), Path::new("/s"), &snap).unwrap();
+        assert!(raw.inputs.iter().any(|i| i.root == "external"), "{:?}", raw.inputs);
+    }
+
+    #[test]
+    fn a_tree_read_at_the_mount_beside_its_generated_file_is_refused() {
+        let root = GeneratedRoot { mount: PathBuf::from("/a/engine/sound/generated"), dir: PathBuf::from("/b/generated") };
+        let snap = Snapshot {
+            reads: vec![read("/b/generated/x.bin"), read("/a/engine/sound/generated/x.bin")],
+            ..Default::default()
+        };
+        let e = mount_generated(&snap, &root).unwrap_err();
+        assert!(e.contains("/a/engine/sound/generated/x.bin") && e.contains("/b/generated/x.bin"), "{e}");
     }
 
     #[test]

@@ -14,8 +14,14 @@ use sigil_link::export::SideTables;
 pub struct HarnessSeams;
 
 impl Seams for HarnessSeams {
-    fn emit_sound(&self, checkout: &Path, overlay: Option<&AnchorOverlay>, debug: bool) -> Result<Box<dyn Any>, String> {
-        Ok(Box::new(crate::native::emit_generated_in(checkout, overlay)?.for_shape(debug)))
+    fn emit_sound(
+        &self,
+        checkout: &Path,
+        generated: &Path,
+        overlay: Option<&AnchorOverlay>,
+        debug: bool,
+    ) -> Result<Box<dyn Any>, String> {
+        Ok(Box::new(crate::native::emit_generated_in(checkout, generated, overlay)?.for_shape(debug)))
     }
 
     fn validate_sound(
