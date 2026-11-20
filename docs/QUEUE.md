@@ -2309,7 +2309,14 @@ until its row is removed.
 
 ## G0B-TASK5-WALK-IDENTITY
 
-- state: **open** 2026-11-19 (found in G0b Task 5; measurement corrected in Task 5 fix round 1)  size: `M`
+- state: **closed** 2026-11-20 by G0b Task 7 (opened 2026-11-19 in G0b Task 5; measurement corrected in Task 5 fix
+  round 1)  size: `M`
+- **Closed (G0b Task 7, sigil 14c6d44e = this branch + `parcel/walk-measure-in-place` merged, aeon 559b8910):** after
+  the merge the old walk measures every non-bank section in place, and `scripts/compare-drivers.sh` built all 10
+  shapes (the 7 plus the 3 fixtures) with `--legacy` and `--project` from two clean clones: the ROM is SHA-256
+  identical on 10/10. The one rule below was the whole ROM difference, as predicted. (The `.lst` and export are a
+  separate question, G0B-COMPARE-IDENTITY-NAMES.) The old driver after the merge equals the walk tip 87b5c195's binary
+  on the 7 shapes (`step0_shapes_cmp.sh`, SHAPES 7/7 IDENTICAL against aeon 99cb963d), which is the 7/7 base from now on.
   project: `G0B-GAME-AS-DATA`  ruled (proxy, 2026-11-19): Option B, a separate parcel changes the OLD walk to measure
   every non-bank section in place, freezes a new golden, and merges before cutover
 - The new driver builds all seven shipped shapes (every guard green: placement, alignment, budgets, sound fold, bank
@@ -2359,7 +2366,18 @@ until its row is removed.
 
 ## G0B-TASK5-NEW-PATH-GAPS
 
-- state: **open** 2026-11-19 (found in G0b Task 5)  size: `M`  project: `G0B-GAME-AS-DATA`
+- state: **open** 2026-11-19 (found in G0b Task 5), PARTLY CLOSED 2026-11-20 by G0b Task 7  size: `M`
+  project: `G0B-GAME-AS-DATA`
+- **Closed by Task 7:** `--project` now writes the listing (`--emit-lst`, with its source digest) and the
+  `<stem>.build.json` export (unless `--no-build-json`) through the SAME writer as `--aeon`
+  (`write_build_artifacts`; each driver supplies a `BuildIdentity`). The `engine/debug/generated/` item below is
+  handled by the comparison job, which produces the blobs in each clone with `tools/gen_compression_vectors.py`.
+- **Still open, and it blocks Task 8 (demo cutover):** the CONTRACT GATE (`run_contract_gate`) does not run on
+  `--project`. It is keyed to the legacy `BuildTarget`/`GameProfile` (`corpus_closure_or_exit`, `diff_d1c(profile)`,
+  baselines from `contract_baseline.rs`), so a `build.sh` arm switched to `--project` would ship builds no closure gate
+  checked. It does not affect the comparison (its reads were already in the old read set; the listings agree on every
+  other row). Also still open: `--check`, `--report`, the warn-tier view (`report_warnings` now runs, the view is
+  the same function).
 - `sigil build --project <dir|game.toml> --shape <name> -o <rom>` writes the ROM and nothing else. Not yet on the
   new path: `--emit-lst` (and the lst source digest), the `.build.json` sidecar, the contract gate
   (`run_contract_gate`), `--check`, `--report`, the warn-tier view (it prints a count). `--emit-lst`, `--check` and
@@ -2467,3 +2485,38 @@ until its row is removed.
     passes every lane but cannot stamp, because sigil's G0a build export writes `<stem>.build.json` beside each
     ROM and aeon's land-gate reads the untracked files as the tree changing mid-run. Either aeon ignores
     `*.build.json` or sigil writes the export outside the tree. `docs/evidence/walk-measure-in-place/landing-build.txt`.
+
+## G0B-COMPARE-IDENTITY-NAMES
+
+- state: **open, needs a ruling** 2026-11-20 (found in G0b Task 7)  size: `S`  project: `G0B-GAME-AS-DATA`
+- The comparison job (`scripts/compare-drivers.sh`, `crates/sigil-cli/tests/driver_comparison.rs`) builds all 10
+  shapes with both drivers: ROM 10/10 identical, `.lst` 0/10, export 1/10 (lean). Every listing and export difference
+  is one of exactly two kinds, on every shape (the job's `declared-delta` line checks this byte-exactly, diagnostic
+  only):
+  1. **The shape's name.** The legacy driver names a shape by its flag and its profile label: `DIGEST-SHAPE
+     target=sonic4|demo` (plain and debug), export `shape.shape` = `sonic4 plain`, `sonic4 debug`, `demo plain`,
+     `demo debug`, `config_a`, `config_b`, `lean`, `stress_evict`, `stress_art`. The game-as-data driver names it by
+     the description: `target=` and `shape.shape` are the `[shapes.*]` row (`release`, `debug`, `config-a`, ...).
+     They already agree for `target=` on config-a/config-b/lean/stress-* and for the export on `lean`.
+     `config-a-keystones-flipped` cannot agree under any naming: the legacy driver has no target for it (its profile
+     IS `config_a_profile()`, so `--config-a` is its only legacy spelling, named `config-a`/`config_a`).
+  2. **The description files.** The new driver reads `engine/engine.toml` and `games/<g>/game.toml`, so its listing's
+     read set has those two DIGEST-READ rows (and a different DIGEST-AGGREGATE). They are real inputs of that build;
+     the export's `files` table is unchanged (it lists source files); `inputsSha256` (excluded) differs, as it hashes
+     the shape record and the build's inputs.
+- Nothing else differs: defines, every other read row, the symbol body, and the export's files, symbols, layouts,
+  consts and lines are identical. So the spec's "identical in bytes and in G0a's export" holds for the bytes and
+  cannot hold for the listing digest or `shape.shape` as the two drivers are built. G0a's spec already expected the
+  name to change source ("`shape.shape` ... today's profile name, later G0b's description").
+- Options for the ruling (not taken by the implementer): (a) the comparison expects exactly this declared delta (the
+  `declared-delta` check promoted to the verdict: name from the pairing row, the two description rows with their
+  hashes, the aggregate recomputed), nothing else tolerated; (b) the legacy driver adopts the description's names now
+  (moves DIGEST-SHAPE/`shape.shape` for consumers: aeon `tools/leg_provenance.py` records `target`, Oracle's
+  `build_export_real.rs` pins exports) and the comparison tolerates only the description reads; (c) another naming.
+  The keystones fixture needs (a) or a ruling that its name is the pairing.
+- Found with it: **the plan's red-first mutation is byte-inert on today's tree.** Dropping `ObjCodeBase`'s
+  `[[align]]` (engine/engine.toml) leaves every ROM identical: both maps anchor it at 0x10000 (`holds =
+  "ObjCodeBase"`). Dropping `Sfx_33`'s (games/sonic4/game.toml) is inert too: its packed base is already 8-aligned.
+  An `[[align]]` row moves bytes only for a section head that is not anchored and not already aligned. Task 7's
+  red-first used a planted exception instead (`DemoBox_Main` align 0x100 in games/demo/game.toml: demo and demo
+  debug ROMs DIFFER).
