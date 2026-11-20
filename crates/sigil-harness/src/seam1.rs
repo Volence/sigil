@@ -967,7 +967,7 @@ fn resident_texts(aeon: &Path, specs: &[FileSpec]) -> Result<crate::diag_render:
 fn resident_import_verdict(aeon: &Path, specs: &[FileSpec]) -> Result<(), String> {
     let parsed: Vec<ast::File> = specs.iter().enumerate().map(|(k, spec)| parse_one(aeon, k, spec).0).collect();
     let files: Vec<&ast::File> = parsed.iter().collect();
-    let errors = crate::import_check::standalone_import_errors(aeon, &files);
+    let errors = crate::import_check::standalone_import_errors(&crate::import_check::seam_roots(aeon), &files);
     if errors.is_empty() {
         return Ok(());
     }

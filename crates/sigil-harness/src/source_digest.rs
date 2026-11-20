@@ -144,7 +144,18 @@ pub fn source_digest(
     let wanted: Vec<&PathBuf> =
         if canon_named.is_empty() { vec![&aeon_root] } else { canon_named.iter().map(|(_, d)| d).collect() };
     for s in &snapshot.scans {
-        if !wanted.contains(&&s.root) {
+        // A walk of a directory inside a wanted root that found nothing that root's own
+        // walk did not is covered by it (the profile-driven driver's sound seams resolve
+        // their imports over the engine and sonic4 roots, inside the tree it scans whole):
+        // it adds no member and moves no row.
+        let covered = wanted.iter().any(|w| {
+            s.root.starts_with(w)
+                && snapshot.scans.iter().find(|o| &&o.root == w).is_some_and(|whole| {
+                    let have: BTreeSet<PathBuf> = whole.files.iter().map(|f| w.join(f)).collect();
+                    s.files.iter().all(|f| have.contains(&s.root.join(f)))
+                })
+        });
+        if !wanted.contains(&&s.root) && !covered {
             return Err(format!(
                 "the build scanned {}, which is none of the roots it names ({}), and a digest names \
                  only the build's own roots",
@@ -298,6 +309,17 @@ mod tests {
         with_stray.reads.push(read(stray.join("o.emp"), 4));
         let err = digest(&named, &with_stray).expect_err("a scan of an unnamed root is refused");
         assert!(err.contains(&stray.display().to_string()) && err.contains("none of the roots it names"), "{err}");
+
+        // A sub-scan inside a scanned root, finding only what that root's walk found, is
+        // covered and moves nothing; one that finds a file the root's walk did not is not.
+        let mut covered = snapshot.clone();
+        covered.scans.push(Scan { root: game.join("sub"), files: Vec::new() });
+        std::fs::create_dir_all(game.join("sub")).unwrap();
+        let c = digest(&named, &covered).expect("a covered sub-scan is part of its root's walk");
+        assert_eq!((c.scan_files, c.scan_crc), (d.scan_files, d.scan_crc));
+        let mut uncovered = snapshot.clone();
+        uncovered.scans.push(Scan { root: game.join("sub"), files: vec![PathBuf::from("new.emp")] });
+        assert!(digest(&named, &uncovered).is_err(), "a sub-scan finding a file its root's walk did not is refused");
 
         // A named root with no scan of it.
         let mut no_game_scan = snapshot.clone();

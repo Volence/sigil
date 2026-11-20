@@ -6,6 +6,12 @@
 //! item that does not exist lowered clean on them whenever nothing read the name.
 //! [`standalone_import_errors`] applies the same rule, with the same wording, so a
 //! `use` is refused at its own span on these paths too.
+//!
+//! Where a `use` resolves (G0b Task 9): among the modules of the build's named roots,
+//! the engine root and the game root ([`seam_roots`] for the sound seams, which serve
+//! sonic4), the same corpus the map build resolves in. Never the whole checkout: that
+//! walk read every other game's sources, and a `use` of a module outside the build's
+//! roots is refused here as the map build refuses it.
 
 use sigil_frontend_emp::ast;
 use sigil_frontend_emp::resolve::imports::{
@@ -22,14 +28,27 @@ use std::rc::Rc;
 /// rewritten, a same-length rewrite included.
 type Fingerprint = Vec<(PathBuf, Option<u32>)>;
 
+/// The named roots a `use` resolves among.
+pub type ScanRoots = Vec<(sigil_span::roots::RootName, PathBuf)>;
+
 thread_local! {
-    /// The last scan of each root this thread made, with the fingerprint it was taken at.
-    static SCANS: RefCell<Vec<(PathBuf, Fingerprint, Rc<Manifest>)>> = const { RefCell::new(Vec::new()) };
+    /// The last scan of each root set this thread made, with the fingerprint it was taken at.
+    static SCANS: RefCell<Vec<(ScanRoots, Fingerprint, Rc<Manifest>)>> = const { RefCell::new(Vec::new()) };
 }
 
-fn fingerprint(root: &Path) -> Fingerprint {
-    emp_files(root)
-        .into_iter()
+/// The roots the sound seams' modules resolve among: the engine root and the root of the
+/// game the seams serve (sonic4, whose sources hold every module they lower), as that
+/// game's build scans them.
+pub fn seam_roots(aeon: &Path) -> ScanRoots {
+    let game = crate::native::sonic4_profile(false).game_root(aeon);
+    let game_dir = game.parent().map(Path::to_path_buf).unwrap_or_else(|| aeon.to_path_buf());
+    vec![(sigil_span::roots::RootName::Engine, aeon.join("engine")), (sigil_span::roots::RootName::Game, game_dir)]
+}
+
+fn fingerprint(roots: &ScanRoots) -> Fingerprint {
+    roots
+        .iter()
+        .flat_map(|(_, root)| emp_files(root))
         .map(|p| {
             let crc = sigil_span::read_set::read(&p).ok().map(|bytes| sigil_span::read_set::crc32(&bytes));
             (p, crc)
@@ -37,25 +56,25 @@ fn fingerprint(root: &Path) -> Fingerprint {
         .collect()
 }
 
-/// [`Manifest::scan`] of `root`, parsed once per tree state per thread. One build lowers
+/// [`Manifest::scan_roots`] of `roots`, parsed once per tree state per thread. One build lowers
 /// the seam-2 files that import outside themselves several times (six scans per
 /// `sigil build`, about 45 ms each on aeon, measured), and every scan parses the whole
 /// tree. The kept scan is reused only while the tree's fingerprint is unchanged, so an
 /// edit, an added file or a removed one is always seen. The fingerprint reads each file
 /// through the read ledger, so a reuse still records the bytes it compared, and a file
 /// that changed between two checks is kept there as a conflict rather than lost.
-fn scan_cached(root: &Path) -> Rc<Manifest> {
-    let now = fingerprint(root);
+fn scan_cached(roots: &ScanRoots) -> Rc<Manifest> {
+    let now = fingerprint(roots);
     SCANS.with(|scans| {
         let mut scans = scans.borrow_mut();
-        if let Some((_, seen, manifest)) = scans.iter().find(|(r, _, _)| r == root) {
+        if let Some((_, seen, manifest)) = scans.iter().find(|(r, _, _)| r == roots) {
             if *seen == now {
                 return Rc::clone(manifest);
             }
         }
-        let manifest = Rc::new(Manifest::scan(root).0);
-        scans.retain(|(r, _, _)| r != root);
-        scans.push((root.to_path_buf(), now, Rc::clone(&manifest)));
+        let manifest = Rc::new(Manifest::scan_roots(roots).0);
+        scans.retain(|(r, _, _)| r != roots);
+        scans.push((roots.clone(), now, Rc::clone(&manifest)));
         manifest
     })
 }
@@ -66,17 +85,17 @@ fn scan_cached(root: &Path) -> Rc<Manifest> {
 ///
 /// A `use` resolves first among `files` themselves, each under its declared module
 /// id and exactly as the caller parsed it (so an in-memory source override is what
-/// gets checked), and otherwise among the modules scanned from `root`. The tree is
+/// gets checked), and otherwise among the modules scanned from `roots`. The roots are
 /// scanned only when some `use` names a module outside `files`, and parsed at most
 /// once per tree state ([`scan_cached`]).
-pub fn standalone_import_errors(root: &Path, files: &[&ast::File]) -> Vec<(usize, Diagnostic)> {
+pub fn standalone_import_errors(roots: &ScanRoots, files: &[&ast::File]) -> Vec<(usize, Diagnostic)> {
     let local: Vec<(String, &ast::File)> =
         files.iter().map(|f| (f.module.path.segments.join("."), *f)).collect();
     let is_local = |id: &str| local.iter().any(|(l, _)| l == id);
     let needs_scan = files
         .iter()
         .any(|f| use_decls(&f.items).iter().any(|u| !is_local(&u.base.segments.join("."))));
-    let scanned = needs_scan.then(|| scan_cached(root));
+    let scanned = needs_scan.then(|| scan_cached(roots));
 
     let mut pairs: Vec<(&str, &ast::File)> = local.iter().map(|(id, f)| (id.as_str(), *f)).collect();
     if let Some(m) = &scanned {
@@ -117,7 +136,8 @@ mod tests {
     fn messages(root: &std::path::Path, srcs: &[&str]) -> Vec<(usize, String)> {
         let files: Vec<_> = srcs.iter().map(|s| parse_str(s).0).collect();
         let refs: Vec<_> = files.iter().collect();
-        standalone_import_errors(root, &refs).into_iter().map(|(i, d)| (i, d.message)).collect()
+        let roots = vec![(sigil_span::roots::RootName::Engine, root.to_path_buf())];
+        standalone_import_errors(&roots, &refs).into_iter().map(|(i, d)| (i, d.message)).collect()
     }
 
     /// A `use` of a module outside the given files resolves in the scanned tree:

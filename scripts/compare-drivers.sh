@@ -28,7 +28,12 @@
 #     are the files its contract closure gate reads its frozen rows from, where the legacy
 #     driver's live in Sigil's source: the `baseline` file engine.toml names and the one the
 #     game's game.toml names. No other game's file: since G0b Task 9a the closure analyses
-#     only the engine root and the game's own root, so no other game's rows are read.
+#     only the engine root and the game's own root, so no other game's rows are read;
+#   * the module scan (G0b Task 9, A-I2): the game-as-data driver scans its two named
+#     roots, `<engine.root>/` and `games/<g>/`, where the legacy driver walks the whole
+#     tree. So every `.emp` READ row outside those two roots (another game's modules,
+#     `tools/fixtures/`) is not read, DIGEST-SCAN counts and hashes the legacy listing's
+#     own `.emp` rows inside them, and the export's `files` drops the same modules.
 # The job transforms the LEGACY listing and export into the artifacts the new driver must
 # write (DIGEST-SHAPE `target=` -> the row name; exactly those DIGEST-READ rows, each file
 # named from the copy's own descriptions, crc and size from the copy's own files, inserted
@@ -194,6 +199,19 @@ def expected_listing(old: bytes) -> bytes:
     if not reads or reads != list(range(reads[0], reads[-1] + 1)):
         raise ValueError("legacy listing's DIGEST-READ rows are not one block")
     rows = [lines[i] for i in reads]
+    # The scan (G0b Task 9): only the two roots' modules are read, and the scan's members
+    # are exactly the legacy listing's own `.emp` rows under them.
+    def path_of(row):
+        fixed, path = row.split(b" path=", 1)
+        return None if b" root=" in b" " + fixed else path.decode()
+    in_roots = lambda p: p.startswith(eroot + "/") or p.startswith(f"games/{game}/")
+    rows = [r for r in rows if not ((p := path_of(r)) is not None and p.endswith(".emp") and not in_roots(p))]
+    members = sorted(p for r in rows if (p := path_of(r)) is not None and p.endswith(".emp"))
+    scn = [i for i, x in enumerate(lines) if x.startswith(b"DIGEST-SCAN ")]
+    if len(scn) != 1:
+        raise ValueError(f"legacy listing has {len(scn)} DIGEST-SCAN line(s)")
+    scan_crc = zlib.crc32("".join(m + "\n" for m in members).encode()) & 0xffffffff
+    lines[scn[0]] = f"DIGEST-SCAN pattern=*.emp files={len(members)} crc={scan_crc:08x}".encode()
     def key(row):  # (root, path): the --aeon root (no root= field) first, then by root name; path by bytes
         fixed, path = row.split(b" path=", 1)
         root = next((t[5:] for t in fixed.split(b" ") if t.startswith(b"root=")), None)
@@ -216,6 +234,10 @@ def expected_export(old: dict) -> dict:
     if not isinstance(e.get("shape"), dict) or "shape" not in e["shape"]:
         raise ValueError("legacy export has no shape.shape")
     e["shape"]["shape"] = shape
+    # The scan (G0b Task 9): another game's modules are not read. The export's `game` root
+    # holds the games (`<g>/...`).
+    e["files"] = [f for f in e["files"]
+                  if not (f.get("lang") == "emp" and f.get("root") == "game" and not f["path"].startswith(game + "/"))]
     return e
 
 rom_ok = sha_l == sha_p
