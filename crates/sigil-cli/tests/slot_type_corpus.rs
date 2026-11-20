@@ -29,7 +29,7 @@ use sigil_frontend_emp::corpus_contracts::{
     analyze_corpus_with_contracts, bind_corpus_interfaces, ContractReport,
 };
 use sigil_frontend_emp::parse_str;
-use sigil_harness::native;
+use sigil_harness::shapes;
 use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
@@ -122,25 +122,28 @@ fn parse_all(srcs: &[(PathBuf, String)]) -> Vec<sigil_frontend_emp::ast::File> {
         .collect()
 }
 
-/// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
-/// analyses. The define set is the shape's own [`native::shape_defines`], the exact
+/// `(shape label, sound_on, report)` for every shipped shape — ONE parse, seven
+/// analyses. The define set is the shape's own [`shapes::shape_defines`], the exact
 /// set `--report contracts` and the build read, and each shape binds its own game's
 /// L1 interface env (the same walk `contract_closure_corpus.rs` runs — two gates
 /// walking two different corpora would disagree about which arms exist), so this
-/// gate and the ROM see the same code. The profile rides along so a
-/// shape-partitioning probe reads `profile.sound_on` rather than a second,
-/// hand-kept list of labels.
+/// gate and the ROM see the same code. The shape's `sound` feature (its description's
+/// `SOUND_DRIVER_ENABLED`) rides along so a shape-partitioning probe reads it rather
+/// than a second, hand-kept list of labels.
 fn analyze_every_shape(
     srcs: &[(PathBuf, String)],
-) -> Vec<(&'static str, native::GameProfile, ContractReport)> {
+) -> Vec<(String, bool, ContractReport)> {
     let files = parse_all(srcs);
-    native::shipped_shapes()
+    let aeon = aeon_dir();
+    shapes::shipped(&aeon)
+        .expect("shipped shapes")
         .into_iter()
-        .map(|(label, profile)| {
-            let defines =
-                native::shape_defines(&profile, &aeon_dir()).expect("shape defines");
-            let (iface_env, bind_diags) =
-                bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
+        .map(|s| {
+            let label = s.name();
+            let sound_on = s.features(&aeon).sound;
+            let defines = shapes::shape_defines(&aeon, &s).expect("shape defines");
+            let prefix = s.game_module_prefix(&aeon).expect("game prefix");
+            let (iface_env, bind_diags) = bind_corpus_interfaces(&files, &defines, &prefix);
             let bind_errors: Vec<_> = bind_diags
                 .iter()
                 .filter(|d| d.level == sigil_span::Level::Error)
@@ -151,7 +154,7 @@ fn analyze_every_shape(
                  discards `Iface.MEMBER`-gated arms from the walk: {bind_errors:?}"
             );
             let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
-            (label, profile, r)
+            (label, sound_on, r)
         })
         .collect()
 }
@@ -197,16 +200,16 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
     }
     assert!(doctored, "player_ground.emp not found in the corpus");
 
-    // `profile.sound_on` IS the `SOUND_DRIVER_ENABLED` value the shape lowers
-    // under, so the partition cannot drift from the profile it is testing.
+    // `sound_on` IS the `SOUND_DRIVER_ENABLED` value the shape lowers under (its
+    // description's `sound` feature), so the partition cannot drift from the shape.
     let mut sound_on_shapes = 0;
     let mut sound_off_shapes = 0;
 
-    for (label, profile, r) in analyze_every_shape(&srcs) {
+    for (label, sound_on, r) in analyze_every_shape(&srcs) {
         let hit = r.slot_firings.iter().find(|f| {
             f.proc == "Player_Jump" && f.callee == "Sound_PlaySFX" && f.reg == "d0"
         });
-        if profile.sound_on {
+        if sound_on {
             sound_on_shapes += 1;
             assert!(
                 hit.is_some(),

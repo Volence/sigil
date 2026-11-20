@@ -12,7 +12,7 @@
 //! THIS CHECKPOINT RUNS PER SHIPPED SHAPE, from sigil-cli. The gate lives in
 //! sigil-cli because that crate depends on `sigil-harness` — the owner of the shape
 //! `-D` profiles — as well as `sigil-frontend-emp`. Each residue proc is evaluated
-//! under every shipped shape's own `-D` set (`native::shape_defines`) with that
+//! under every shipped shape's own `-D` set (`shapes::shape_defines`) with that
 //! shape's bound L1 interface env: a save/restore inside a
 //! `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm of one of these procs lowers only when
 //! that shape turns the arm on, so the checkpoint prediction must hold under all
@@ -31,7 +31,7 @@ use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::preserves::{verify_preserved, CallPolicy, PreserveStatus};
 use sigil_frontend_emp::value::Reg;
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_ir::backend::Cpu;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -144,11 +144,12 @@ fn residue_procs_verify_as_predicted() {
     let mut mismatches = Vec::new();
     let mut evals = 0usize;
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         let defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            shapes::shape_defines(&aeon, &s).expect("shape defines");
         let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&just_files, &defines, profile.game_module_prefix());
+            bind_corpus_interfaces(&just_files, &defines, &s.game_module_prefix(&aeon).expect("game prefix"));
         assert!(
             bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "shape `{label}`: L1 bind errors: {bind_diags:?}"
@@ -165,17 +166,17 @@ fn residue_procs_verify_as_predicted() {
     report.push_str(&format!(
         "  {evals} (proc, shape) evaluations: {} procs x {} shapes\n",
         cases.len(),
-        native::shipped_shapes().len()
+        shapes::shipped(&aeon).expect("shipped shapes").len()
     ));
     eprintln!("{report}");
     assert!(mismatches.is_empty(), "residue verification drifted:\n{}", mismatches.join("\n"));
 
     // NON-VACUOUS: every residue proc across every shipped shape was evaluated.
-    let expected = cases.len() * native::shipped_shapes().len();
+    let expected = cases.len() * shapes::shipped(&aeon).expect("shipped shapes").len();
     assert_eq!(
         evals, expected,
         "expected {} residue procs across {} shapes, evaluated {evals}",
         cases.len(),
-        native::shipped_shapes().len()
+        shapes::shipped(&aeon).expect("shipped shapes").len()
     );
 }

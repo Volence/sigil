@@ -2,7 +2,7 @@
 //!
 //! This gate proves that no section's ROM address is read back from a baked `org`:
 //! EVERY base is computed by declared-order chaining
-//! (`native::build_native_rom_chained`), with only the genuine org anchors (object
+//! (the game-as-data driver, `sigil_harness::shapes::image`; G0b Task 11), with only the genuine org anchors (object
 //! bank, phased sound banks) keeping a declared base.
 //!
 //! THE REFINEMENT IT LOCKS IN: pure content-size chaining does NOT reproduce asl — the
@@ -16,7 +16,7 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_declared_chain
 //! ```
-use sigil_harness::{native, pins};
+use sigil_harness::{pins, shapes};
 use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
@@ -60,7 +60,7 @@ fn declared_chain_plain() {
     let aeon = aeon_dir();
     let Some(refrom) = read_ref(&aeon, "s4.bin") else { return };
     let _g = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_native_rom_chained(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon, &shapes::Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
     let n = pins::ASSEMBLED_LEN;
     assert_eq!(
         header_neutral_diffs(&rom, &refrom, n),
@@ -75,7 +75,7 @@ fn declared_chain_debug() {
     let aeon = aeon_dir();
     let Some(refrom) = read_ref(&aeon, "s4.debug.bin") else { return };
     let _g = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_native_rom_chained(&aeon, true).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon, &shapes::Shape::new("sonic4", "debug")).unwrap_or_else(|e| panic!("{e}"));
     let n = pins::DEBUG_ASSEMBLED_LEN;
     assert_eq!(
         header_neutral_diffs(&rom, &refrom, n),

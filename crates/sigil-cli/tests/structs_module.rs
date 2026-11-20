@@ -29,7 +29,7 @@
 use sigil_frontend_emp::ast::{Expr, File, Item};
 use sigil_frontend_emp::eval::eval_expr_in_file_ambient;
 use sigil_frontend_emp::parse_str;
-use sigil_harness::native::harvest_engine_struct_offsets;
+use sigil_harness::shapes::engine_struct_offsets as harvest_engine_struct_offsets;
 use sigil_harness::test_support::reference_tree;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -256,6 +256,20 @@ const FIXED_TREE: &[(&str, &str)] = &[
 #[test]
 fn harvest_shapes_a_fixed_struct_set_exactly() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    // The struct twin list is the engine description's (`struct_twins`,
+    // `struct_tail_equates`; G0b Task 11): the fixture engine.toml names the eight.
+    sigil_harness::test_support::write_project_fixture(tmp.path());
+    let engine = tmp.path().join("engine/engine.toml");
+    let text = std::fs::read_to_string(&engine).unwrap().replace(
+        "struct_twins = []\n",
+        "struct_twins = [\n    [\"structs.emp\", \"Act\", \"Act\"],\n    [\"structs.emp\", \"Sec\", \"Sec\"],\n    \
+         [\"structs.emp\", \"DMAEntry\", \"DMAEntry\"],\n    [\"structs.emp\", \"parallax_config\", \"parallax_config\"],\n    \
+         [\"structs.emp\", \"VdpShadow\", \"VDP_Shadow\"],\n    [\"objects/sst.emp\", \"Sst\", \"SST\"],\n    \
+         [\"objects/entity_window.emp\", \"EntityScanState\", \"EntityScanState\"],\n    \
+         [\"level/parallax.emp\", \"band_entry\", \"band_entry\"],\n]\n\
+         struct_tail_equates = [{ name = \"SST_interact\", of = \"Sst\", from_end = 2 }]\n",
+    ).replace("types = \"types.emp\"", "types = \"system/types.emp\"");
+    std::fs::write(&engine, text).unwrap();
     for (rel, src) in FIXED_TREE {
         let path = tmp.path().join(rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

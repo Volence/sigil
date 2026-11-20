@@ -11,8 +11,8 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_rom
 //! ```
-use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes;
+use sigil_harness::test_support::reference_tree_for_shape;
 use std::path::PathBuf;
 
 #[track_caller]
@@ -59,23 +59,23 @@ fn anchor_end(key: &str) -> usize {
 /// `key` selects the provenance target (its `anchor_end` is the window); the byte
 /// compare over the prefix is the load-bearing assertion. Determinism: a second build is
 /// byte-identical.
-fn anchor_matches(profile: &native::GameProfile, golden_name: &str, key: &str) {
-    let Some(aeon) = reference_tree_for_profile(profile) else {
+fn anchor_matches(profile: &shapes::Shape, golden_name: &str, key: &str) {
+    let Some(aeon) = reference_tree_for_shape(profile) else {
         return;
     };
     let eor = anchor_end(key);
     let Some(g) = golden(golden_name) else { return };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, profile).unwrap_or_else(|e| panic!("{}: {e}", profile.name));
-    let rom2 = native::build_rom_chained(&aeon, profile).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(rom, rom2, "{}: build non-deterministic", profile.name);
-    assert_eq!(rom.len(), eor, "{}: assembled length", profile.name);
-    assert!(g.len() >= eor, "{}: golden shorter than anchor", profile.name);
+    let rom = shapes::image(&aeon, profile).unwrap_or_else(|e| panic!("{}: {e}", profile.name()));
+    let rom2 = shapes::image(&aeon, profile).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(rom, rom2, "{}: build non-deterministic", profile.name());
+    assert_eq!(rom.len(), eor, "{}: assembled length", profile.name());
+    assert!(g.len() >= eor, "{}: golden shorter than anchor", profile.name());
     let bad: Vec<usize> = (0..eor).filter(|&i| !is_header_field(i) && rom[i] != g[i]).collect();
     assert!(
         bad.is_empty(),
         "{}: anchor diverges from golden at {} offset(s); first {:#x} (sig {:#04x} != gold {:#04x})",
-        profile.name,
+        profile.name(),
         bad.len(),
         bad.first().copied().unwrap_or(0),
         bad.first().map(|&i| rom[i]).unwrap_or(0),
@@ -89,22 +89,22 @@ fn anchor_matches(profile: &native::GameProfile, golden_name: &str, key: &str) {
 
 #[test]
 fn config_b_anchor_matches_golden() {
-    anchor_matches(&native::config_b_profile(), "config_b.bin", "config_b");
+    anchor_matches(&shapes::Shape::new("sonic4", "config-b"), "config_b.bin", "config_b");
 }
 
 #[test]
 fn config_a_anchor_matches_golden() {
-    anchor_matches(&native::config_a_profile(), "config_a.bin", "config_a");
+    anchor_matches(&shapes::Shape::new("sonic4", "config-a"), "config_a.bin", "config_a");
 }
 
 #[test]
 fn demo_plain_anchor_matches_golden() {
-    anchor_matches(&native::demo_profile(false), "demo.bin", "demo");
+    anchor_matches(&shapes::Shape::new("demo", "release"), "demo.bin", "demo");
 }
 
 #[test]
 fn demo_debug_anchor_matches_golden() {
-    anchor_matches(&native::demo_profile(true), "demo.debug.bin", "demo_debug");
+    anchor_matches(&shapes::Shape::new("demo", "debug"), "demo.debug.bin", "demo_debug");
 }
 
 /// LEAN (crash-report OFF) — the 7th target. Its whole content delta from the release
@@ -113,5 +113,5 @@ fn demo_debug_anchor_matches_golden() {
 /// what proves `CRASH_REPORT=0` is a real, complete shape rather than a partial strip.
 #[test]
 fn lean_anchor_matches_golden() {
-    anchor_matches(&native::lean_profile(), "lean.bin", "lean");
+    anchor_matches(&shapes::Shape::new("sonic4", "lean"), "lean.bin", "lean");
 }

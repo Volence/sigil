@@ -32,7 +32,7 @@ mod frontend_diff;
 use frontend_diff::{case_triple, case_triples, cases_m68k, compare, Case, Outcome, NO_OPERAND_FAMILIES};
 use m68k::capture::CaptureSession;
 use m68k::{family_name, Instruction, Operand, Size};
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_harness::test_support::reference_tree;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -87,11 +87,12 @@ fn generator_covers_every_family_size_ea_the_aeon_build_emits() {
 
     // Each emitted triple, with how many encodes carried it and one shape that
     // emitted it, so a failure names where to look.
-    let mut emitted: BTreeMap<Triple, (usize, &'static str)> = BTreeMap::new();
+    let mut emitted: BTreeMap<Triple, (usize, String)> = BTreeMap::new();
     let session = CaptureSession::begin();
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         session.drain();
-        let rom = native::build_rom_chained(&aeon, &profile)
+        let rom = shapes::image(&aeon, &s)
             .unwrap_or_else(|e| panic!("shape `{label}`: build failed: {e}"));
         assert!(!rom.is_empty(), "shape `{label}`: empty ROM");
         let pairs = session.drain();
@@ -111,7 +112,7 @@ fn generator_covers_every_family_size_ea_the_aeon_build_emits() {
                 );
                 continue;
             }
-            let e = emitted.entry(triple(inst)).or_insert((0, label));
+            let e = emitted.entry(triple(inst)).or_insert_with(|| (0, label.clone()));
             e.0 += 1;
         }
     }

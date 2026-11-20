@@ -20,7 +20,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
-use sigil_harness::{native, pins};
+use sigil_harness::{pins, shapes};
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
 use std::path::PathBuf;
@@ -69,7 +69,7 @@ fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     // EMIT-FIRST: the embedded sfx_bank{,_debug}.bin are gitignored build artifacts.
     // The embedded artifacts come from the build's `generated` root (G0b Task 9).
-    let (_generated, roots) = native::standalone_sound_roots(&aeon);
+    let (_generated, roots) = shapes::standalone_sound_roots(&aeon, &shapes::Shape::new("sonic4", "release"));
     let path = aeon.join("games/sonic4/data/sound/sfx_bank_blob.emp");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read: {e}"));
     let (file, pd) = parse_str(&src);

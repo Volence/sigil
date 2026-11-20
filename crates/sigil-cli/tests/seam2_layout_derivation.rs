@@ -56,8 +56,9 @@ fn sound_layout_derives_the_frozen_addresses() {
         dac_sample_tab_lma: 0xB86B6, // + 64
         // The MT and SFX bases are ALIGNED values, not sums: the packing walk rounds
         // each section's base up to its DECLARED alignment (8 for both, aeon's mod-8
-        // fold wall, section_align::DECLARED), and sound_layout predicts that through
-        // the walk's own native::packed_chained_base rather than assuming a contiguous
+        // fold wall, the `[[align]]` rows of engine.toml / games/sonic4/game.toml), and
+        // sound_layout predicts that through seam2::packed_chained_base over the same
+        // AlignTable the walk packs with, rather than assuming a contiguous
         // pack. The head ends 8-aligned (soundbankhead.emp's tail pad), so mt_bank
         // starts where it ends.
         // 0xB86B6 + 120 = 0xB872E, rounded up to 8 = 0xB8730.

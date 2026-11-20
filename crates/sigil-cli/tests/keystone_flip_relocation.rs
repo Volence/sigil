@@ -15,8 +15,8 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test keystone_flip_relocation
 //! ```
-use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes;
+use sigil_harness::test_support::reference_tree_for_shape;
 use std::path::PathBuf;
 
 /// The golden ROM, from sigil's OWN committed `golden/` directory — not the aeon
@@ -52,13 +52,13 @@ const DEFORM_DIVERGENT_BYTE: usize = 0x11412; // the byte that went stale (0x12 
 /// Determinism: a second build is identical.
 #[test]
 fn flipped_config_a_anchor_matches_golden() {
-    let p = native::config_a_keystones_flipped_profile();
-    let Some(aeon) = reference_tree_for_profile(&p) else {
+    let p = shapes::Shape::new("sonic4", "config-a-keystones-flipped");
+    let Some(aeon) = reference_tree_for_shape(&p) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
-    let rom2 = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
+    let rom2 = shapes::image(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(rom, rom2, "flipped config_a: build non-deterministic");
     assert_eq!(rom.len(), EOR, "flipped config_a: assembled length");
     let g = golden();
@@ -78,12 +78,12 @@ fn flipped_config_a_anchor_matches_golden() {
 /// positive gate is not passing vacuously over the fold-vs-placement site.
 #[test]
 fn doctored_golden_at_deform_pointer_is_caught() {
-    let p = native::config_a_keystones_flipped_profile();
-    let Some(aeon) = reference_tree_for_profile(&p) else {
+    let p = shapes::Shape::new("sonic4", "config-a-keystones-flipped");
+    let Some(aeon) = reference_tree_for_shape(&p) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     let mut g = golden();
     g[DEFORM_DIVERGENT_BYTE] ^= 0xFF; // doctor the exact byte that went stale in the bug
     let bad: Vec<usize> = (0..EOR).filter(|&i| !is_header_field(i) && rom[i] != g[i]).collect();
@@ -100,13 +100,13 @@ fn doctored_golden_at_deform_pointer_is_caught() {
 /// makes these disagree even while `frozen_placement_mismatches` stays empty.
 #[test]
 fn deform_pointer_equals_placed_label_vma() {
-    let p = native::config_a_keystones_flipped_profile();
-    let Some(aeon) = reference_tree_for_profile(&p) else {
+    let p = shapes::Shape::new("sonic4", "config-a-keystones-flipped");
+    let Some(aeon) = reference_tree_for_shape(&p) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let native::RomBuild { rom, listing, .. } =
-        native::build_rom_chained_with_listing(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
+    let built = shapes::build(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
+    let (rom, listing) = (built.image, built.listing);
     let placed = listing
         .iter()
         .find(|s| s.name == "DeformTable_Zero")
@@ -126,8 +126,17 @@ fn deform_pointer_equals_placed_label_vma() {
     ]);
     // Sanity: labeled placement itself is correct (the blind spot — this was already
     // true through the bug), so this check is strictly stronger.
+    // Every config_a freeze-record label lands at its frozen address (the fixture shape
+    // places as config_a does; its keystones are the only difference).
+    let table = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden/offcanonical_sizes/config_a.txt"),
+    )
+    .expect("config_a freeze record");
+    let committed = sigil_harness::repin::parse_size_table(&table);
+    let labels: std::collections::HashSet<String> = committed.keys().cloned().collect();
+    let measured = sigil_harness::repin::boundary_table_of(&built.export_inputs.sections, &labels).unwrap_or_else(|e| panic!("{e}"));
     assert!(
-        native::frozen_placement_mismatches(&aeon, &p).unwrap().is_empty(),
+        committed.iter().all(|(k, v)| measured.get(k) == Some(v)),
         "labeled placement regressed (independent of the fold check)"
     );
     assert_eq!(

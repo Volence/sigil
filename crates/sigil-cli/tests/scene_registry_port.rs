@@ -13,7 +13,7 @@
 //! region level: all four shapes returned to their exact pre-migration crcs, and this
 //! 0xACE block was byte-compared equal at the same base. This gate lowers the REAL module
 //! through the native
-//! build path (`build_emp`), links the self-contained `scene_registry` section
+//! build path (`shapes::emp_program`), links the self-contained `scene_registry` section
 //! (every deform-table pointer is an intra-section label — no externs), and
 //! byte-compares against the reference ROM window `[DeformTable_Zero, ObjDef_Static)`.
 //!
@@ -26,7 +26,7 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test scene_registry_port
 //! ```
 
-use sigil_harness::native::{self, build_emp};
+use sigil_harness::shapes;
 use sigil_harness::pins;
 use sigil_ir::{SectionPlacement, SymbolTable};
 use std::path::Path;
@@ -53,9 +53,9 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
         return;
     };
 
-    let profile = native::sonic4_profile(debug);
-    let native::EmpProgram { sections, .. } =
-        build_emp(aeon, &profile).unwrap_or_else(|e| panic!("build_emp: {e}"));
+    let shape = shapes::Shape::new("sonic4", if debug { "debug" } else { "release" });
+    let sigil_build::harvest::EmpProgram { sections, .. } =
+        shapes::emp_program(aeon, &shape).unwrap_or_else(|e| panic!("emp_program: {e}"));
 
     // The scene_registry section is self-contained (deform-table pointers are
     // intra-section labels), so it links standalone.

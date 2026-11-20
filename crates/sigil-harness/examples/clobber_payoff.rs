@@ -24,7 +24,7 @@
 use sigil_frontend_emp::ast::{Item, ProcDecl};
 use sigil_frontend_emp::corpus_contracts::{analyze_corpus_with_contracts, bind_corpus_interfaces};
 use sigil_frontend_emp::parse_str;
-use sigil_harness::native;
+use sigil_harness::shapes;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -135,10 +135,11 @@ fn main() {
         declared.values().filter(|v| v.is_some()).count()
     );
 
-    for (label, profile) in native::shipped_shapes() {
-        let defines = native::shape_defines(&profile, &aeon).expect("shape defines");
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
+        let defines = shapes::shape_defines(&aeon, &s).expect("shape defines");
         let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
+            bind_corpus_interfaces(&files, &defines, &s.game_module_prefix(&aeon).expect("game prefix"));
         assert!(
             bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "shape `{label}`: L1 bind errors"

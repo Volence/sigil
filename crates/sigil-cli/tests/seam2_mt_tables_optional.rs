@@ -25,7 +25,7 @@
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::parse_str;
-use sigil_harness::native::packed_chained_base;
+use sigil_harness::seam2::{packed_chained_base, sound_align_table};
 use sigil_harness::seam2::{emit_mt_artifacts, emit_mt_bank, song_id_carrier, sound_layout};
 use sigil_harness::test_support::reference_tree;
 use std::path::{Path, PathBuf};
@@ -175,7 +175,8 @@ fn sound_layout_without_song_tables_predicts_sfx_from_the_shorter_bank() {
         (true, without.sfx_bank_lma_debug, with.sfx_bank_lma_debug),
     ] {
         let len = emit_mt_bank(&real, debug).expect("real emit_mt_bank").bytes.len() as u32;
-        let want = packed_chained_base(without.mt_bank_lma + len, "Sfx_33").expect("Sfx_33 is declared");
+        let table = sound_align_table(&real).expect("the sound align table");
+        let want = packed_chained_base(&table, without.mt_bank_lma + len, "Sfx_33").expect("Sfx_33 is declared");
         assert_eq!(got, want, "debug={debug}: the SFX base must follow the no-tables MT length");
         assert_ne!(got, with_sfx, "debug={debug}: the tables must move the SFX base (non-vacuity)");
     }

@@ -32,7 +32,7 @@
 //! arm never lowers, so the exemption over that arm goes unguarded. The gate lives
 //! in sigil-cli because that crate depends on `sigil-harness` — the owner of the
 //! shape `-D` profiles — as well as `sigil-frontend-emp`; it evaluates every proc
-//! under each shipped shape's own `-D` set (`native::shape_defines`) with that
+//! under each shipped shape's own `-D` set (`shapes::shape_defines`) with that
 //! shape's bound L1 interface env, so a define-gated stack-restore is scanned exactly
 //! when the ROM that ships it turns the arm on. The property holds under EVERY shape.
 //! Two non-vacuity guards keep it honest: a floor on the widest shape's visited-
@@ -49,7 +49,7 @@ use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::lower::expand_reglist_regs;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, CodeOperand, Reg};
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_ir::backend::Cpu;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -206,11 +206,12 @@ fn every_stack_movem_restore_has_a_matching_save() {
     let mut widest = 0usize;
     let mut census = format!("define-free baseline: {base_count} restores");
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         let defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            shapes::shape_defines(&aeon, &s).expect("shape defines");
         let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&just_files, &defines, profile.game_module_prefix());
+            bind_corpus_interfaces(&just_files, &defines, &s.game_module_prefix(&aeon).expect("game prefix"));
         assert!(
             bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "shape `{label}`: L1 bind errors: {bind_diags:?}"

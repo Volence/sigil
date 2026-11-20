@@ -31,7 +31,7 @@
 //! parallel thread included — lands in the live session's buffer as if the
 //! build emitted it.
 
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_harness::test_support::reference_tree;
 use sigil_isa::m68k::{capture::CaptureSession, family_name, ALL_FAMILY_NAMES};
 use sigil_isa::m68k_decode::roundtrip_check;
@@ -124,13 +124,14 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
     let session = CaptureSession::begin();
 
     let mut failures: Vec<String> = Vec::new();
-    let mut per_shape: Vec<(&'static str, usize)> = Vec::new();
+    let mut per_shape: Vec<(String, usize)> = Vec::new();
     let mut families: BTreeMap<&'static str, usize> = BTreeMap::new();
 
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         // Discard anything encoded outside this shape's build (prior residue).
         session.drain();
-        let rom = native::build_rom_chained(&aeon, &profile)
+        let rom = shapes::image(&aeon, &s)
             .unwrap_or_else(|e| panic!("shape `{label}`: build failed: {e}"));
         assert!(!rom.is_empty(), "shape `{label}`: empty ROM");
         let pairs = session.drain();
@@ -186,22 +187,22 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
     // these inequalities; the defenses against capture loss itself are the
     // per-shape >0 asserts above and the family-union checks below.
     assert!(
-        count("sonic4 debug") > count("sonic4 plain"),
+        count("sonic4 debug") > count("sonic4 release"),
         "sonic4 debug ({}) must emit more instructions than plain ({})",
         count("sonic4 debug"),
-        count("sonic4 plain")
+        count("sonic4 release")
     );
     assert!(
-        count("demo debug") > count("demo plain"),
+        count("demo debug") > count("demo release"),
         "demo debug ({}) must emit more instructions than plain ({})",
         count("demo debug"),
-        count("demo plain")
+        count("demo release")
     );
     assert!(
-        count("sonic4 plain") > count("demo plain"),
+        count("sonic4 release") > count("demo release"),
         "sonic4 plain ({}) must emit more instructions than the engine-only demo ({})",
-        count("sonic4 plain"),
-        count("demo plain")
+        count("sonic4 release"),
+        count("demo release")
     );
 
     // Family coverage against the enum-derived list, all three directions.

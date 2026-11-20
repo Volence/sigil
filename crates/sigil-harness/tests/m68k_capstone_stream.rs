@@ -38,7 +38,7 @@ mod capstone_diff;
 use capstone_diff::{
     capstone_or_skip, compare, exclusions, report, Accounting, Cap, Disagreement, PAD_LEN,
 };
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_harness::test_support::reference_tree;
 use sigil_isa::m68k::capture::CaptureSession;
 use std::collections::BTreeMap;
@@ -51,14 +51,15 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
 
     // Unique padded buffers, each remembered with one shape that emitted it so
     // a failure names where to look.
-    let mut buffers: BTreeMap<[u8; PAD_LEN], &'static str> = BTreeMap::new();
-    let mut per_shape: Vec<(&'static str, usize)> = Vec::new();
+    let mut buffers: BTreeMap<[u8; PAD_LEN], String> = BTreeMap::new();
+    let mut per_shape: Vec<(String, usize)> = Vec::new();
 
     let session = CaptureSession::begin();
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         // Discard anything encoded outside this shape's build (prior residue).
         session.drain();
-        let rom = native::build_rom_chained(&aeon, &profile)
+        let rom = shapes::image(&aeon, &s)
             .unwrap_or_else(|e| panic!("shape `{label}`: build failed: {e}"));
         assert!(!rom.is_empty(), "shape `{label}`: empty ROM");
         let pairs = session.drain();
@@ -75,7 +76,7 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
             );
             let mut buf = [0u8; PAD_LEN];
             buf[..bytes.len()].copy_from_slice(bytes);
-            buffers.entry(buf).or_insert(label);
+            buffers.entry(buf).or_insert_with(|| label.clone());
         }
         per_shape.push((label, pairs.len()));
     }
@@ -123,7 +124,7 @@ fn every_emitted_m68k_instruction_agrees_with_capstone() {
         if matches!(cap, Cap::Ok { .. }) {
             cap_decodable += 1;
         }
-        let shape = buffers[buf];
+        let shape = &buffers[buf];
         let named = format!("{key} (first emitted by `{shape}`)");
         if let Some(d) = compare(&named, word, buf, cap, &excl, &mut hits) {
             bad.push(d);

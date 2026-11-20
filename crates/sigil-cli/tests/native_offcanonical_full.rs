@@ -18,7 +18,8 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_full
 //! ```
 use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes;
+use sigil_harness::test_support::reference_tree_for_shape;
 use std::path::PathBuf;
 
 // convsym + the chained build touch shared temp/gen state — serialize the targets.
@@ -48,7 +49,7 @@ fn expected(key: &str) -> (usize, u32, usize) {
 /// (input-6button, the t24 rule).
 struct Target {
     name: &'static str,
-    profile: native::GameProfile,
+    profile: shapes::Shape,
     load_bearing: &'static [&'static str],
 }
 
@@ -71,17 +72,17 @@ fn size_table(name: &str) -> std::collections::HashMap<String, u32> {
 }
 
 fn run(t: &Target) {
-    let Some(aeon) = reference_tree_for_profile(&t.profile) else {
+    let Some(aeon) = reference_tree_for_shape(&t.profile) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let (eor, want_crc, want_len) = expected(t.name);
 
     // FULL FILE (presence control + size band live inside build_full_file_chained).
-    let full = native::build_full_file_chained(&aeon, &t.profile).unwrap_or_else(|e| panic!("{}: {e}", t.name));
+    let full = shapes::full_file(&aeon, &t.profile).unwrap_or_else(|e| panic!("{}: {e}", t.name));
 
     // (a) DETERMINISM — a second build is byte-identical.
-    let full2 = native::build_full_file_chained(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
+    let full2 = shapes::full_file(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{}: full file non-deterministic", t.name);
 
     // (b) PRESENCE / ABSENCE — split on the CRASH-REPORT axis, not on `debug`
@@ -93,7 +94,8 @@ fn run(t: &Target) {
     // `<unknown>` on a player's cartridge), or one leaking into lean, whose entire
     // point is not to have it.
     let appendix = full.len() - eor;
-    if t.profile.debug || t.profile.crash_report {
+    let f = t.profile.features(&aeon);
+    if f.debug || f.crash_report {
         assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
         assert!(appendix >= 0x1000, "{}: appendix {appendix:#x} too small", t.name);
     } else {
@@ -107,8 +109,7 @@ fn run(t: &Target) {
 
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via the REAL
     // convsym consumer over the chained listing.
-    let native::RomBuild { listing, .. } =
-        native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
+    let listing = shapes::build(&aeon, &t.profile).map(|b| b.listing).unwrap_or_else(|e| panic!("{e}"));
     let resolved = native::convsym_resolve(&aeon, &listing).unwrap_or_else(|e| panic!("{e}"));
     let table = size_table(t.name);
     for name in t.load_bearing {
@@ -135,12 +136,11 @@ fn run(t: &Target) {
 /// chained listing MUST change what the REAL convsym consumer resolves it to — proving
 /// the spot-check reads the actual packed table, not a cached value.
 fn doctored_control(t: &Target) {
-    let Some(aeon) = reference_tree_for_profile(&t.profile) else {
+    let Some(aeon) = reference_tree_for_shape(&t.profile) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let native::RomBuild { mut listing, .. } =
-        native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
+    let mut listing = shapes::build(&aeon, &t.profile).map(|b| b.listing).unwrap_or_else(|e| panic!("{e}"));
     let probe = t.load_bearing[0];
     let real = *size_table(t.name).get(probe).expect("probe in size table");
     let base = native::convsym_resolve(&aeon, &listing).unwrap();
@@ -162,7 +162,7 @@ fn doctored_control(t: &Target) {
 fn config_a() -> Target {
     Target {
         name: "config_a",
-        profile: native::config_a_profile(),
+        profile: shapes::Shape::new("sonic4", "config-a"),
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
@@ -176,7 +176,7 @@ fn config_a() -> Target {
 fn config_b() -> Target {
     Target {
         name: "config_b",
-        profile: native::config_b_profile(),
+        profile: shapes::Shape::new("sonic4", "config-b"),
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
@@ -190,7 +190,7 @@ fn config_b() -> Target {
 fn demo_plain() -> Target {
     Target {
         name: "demo",
-        profile: native::demo_profile(false),
+        profile: shapes::Shape::new("demo", "release"),
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
@@ -203,7 +203,7 @@ fn demo_plain() -> Target {
 fn demo_debug() -> Target {
     Target {
         name: "demo_debug",
-        profile: native::demo_profile(true),
+        profile: shapes::Shape::new("demo", "debug"),
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
@@ -222,7 +222,7 @@ fn demo_debug() -> Target {
 fn lean() -> Target {
     Target {
         name: "lean",
-        profile: native::lean_profile(),
+        profile: shapes::Shape::new("sonic4", "lean"),
         load_bearing: &[
             "EntryPoint",
             "GameLoop",

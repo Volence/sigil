@@ -114,7 +114,7 @@ impl Shape {
 
 /// Every shipped shape the checkout describes: each `[shapes.*]` row that is not a
 /// `fixture`, of every `games/*/game.toml`, games in directory-name order and rows in
-/// description order.
+/// row-name order (the description's `[shapes]` table is a sorted map).
 pub fn shipped(aeon: &Path) -> Result<Vec<Shape>, String> {
     let games = aeon.join("games");
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(&games)
@@ -244,4 +244,21 @@ pub fn memory_map(aeon: &Path, s: &Shape) -> Result<sigil_ir::map::MemoryMap, St
     let path = s.map_path(aeon)?;
     let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     sigil_link::load_map(&src).map_err(|e| format!("load {}: {e}", path.display()))
+}
+
+/// The closure gate's baseline for the shape: the rows its engine's and game's
+/// `baseline.toml` files give (`sigil_build::baseline::closure_baseline`), as the
+/// `--project` build's gate reads them, with `home` naming those files.
+pub fn closure_baseline(aeon: &Path, s: &Shape) -> Result<crate::contract_baseline::ShapeBaseline, String> {
+    let p = s.project(aeon)?;
+    let (resolved, _) = driver::shape_defines(&p, &s.shape).map_err(|e| e.to_string())?;
+    let b = sigil_build::baseline::closure_baseline(&p, &resolved).map_err(|e| e.to_string())?;
+    let home = b.files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>().join(" or ");
+    Ok(crate::contract_baseline::ShapeBaseline {
+        z80_out_unverified: b.z80_out_unverified,
+        out_unverified: b.out_unverified,
+        inout_unverified: b.inout_unverified,
+        d1c: b.d1c,
+        home,
+    })
 }

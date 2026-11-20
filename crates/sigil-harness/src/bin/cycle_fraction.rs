@@ -8,9 +8,9 @@
 //!
 //! ## What it enumerates
 //!
-//! Every `proc` in the `.emp` modules a shipped shape ([`native::shipped_shapes`])
+//! Every `proc` in the `.emp` modules a shipped shape ([`shapes::shipped`])
 //! actually places, evaluated under that shape's own `-D` set
-//! ([`native::shape_defines`]) and its game's bound L1 interface env — the same
+//! ([`shapes::shape_defines`]) and its game's bound L1 interface env — the same
 //! three inputs the per-shape corpus gates use, because a define-free walk cannot
 //! see inside a `if DEBUG == 1 { }` arm and would describe code the ROM does not
 //! carry.
@@ -36,7 +36,7 @@ use sigil_frontend_emp::eval::eval_proc_body_env;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, CodeOperand, Width};
 use sigil_frontend_emp::{cycle_budget, m68k_cycles, z80_cycles};
-use sigil_harness::native;
+use sigil_harness::shapes;
 use sigil_harness::stdout::println;
 use sigil_ir::backend::Cpu;
 use sigil_isa::m68k_cycles::CycleCost;
@@ -362,10 +362,12 @@ fn main() {
     let mut grand_z80 = Tally::default();
     let mut per_shape: Vec<(String, Tally, Tally, usize, usize, usize, usize)> = Vec::new();
 
-    for (label, profile) in native::shipped_shapes() {
-        let defines = native::shape_defines(&profile, &aeon).expect("shape defines");
-        let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&just_files, &defines, profile.game_module_prefix());
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
+        let project = s.project(&aeon).expect("project");
+        let features = s.features(&aeon);
+        let defines = shapes::shape_defines(&aeon, &s).expect("shape defines");
+        let (iface_env, bind_diags) = bind_corpus_interfaces(&just_files, &defines, project.game_prefix());
         let bind_errs =
             bind_diags.iter().filter(|d| d.level == sigil_span::Level::Error).count();
         assert_eq!(bind_errs, 0, "shape `{label}`: {bind_errs} L1 bind errors");
@@ -373,11 +375,11 @@ fn main() {
         // THE SHIPPED MODULE SET: the shape's module roots (derived from its game
         // map), plus the game RAM / manifest modules the synthetic entry pulls in. A
         // module not in this set contributes no bytes to this shape's ROM.
-        let registry = native::module_registry(&aeon, &profile).expect("module roots");
+        let registry = shapes::module_registry(&aeon, &s).expect("module roots");
         let mut want: BTreeSet<String> =
             registry.iter().map(|m| m.module_id.to_string()).collect();
-        want.insert(profile.game_ram_module.to_string());
-        want.insert(profile.manifest_module.to_string());
+        want.insert(project.game.entry.ram.clone());
+        want.insert(project.game.entry.game.clone());
         let mut missing: Vec<String> = Vec::new();
         let mut walked: Vec<&EmpFile> = Vec::new();
         for id in &want {
@@ -408,8 +410,8 @@ fn main() {
         // not placed by the registry, so a registry-only walk sees no Z80 code in any
         // sound-on shape. Each carries its own `-D` env (const seam + DEBUG), which is
         // why they ride a separate list rather than the shape's define set.
-        let resident: Vec<sigil_harness::seam1::ResidentSoundModule> = if profile.sound_on {
-            sigil_harness::seam1::resident_sound_modules(&aeon, profile.debug, carriers)
+        let resident: Vec<sigil_harness::seam1::ResidentSoundModule> = if features.sound {
+            sigil_harness::seam1::resident_sound_modules(&aeon, features.debug, carriers)
         } else {
             Vec::new()
         };

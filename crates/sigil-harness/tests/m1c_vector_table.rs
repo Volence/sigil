@@ -105,61 +105,18 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     // injects them as GUARDED AS `-D` defines so residual AS reads them at
     // comptime. Seed the same harvested guarded defines here, exactly as the real
     // harness does, so this standalone front-matter assembly resolves them.
-    // The shape these harvests fold under: the plain sonic4 profile, matching the
-    // non-debug ASFLAGS above.
-    let plain = sigil_harness::native::sonic4_profile(false);
-    let mut guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon, &plain)
-        .expect("harvest engine constants");
-    // Post the conv-a structs flip, structs.asm is gone too — ram.asm's `ds`
-    // slot sizes (SST_len/DMAEntry_len/…) come from the struct-offset harvest.
-    guarded_defines.extend(
-        sigil_harness::native::harvest_engine_struct_offsets(&aeon)
-            .expect("harvest struct offsets"),
-    );
-    // Post conv-f, games/sonic4/config/constants.asm is gone too — the game
-    // constants (GS_OJZ_SCROLL_TEST feeding game.asm's GAME_ENTRY_ID, etc.) are
-    // authored in games/sonic4/config/constants.emp and harvested the same way.
-    guarded_defines.extend(
-        sigil_harness::native::harvest_game_constants(
-            &aeon,
-            "games/sonic4/config/constants.emp",
-            &plain,
-        )
-        .expect("harvest game constants"),
-    );
-    // Parcel F2: the game's sound ids (song/SFX ids + priority ladder) are authored
-    // in games/sonic4/config/sound_ids.emp and harvested the same way (plain shape).
-    guarded_defines.extend(
-        sigil_harness::native::harvest_game_constants(
-            &aeon,
-            "games/sonic4/config/sound_ids.emp",
-            &plain,
-        )
-        .expect("harvest game sound ids"),
-    );
-    // Parcel F2: the SFX-bank id counts (SFX_TABLE_LEN, read by sound_bank.inc's
-    // span guard) are DERIVED in sfx_bank.emp and harvested the same way.
-    guarded_defines.extend(
-        sigil_harness::native::harvest_game_constants(
-            &aeon,
-            "games/sonic4/data/sound/sfx/sfx_bank.emp",
-            &plain,
-        )
-        .expect("harvest sfx bank counts"),
-    );
-    // Item #7b + #7c: engine/ram.asm AND games/sonic4/config/ram.asm are retired —
-    // the RAM labels the front-matter needs (HBlank_Vector_Slot and any game RAM
-    // label) come from the engine+game ram.emp address harvest seeded as PLAIN -D
-    // defines, exactly as the real build's assemble_as_side does. `sonic4_profile`
-    // carries `game_ram_module = "games.sonic4.ram"`, so the harvest reaches the
-    // game RAM region too (non-debug shape here).
-    defines.extend(
-        sigil_harness::native::harvest_engine_ram_addresses(
-            &aeon,
-            &sigil_harness::native::sonic4_profile(false),
-        )
-        .expect("harvest ram addresses"),
-    );
+    // The shape these harvests fold under: sonic4 `release`, matching the non-debug
+    // ASFLAGS above. `driver::as_inputs` is the build's own harvest of the five inputs
+    // (G0b Task 11): engine constants and struct offsets (structs.asm is gone too), the
+    // game's constants (its constants, sound ids and SFX-bank counts modules) seeded
+    // GUARDED; the engine+game RAM addresses (engine/ram.asm and the game ram.asm are
+    // retired) seeded PLAIN, exactly as the real build's AS side does.
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
+    let inputs = sigil_harness::shapes::as_inputs(&aeon, &shape).expect("harvest the AS side's inputs");
+    let mut guarded_defines = inputs.engine_constants;
+    guarded_defines.extend(inputs.struct_offsets);
+    guarded_defines.extend(inputs.game_constants);
+    defines.extend(inputs.ram_addresses);
     let opts = Options { roots: None,
         initial_cpu: Some(Cpu::M68000),
         defines,

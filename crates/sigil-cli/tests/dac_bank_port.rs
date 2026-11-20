@@ -20,7 +20,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
-use sigil_harness::{native, pins};
+use sigil_harness::{pins, shapes};
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
 use std::path::PathBuf;
@@ -42,7 +42,7 @@ fn compile(base: u32, len: usize) -> sigil_link::LinkedImage {
     // EMIT-FIRST: the embedded dac_blip_bank.bin / dac_shared_bank.bin are gitignored
     // build artifacts — regenerate them (the build's contract) before the embed lowers.
     // The embedded artifacts come from the build's `generated` root (G0b Task 9).
-    let (_generated, roots) = native::standalone_sound_roots(&aeon);
+    let (_generated, roots) = shapes::standalone_sound_roots(&aeon, &shapes::Shape::new("sonic4", "release"));
     let path = aeon.join("games/sonic4/data/sound/dac_banks.emp");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read: {e}"));
     let (file, pd) = parse_str(&src);

@@ -23,8 +23,8 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test demo_native_port
 //! ```
-use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes;
+use sigil_harness::test_support::reference_tree_for_shape;
 use std::path::PathBuf;
 
 /// The three demo game modules, each `(name, base, len)`. Demo-shape addresses
@@ -48,8 +48,8 @@ fn golden_dir() -> PathBuf {
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn gate(debug: bool, golden_name: &str) {
-    let profile = native::demo_profile(debug);
-    let Some(aeon) = reference_tree_for_profile(&profile) else {
+    let profile = shapes::Shape::new("demo", if debug { "debug" } else { "release" });
+    let Some(aeon) = reference_tree_for_shape(&profile) else {
         return;
     };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -60,10 +60,10 @@ fn gate(debug: bool, golden_name: &str) {
 
     // Build the demo ROM through the real frozen chain (native placement of the
     // demo game modules), then byte-compare each module window vs the golden.
-    let native::RomBuild { rom, listing, .. } =
-        native::build_rom_chained_with_listing(&aeon, &profile).unwrap_or_else(|e| {
-            panic!("demo{} chained build: {e}", if debug { "_debug" } else { "" })
-        });
+    let built = shapes::build(&aeon, &profile).unwrap_or_else(|e| {
+        panic!("demo{} build: {e}", if debug { "_debug" } else { "" })
+    });
+    let (rom, listing) = (built.image, built.listing);
 
     for (name, base, len) in WINDOWS {
         let got = &rom[*base..*base + *len];

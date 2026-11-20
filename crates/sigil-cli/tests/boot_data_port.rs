@@ -12,13 +12,13 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test boot_data_port
 //! ```
-use sigil_harness::test_support::reference_tree_for_profile;
-use sigil_harness::{native, pins};
+use sigil_harness::test_support::reference_tree_for_shape;
+use sigil_harness::{pins, shapes};
 use std::path::PathBuf;
 
 /// The golden ROM, from sigil's OWN committed `golden/` directory — not the aeon
 /// tree. Both gates build their shape from aeon source and compare against this, so
-/// the reference tree they need is source-only (see `reference_tree_for_profile`).
+/// the reference tree they need is source-only (see `reference_tree_for_shape`).
 fn golden(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden").join(name);
     std::fs::read(&p).unwrap_or_else(|e| panic!("read golden {}: {e}", p.display()))
@@ -51,19 +51,24 @@ fn assert_window(shape: &str, rom: &[u8], gold: &[u8], lo: usize, hi: usize) {
 /// resumed AFTER it.
 #[test]
 fn config_b_boot_data_hole_filled() {
-    let profile = native::config_b_profile();
-    let Some(aeon) = reference_tree_for_profile(&profile) else {
+    let profile = shapes::Shape::new("sonic4", "config-b");
+    let Some(aeon) = reference_tree_for_shape(&profile) else {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let table = native::load_frozen_table("config_b.txt");
+    let table = sigil_harness::repin::parse_size_table(
+        &std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden/offcanonical_sizes/config_b.txt"),
+        )
+        .expect("config_b freeze record"),
+    );
     let at = |name: &str| -> usize {
         *table.get(name).unwrap_or_else(|| panic!("config_b.txt carries no `{name}` row")) as usize
     };
     let (boot_data, boot_data_end) = (at("BootData"), at("BootData_End"));
     let (idle, idle_end) = (at("Z80_IdleProgram"), at("Z80_IdleProgram_End"));
     assert!(boot_data < idle && idle < idle_end && idle_end < boot_data_end, "config_b boot rows out of order");
-    let rom = native::build_rom_chained(&aeon, &profile)
+    let rom = shapes::image(&aeon, &profile)
         .unwrap_or_else(|e| panic!("build config_b: {e}"));
     let gold = golden("config_b.bin");
     // BootData .. BootData_End: head + idle-in-hole + tail, byte-exact.
@@ -83,12 +88,12 @@ fn config_b_boot_data_hole_filled() {
 /// byte-identical to the golden. Pin-sourced so boot-size shifts don't rot this.
 #[test]
 fn s4_boot_data_blob_present() {
-    let profile = native::sonic4_profile(false);
-    let Some(aeon) = reference_tree_for_profile(&profile) else {
+    let profile = shapes::Shape::new("sonic4", "release");
+    let Some(aeon) = reference_tree_for_shape(&profile) else {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, &profile)
+    let rom = shapes::image(&aeon, &profile)
         .unwrap_or_else(|e| panic!("build s4: {e}"));
     let gold = golden("s4.bin");
     // BootData .. BootData_End: head + blob + tail, byte-exact (pin-sourced).

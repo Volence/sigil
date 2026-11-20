@@ -8,7 +8,13 @@
 //! that with the REAL harvested set + a REAL flipped name.
 
 use sigil_frontend_as::{assemble, Options};
-use sigil_harness::native::harvest_engine_constants;
+
+/// The engine constants the residual AS side is seeded with (`driver::as_inputs`'s
+/// `engine_constants`, sonic4 `release`; G0b Task 11 moved this off the profile-driven
+/// harvest).
+fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
+    sigil_harness::shapes::as_inputs(aeon, &sigil_harness::shapes::Shape::new("sonic4", "release")).map(|i| i.engine_constants)
+}
 use sigil_ir::backend::Cpu;
 use std::path::Path;
 
@@ -24,7 +30,7 @@ fn strict() -> bool {
 #[test]
 fn the_real_harvest_owns_the_flipped_constants() {
     let aeon = aeon();
-    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon), &sigil_harness::native::sonic4_profile(false)) else {
+    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon)) else {
         if strict() {
             panic!("SIGIL_STRICT_GATE set but harvest failed (set AEON_DIR to a real aeon)");
         }
@@ -47,7 +53,7 @@ fn the_real_harvest_owns_the_flipped_constants() {
 #[test]
 fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     let aeon = aeon();
-    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon), &sigil_harness::native::sonic4_profile(false)) else {
+    let Ok(harvested) = harvest_engine_constants(Path::new(&aeon)) else {
         if strict() {
             panic!("SIGIL_STRICT_GATE set but harvest failed (set AEON_DIR)");
         }

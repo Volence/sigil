@@ -14,10 +14,10 @@
 //! (b) wrong-bank ensure: RETIRED. `mt_bank.emp` carries no co-residency
 //!     `ensure(bankid(..) == bankid("MovingTrucks_Bank_Start"))` any more; the
 //!     same invariant (every byte of the section in the engine-table head's bank)
-//!     is held by the head's declared $8000 alignment (`section_align`), seam-2's
+//!     is held by the head's declared $8000 alignment (its `[[align]]` row), seam-2's
 //!     window check on the predicted base (`seam2::mt_bank_room`, its unit tests),
 //!     the fold gate against the placed `Song_MovingTrucks`
-//!     (`native::validate_sound_fold`), and the section's `bank: $8000`
+//!     (`seam2::validate_sound` via the driver's sound seam), and the section's `bank: $8000`
 //!     no-straddle property, which probe (a) exercises.
 //! (c) table-length mismatch, MT composition context — Task 2's P3
 //!     (`crates/sigil-frontend-emp/tests/lower_data.rs`) already pins the

@@ -22,7 +22,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_rom
 //! ```
 
-use sigil_harness::{assert_rom_matches_convsym, native, pins};
+use sigil_harness::{assert_rom_matches_convsym, pins, shapes};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -67,7 +67,7 @@ static GEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn native_rom_plain() {
     let Some(refrom) = read_ref("s4.bin") else { return };
     let _guard = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_native_rom(&aeon_dir(), false).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon_dir(), &shapes::Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
     assert_rom_matches_convsym(
         &rom,
         &refrom,
@@ -81,7 +81,7 @@ fn native_rom_plain() {
 fn native_rom_debug() {
     let Some(refrom) = read_ref("s4.debug.bin") else { return };
     let _guard = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_native_rom(&aeon_dir(), true).unwrap_or_else(|e| panic!("{e}"));
+    let rom = shapes::image(&aeon_dir(), &shapes::Shape::new("sonic4", "debug")).unwrap_or_else(|e| panic!("{e}"));
     assert_rom_matches_convsym(
         &rom,
         &refrom,

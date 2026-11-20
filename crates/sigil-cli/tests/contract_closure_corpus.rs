@@ -6,7 +6,7 @@
 //!
 //! THE SHAPE AXIS. The three gates below that own a firing set — drops, closure
 //! residue, §6 flag results — walk EVERY SHIPPED SHAPE under its own profile
-//! defines ([`native::shipped_shapes`]). A define-free walk cannot see inside
+//! defines ([`shapes::shipped`]). A define-free walk cannot see inside
 //! `if DEBUG == 1 { }` or `if SOUND_DRIVER_ENABLED == 1 { }`: those arms
 //! comptime-vanish, so every register effect in them is invisible to the closure
 //! and the residue reads empty over code the analysis never reached. Walking each
@@ -37,7 +37,8 @@ use sigil_frontend_emp::corpus_contracts::{
 };
 use sigil_frontend_emp::parse_str;
 use sigil_harness::contract_baseline;
-use sigil_harness::native;
+use sigil_harness::contract_baseline::ShapeBaseline;
+use sigil_harness::shapes;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -126,11 +127,45 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     )
 }
 
-/// The `games.<game>` module-id prefix a shape binds its L1 interfaces under —
-/// [`native::GameProfile::game_module_prefix`], the one spelling of the
-/// derivation, aliased for the probes' call sites.
-fn game_module_prefix(profile: &native::GameProfile) -> &'static str {
-    profile.game_module_prefix()
+/// What a shape-partitioning probe reads about a shipped shape, every field from its
+/// description (`sigil_harness::shapes`): the `DEBUG`/`SOUND_DRIVER_ENABLED` features, the
+/// game module prefix its L1 interfaces bind under, its merged defines, and the closure
+/// baseline its `baseline.toml` files give.
+struct Profile {
+    debug: bool,
+    sound_on: bool,
+    prefix: String,
+    defines: Vec<(String, i128)>,
+    baseline: ShapeBaseline,
+    /// The roots the shape's own closure gate analyses (`Project::closure_roots`: the
+    /// engine's and the game's own), the corpus its `baseline` rows are a census of.
+    roots: Vec<PathBuf>,
+}
+
+/// `(label, profile)` for every shipped shape the checkout describes.
+fn shipped_profiles(aeon: &Path) -> Vec<(String, Profile)> {
+    shapes::shipped(aeon)
+        .expect("shipped shapes")
+        .into_iter()
+        .map(|s| {
+            let f = s.features(aeon);
+            let p = Profile {
+                debug: f.debug,
+                sound_on: f.sound,
+                prefix: s.game_module_prefix(aeon).expect("game prefix"),
+                defines: shapes::shape_defines(aeon, &s).expect("shape defines"),
+                baseline: shapes::closure_baseline(aeon, &s).expect("closure baseline"),
+                roots: s.project(aeon).expect("project").closure_roots(),
+            };
+            (s.name(), p)
+        })
+        .collect()
+}
+
+/// The `games.<game>` module-id prefix a shape binds its L1 interfaces under (its
+/// description's `entry.game` parent).
+fn game_module_prefix(profile: &Profile) -> &str {
+    &profile.prefix
 }
 
 /// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
@@ -145,10 +180,21 @@ fn game_module_prefix(profile: &native::GameProfile) -> &'static str {
 /// equally fatal: a half-bound interface env silently poisons every `Iface.MEMBER`
 /// condition it failed to fill, and a poisoned comptime condition discards both
 /// arms — the exact invisibility `comptime_unresolved` exists to make loud.
-fn analyze_every_shape(
-    srcs: &[(PathBuf, String)],
-) -> Vec<(&'static str, native::GameProfile, ContractReport)> {
-    let files: Vec<_> = srcs
+fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(String, Profile, ContractReport)> {
+    analyze_shapes(srcs, false)
+}
+
+/// [`analyze_every_shape`] with each shape walking only ITS OWN closure's files (the
+/// roots `Profile::roots` names), the corpus the `--project` gate analyses and its
+/// `baseline.toml` rows were taken over (G0b Task 9a). The whole-corpus walk is the
+/// stricter census for the assert-empty gates; a baseline is a census of one corpus,
+/// so it is compared over the one it was taken from.
+fn analyze_every_shape_in_its_closure(srcs: &[(PathBuf, String)]) -> Vec<(String, Profile, ContractReport)> {
+    analyze_shapes(srcs, true)
+}
+
+fn analyze_shapes(srcs: &[(PathBuf, String)], scoped: bool) -> Vec<(String, Profile, ContractReport)> {
+    let parsed: Vec<_> = srcs
         .iter()
         .map(|(p, s)| {
             let (f, d) = parse_str(s);
@@ -161,11 +207,19 @@ fn analyze_every_shape(
         })
         .collect();
     let aeon = aeon_dir().expect("aeon tree present");
-    native::shipped_shapes()
+    shipped_profiles(&aeon)
         .into_iter()
         .map(|(label, profile)| {
-            let defines =
-                native::shape_defines(&profile, &aeon).expect("shape defines");
+            let defines = profile.defines.clone();
+            let files: Vec<_> = srcs
+                .iter()
+                .zip(&parsed)
+                .filter(|((p, _), _)| {
+                    let c = std::fs::canonicalize(p).unwrap_or_else(|_| p.clone());
+                    !scoped || profile.roots.iter().any(|r| c.starts_with(r))
+                })
+                .map(|(_, f)| f.clone())
+                .collect();
             let (iface_env, bind_diags) =
                 bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
             let bind_errors: Vec<_> = bind_diags
@@ -358,9 +412,9 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for (label, profile) in shipped_profiles(&aeon) {
         let mut defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            profile.defines.clone();
         defines.retain(|(k, _)| k != "DEBUG");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -423,11 +477,11 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
 fn an_env_free_walk_names_the_interface_member_it_cannot_resolve() {
     let Some(srcs) = corpus_sources() else { return };
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
-    let (label, profile) = native::shipped_shapes().remove(0);
     let aeon = aeon_dir().expect("aeon tree present");
+    let (label, profile) = shipped_profiles(&aeon).remove(0);
     let r = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
         &files,
-        &native::shape_defines(&profile, &aeon).expect("shape defines"),
+        &profile.defines.clone(),
     );
     assert!(
         r.comptime_unresolved
@@ -739,9 +793,9 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
 
     let (mut plain_shapes, mut debug_shapes) = (0, 0);
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for (label, profile) in shipped_profiles(&aeon) {
         let mut defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            profile.defines.clone();
         defines.retain(|(k, _)| k != "CRASH_REPORT");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -807,9 +861,9 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
 
     let (mut reached_shapes, mut skipped_shapes) = (0, 0);
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for (label, profile) in shipped_profiles(&aeon) {
         let mut defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            profile.defines.clone();
         defines.retain(|(k, _)| k != "SOUND_DBG_MIRROR");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -874,9 +928,9 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
 
     let (mut sonic4_shapes, mut demo_shapes) = (0, 0);
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for (label, profile) in shipped_profiles(&aeon) {
         let mut defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            profile.defines.clone();
         defines.retain(|(k, _)| k != "SOUND_DEBUG_HOTKEYS");
         let (_iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -1430,28 +1484,27 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
     }
-    // The `.emp` corpus embeds the seam-emitted sound blobs, so they must exist
-    // before any shape lowers — a missing embed target drops instructions, which is
-    // precisely this gate's load-bearing assertion.
-    sigil_harness::native::ensure_generated(&aeon);
+    // The `.emp` corpus embeds the seam-emitted sound blobs; a `--project` run emits
+    // them into its own build directory (G0b Task 6) before any shape lowers, so a
+    // missing embed target, which would drop instructions (this gate's load-bearing
+    // assertion), is the driver's failure and not a tree left unprepared.
 
-    let run = |extra: &[&str]| -> String {
+    let run = |game: &str, shape: &str| -> String {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native"]);
-        cmd.args(extra);
+        cmd.arg("build").arg("--project").arg(aeon.join("games").join(game)).args(["--shape", shape]);
         cmd.args(["--report", "contracts"]);
         let out = cmd.output().expect("run sigil build --report contracts");
         assert!(out.status.success(), "sigil build --report contracts failed: {out:?}");
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
 
-    let plain = run(&["--game", "sonic4"]);
-    let debug = run(&["--game", "sonic4", "--debug"]);
-    let demo = run(&["--game", "demo"]);
+    let plain = run("sonic4", "release");
+    let debug = run("sonic4", "debug");
+    let demo = run("demo", "release");
 
-    assert!(plain.starts_with("contract closure, sonic4 plain\n"), "header: {plain:.80}");
+    assert!(plain.starts_with("contract closure, sonic4 release\n"), "header: {plain:.80}");
     assert!(debug.starts_with("contract closure, sonic4 debug\n"), "header: {debug:.80}");
-    assert!(demo.starts_with("contract closure, demo plain\n"), "header: {demo:.80}");
+    assert!(demo.starts_with("contract closure, demo release\n"), "header: {demo:.80}");
 
     // The shapes differ in the defines the walk RAN under, not merely in a label:
     // DEBUG is the build-shape axis and MAX_RING_BUFFER is the game→engine axis.
@@ -1466,7 +1519,7 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
     // The defines REACH the analysis: with them the corpus lowers whole, and no
     // comptime condition references a name the shape fails to resolve. The two
     // lines are the two complementary classes (value define / toggle define).
-    for (label, out) in [("sonic4 plain", &plain), ("sonic4 debug", &debug), ("demo", &demo)] {
+    for (label, out) in [("sonic4 release", &plain), ("sonic4 debug", &debug), ("demo release", &demo)] {
         assert!(
             out.contains("-- dropped instructions (must be 0): 0 --"),
             "{label}: the report dropped instructions, so its walk is missing defines:\n{out:.400}"
@@ -1652,7 +1705,7 @@ fn assert_indirect_cost_report_shape(label: &str, out: &str) {
 
 /// THE SURFACE IS WIRED, AND WHAT IS PINNED IS ITS SHAPE, NEVER ITS VALUE.
 ///
-/// `sigil build --aeon <tree> --report indirect-cost` is the SOLE derivation of a
+/// `sigil build --project <tree>/games/<g> --shape <row> --report indirect-cost` is the SOLE derivation of a
 /// figure that `README.md`, the [`IndirectPolicy`] doc comment in `closure.rs` and
 /// `contract_closure.rs`'s own header all point at INSTEAD of stating. Nothing
 /// else computes it, so if this path breaks every one of those pointers resolves
@@ -1688,8 +1741,7 @@ fn the_indirect_cost_report_is_wired_and_internally_consistent() {
 
     let run = |extra: &[&str]| -> String {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native"]);
-        cmd.args(extra);
+        cmd.arg("build").arg("--project").arg(aeon.join("games").join(extra[0])).args(["--shape", extra[1]]);
         cmd.args(["--report", "indirect-cost"]);
         let out = cmd.output().expect("run sigil build --report indirect-cost");
         assert!(
@@ -1700,9 +1752,9 @@ fn the_indirect_cost_report_is_wired_and_internally_consistent() {
     };
 
     for (label, extra) in [
-        ("sonic4 plain", &["--game", "sonic4"][..]),
-        ("sonic4 debug", &["--game", "sonic4", "--debug"][..]),
-        ("demo plain", &["--game", "demo"][..]),
+        ("sonic4 release", &["sonic4", "release"][..]),
+        ("sonic4 debug", &["sonic4", "debug"][..]),
+        ("demo release", &["demo", "release"][..]),
     ] {
         assert_indirect_cost_report_shape(label, &run(extra));
     }
@@ -1723,10 +1775,9 @@ fn the_corpus_invoke_edges_are_collected() {
     let debug_edge = ("GameLoop".to_string(), "Debug_MusicToggle".to_string());
     let boot_edge = ("EntryPoint".to_string(), "SoundTest_BootPing".to_string());
     let mut bound_shapes = 0usize;
-    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile, r) in analyze_every_shape(&srcs) {
-        let hotkeys = native::shape_defines(&profile, &aeon)
-            .expect("shape defines")
+        let hotkeys = profile
+            .defines
             .iter()
             .any(|(k, v)| k == "SOUND_DEBUG_HOTKEYS" && *v == 1);
         let has_debug = r.abs_call_edges.contains(&debug_edge);
@@ -1945,26 +1996,26 @@ section s (cpu: m68000) {
 fn contract_baselines_hold_for_every_shipped_shape() {
     let Some(srcs) = corpus_sources() else { return };
 
-    for (label, profile, r) in analyze_every_shape(&srcs) {
+    for (label, profile, r) in analyze_every_shape_in_its_closure(&srcs) {
         let d1c: Vec<(String, String, String)> = r
             .live_clobbered_firings
             .iter()
             .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
             .collect();
-        let d = contract_baseline::diff_d1c(&d1c, &profile);
+        let d = profile.baseline.diff_d1c(&d1c);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",
-            contract_baseline::adjudication_message("[call.live-clobbered] (D1c)", &d)
+            contract_baseline::adjudication_message_in("[call.live-clobbered] (D1c)", &d, &profile.baseline.home)
         );
 
         let out: Vec<(String, String)> =
             r.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
-        let d = contract_baseline::diff_out_unverified(&out);
+        let d = profile.baseline.diff_out_unverified(&out);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",
-            contract_baseline::adjudication_message("[proc.out-unverified]", &d)
+            contract_baseline::adjudication_message_in("[proc.out-unverified]", &d, &profile.baseline.home)
         );
 
         // §G4.5 Z80 out-honesty — the Z80 unit-domain twin, against its OWN frozen
@@ -1974,11 +2025,11 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         // that silently saw no Z80 procs would fail this diff as GONE rows.
         let z80_out: Vec<(String, String)> =
             r.z80_out_firings.iter().map(|f| (f.proc.clone(), f.unit.clone())).collect();
-        let d = contract_baseline::diff_z80_out_unverified(&z80_out);
+        let d = profile.baseline.diff_z80_out_unverified(&z80_out);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",
-            contract_baseline::adjudication_message("[proc.out-unverified] (Z80)", &d)
+            contract_baseline::adjudication_message_in("[proc.out-unverified] (Z80)", &d, &profile.baseline.home)
         );
         // NON-VACUITY: the Z80 out check must have ranged over the corpus's real out
         // declarations. `z80_out_claims` is the DECLARED register-out set (a Z80 out
@@ -2014,11 +2065,11 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         // `a4`/`d5` rows retired here (empty), so a mutant that re-breaks one fires.
         let inout: Vec<(String, String)> =
             r.inout_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
-        let d = contract_baseline::diff_inout_unverified(&inout);
+        let d = profile.baseline.diff_inout_unverified(&inout);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",
-            contract_baseline::adjudication_message("[proc.inout-unverified]", &d)
+            contract_baseline::adjudication_message_in("[proc.inout-unverified]", &d, &profile.baseline.home)
         );
 
         // Non-vacuity that is not implied by `is_clean()`: the walk must have
@@ -2029,7 +2080,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         assert!(!d1c.is_empty(), "shape `{label}`: no D1c firings at all");
     }
     assert_eq!(
-        native::shipped_shapes().len(),
+        shapes::shipped(&aeon_dir().expect("aeon tree present")).expect("shipped shapes").len(),
         7,
         "the shape list shrank, a baseline that walks fewer shapes pins less"
     );

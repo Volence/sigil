@@ -21,7 +21,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_full_rom
 //! ```
 
-use sigil_harness::{native, pins};
+use sigil_harness::{native, pins, shapes};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -225,6 +225,16 @@ fn expected_full(key: &str) -> (u32, usize) {
     (crc, t.full_size)
 }
 
+/// The sonic4 shape's build through the game-as-data driver (G0b Task 11).
+fn sonic4(debug: bool) -> shapes::Shape {
+    shapes::Shape::new("sonic4", if debug { "debug" } else { "release" })
+}
+
+/// The game description's appendix floor (`game.toml` `appendix_floor`).
+fn appendix_floor(aeon: &std::path::Path) -> usize {
+    sonic4(false).project(aeon).expect("project").game.appendix_floor as usize
+}
+
 fn run_shape(debug: bool, refname: &str, key: &str) {
     let expect = expected_full(key);
     let Some(refrom) = read_ref(refname) else { return };
@@ -233,17 +243,17 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     let shape = if debug { "debug" } else { "plain" };
 
     // The assembled prefix stays the asl-witnessed correctness anchor.
-    let native::RomBuild { rom: assembled, listing, .. } =
-        native::build_native_rom_with_listing(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let built = shapes::build(&aeon, &sonic4(debug)).unwrap_or_else(|e| panic!("{e}"));
+    let (assembled, listing) = (built.image, built.listing);
     let eor = if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN };
     assert_eq!(assembled.len(), eor, "{shape}: assembled length");
 
     // FULL FILE: assembled + sigil-canonical deb2 appendix (presence control lives
-    // inside build_native_full_file — a silent convsym failure is a HARD error).
-    let full = native::build_native_full_file(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    // inside the driver's appendix step — a silent convsym failure is a HARD error).
+    let full = built.rom;
 
     // (a) DETERMINISM — a second build is byte-identical.
-    let full2 = native::build_native_full_file(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let full2 = shapes::full_file(&aeon, &sonic4(debug)).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{shape}: full file non-deterministic");
 
     // (b) PRESENCE — asserted in BOTH canonical shapes now. This assertion INVERTED
@@ -330,8 +340,7 @@ fn deb2_appendix_negative_controls() {
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
-    let native::RomBuild { mut listing, .. } =
-        native::build_native_rom_with_listing(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let mut listing = shapes::build(&aeon, &sonic4(false)).unwrap_or_else(|e| panic!("{e}")).listing;
 
     // Undoctored: BusError (the error_handler island head) resolves to its known
     // plain-shape address, pin-sourced. The probe is BusError again, not ReleaseFault:
@@ -374,7 +383,7 @@ fn deb2_appendix_negative_controls() {
     // and defines no island label, so the blob-end precondition has no subject here and
     // must not pre-empt the size band this probe is aimed at.
     let err =
-        native::append_deb2_appendix(&aeon, &dummy, &tiny, false, native::SONIC4_APPENDIX_FLOOR, false)
+        native::append_deb2_appendix(&aeon, &dummy, &tiny, false, appendix_floor(&aeon), false)
             .expect_err("collapsed listing must be rejected by the size-band presence control");
     assert!(
         err.contains("appendix size") && err.contains("band"),
@@ -385,6 +394,6 @@ fn deb2_appendix_negative_controls() {
     // so the silent-failure path (`2>/dev/null || true` producing an appendix-less
     // ROM) surfaces as a HARD error here, never a pass.
     let empty: Vec<sigil_link::ListingSymbol> = Vec::new();
-    native::append_deb2_appendix(&aeon, &dummy, &empty, false, native::SONIC4_APPENDIX_FLOOR, false)
+    native::append_deb2_appendix(&aeon, &dummy, &empty, false, appendix_floor(&aeon), false)
         .expect_err("empty listing must be rejected (convsym aborts on zero symbols)");
 }

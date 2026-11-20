@@ -6,7 +6,7 @@
 //! THIS WALK RUNS PER SHIPPED SHAPE, from sigil-cli. The gate lives in sigil-cli
 //! because that crate depends on `sigil-harness` — the owner of the shape `-D`
 //! profiles — as well as `sigil-frontend-emp`. It runs the dead-save walk under each
-//! shipped shape's own `-D` set (`native::shape_defines`) with that shape's bound L1
+//! shipped shape's own `-D` set (`shapes::shape_defines`) with that shape's bound L1
 //! interface env, so a dead save inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm
 //! is dumped when the ROM that ships it turns the arm on — a no-`-D` walk lowers no
 //! gated arm and never sees it. The define-free baseline count is reported beside the
@@ -20,7 +20,7 @@ use sigil_frontend_emp::corpus_contracts::{
     analyze_corpus, analyze_corpus_with_contracts, bind_corpus_interfaces,
 };
 use sigil_frontend_emp::parse_str;
-use sigil_harness::native;
+use sigil_harness::shapes;
 use std::path::{Path, PathBuf};
 
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -79,11 +79,12 @@ fn dead_save_worklist_over_corpus() {
     // ships it turns the arm on. The WIDEST worklist is the true dead-save census.
     let mut widest = base.dead_saves.len();
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
+    for s in shapes::shipped(&aeon).expect("shipped shapes") {
+        let label = s.name();
         let defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            shapes::shape_defines(&aeon, &s).expect("shape defines");
         let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
+            bind_corpus_interfaces(&files, &defines, &s.game_module_prefix(&aeon).expect("game prefix"));
         assert!(
             bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "shape `{label}`: L1 bind errors: {bind_diags:?}"

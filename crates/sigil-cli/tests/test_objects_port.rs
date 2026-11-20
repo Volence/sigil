@@ -295,7 +295,7 @@ fn compile_real_files(
         roots: None,
         initial_cpu: Cpu::M68000,
         // The aeon ROOT, the base the whole-program build joins every module's
-        // `embed()` path to (`native::build_emp`'s `embed_base_for`): test_solid.emp
+        // `embed()` path to (`sigil_build::driver::emp_program`'s embed base): test_solid.emp
         // spells its art and palette embeds root-relative
         // (`embed("games/sonic4/data/generated/spring/art_spring.bin")`), so a base at
         // the module's own directory resolves them to a path that does not exist.
