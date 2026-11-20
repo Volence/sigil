@@ -5,11 +5,11 @@
 //! names the proc, the register, the callee that carries it (or "in its own
 //! body"), and the proc's `file:line:col`.
 //!
-//! The real binary over a self-contained fixture tree (one 68k module and an
-//! empty game map), the same harness as `printed_families_gate.rs`. THE EXIT CODE
-//! CARRIES NO SIGNAL HERE: the gate's frozen baselines are sized to aeon's
-//! corpus and fail over a tree this small too, so every assertion reads the
-//! refusal TEXT, with a clean control and the `SIGIL_CONTRACTS=0` opt-out beside it.
+//! The real binary over a self-contained described project (one 68k module in the
+//! engine root, `test_support::write_project_fixture`, built with `--project` since G0b
+//! Task 11), the same harness as `printed_families_gate.rs`. The fixture's contract
+//! baselines are empty, so the gate's verdict is the fixture's alone: a clean control
+//! passes it, and the `SIGIL_CONTRACTS=0` opt-out stands beside it.
 
 use std::path::Path;
 use std::process::Command;
@@ -66,16 +66,14 @@ pub proc R () clobbers(d0/d2) {
 const HEADER: &str = "error: [proc.clobber-undeclared] closure firings";
 
 fn tree(root: &Path, src: &str) {
-    std::fs::create_dir_all(root.join("engine")).unwrap();
-    std::fs::create_dir_all(root.join("games/sonic4")).unwrap();
+    sigil_harness::test_support::write_project_fixture(root);
     std::fs::write(root.join("engine/clobfix.emp"), src).unwrap();
-    std::fs::write(root.join("games/sonic4/map.toml"), "").unwrap();
 }
 
-/// `sigil build --native --game sonic4` over `root`, returning stderr.
+/// `sigil build --project <root>/games/g --shape release` over the fixture, returning stderr.
 fn build_stderr(root: &Path, contracts_off: bool) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(root).args(["--native", "--game", "sonic4", "-o"]);
+    cmd.args(["build", "--project"]).arg(root.join("games/g")).args(["--shape", "release", "-o"]).env_remove("AEON_DIR");
     cmd.arg(root.join("out.bin"));
     if contracts_off {
         cmd.env("SIGIL_CONTRACTS", "0");
@@ -152,8 +150,8 @@ fn honest_contracts_draw_no_clobber_refusal() {
     tree(tmp.path(), CLEAN);
     let err = build_stderr(tmp.path(), false);
     assert!(
-        err.contains("error: contract closure gate FAILED."),
-        "the control must reach the gate's verdict, or it shows nothing: {err}"
+        err.contains("contract closure gate: passed ("),
+        "the control must pass the gate, or it shows nothing: {err}"
     );
     assert!(!err.contains(HEADER), "no closure refusal expected in:\n{err}");
 }
@@ -178,9 +176,10 @@ fn the_contract_report_names_the_same_carrier() {
     let tmp = tempfile::tempdir().unwrap();
     tree(tmp.path(), FIXTURE);
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
-        .args(["build", "--aeon"])
-        .arg(tmp.path())
-        .args(["--native", "--game", "sonic4", "--report", "contracts"])
+        .args(["build", "--project"])
+        .arg(tmp.path().join("games/g"))
+        .args(["--shape", "release", "--report", "contracts"])
+        .env_remove("AEON_DIR")
         .env_remove("SIGIL_CONTRACTS")
         .output()
         .expect("run sigil build --report contracts");

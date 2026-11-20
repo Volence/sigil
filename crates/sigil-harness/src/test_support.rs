@@ -2927,3 +2927,64 @@ pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
     let st = std::process::Command::new("cp").arg("-a").arg(from).arg(to).status().expect("cp");
     assert!(st.success(), "cp -a {} {}", from.display(), to.display());
 }
+
+/// The smallest described project a `sigil build --project <root>/games/g --shape release`
+/// reads (G0b Task 11): an engine description with no rows to satisfy (no required
+/// constants, labels or helpers; empty contract-closure baselines), one game `g` with one
+/// sound-off `release` shape and an empty placement map. A gate test writes its own modules
+/// into `<root>/engine/` (analysed by the closure as engine-root modules) and reads the
+/// build's refusal text; the build itself stops at the first input the fixture lacks.
+/// Returns the `--project` directory.
+pub fn write_project_fixture(root: &std::path::Path) -> std::path::PathBuf {
+    const ENGINE: &str = r#"format = 1
+helpers = []
+ram_helpers = []
+struct_twins = []
+entry_seeds = ["engine.game_contract", "engine.ram"]
+terminus = "engine.epilogue"
+error_handler = "engine.debug.error_handler"
+release_fault = "engine.system.release_fault"
+required_labels = []
+required_consts = []
+baseline = "baseline.toml"
+constants = "constants.emp"
+types = "types.emp"
+error_handler_blob = "x"
+error_handler_blob_len = 1
+convsym = "convsym"
+fault_island_heads = []
+ram_floor = 0xF00000
+[sound]
+blob_bank_ids = []
+blob_start = "a"
+blob_end = "b"
+dac_head = "c"
+dac_blip_bank = "d"
+dac_shared_bank = "e"
+"#;
+    const GAME: &str = r#"format = 1
+id = "g"
+name = "g"
+require_one_text = false
+appendix_floor = 4096
+map = "map.toml"
+baseline = "baseline.toml"
+engine = { suite_path = "aeon", root = "engine" }
+sources = { root = ".", residual_as = "game_root.asm" }
+entry = { game = "games.g.game", ram = "games.g.ram" }
+[shapes.release]
+features = { debug = false, crash_report = true, sound = false }
+"#;
+    for (rel, text) in [
+        ("engine/engine.toml", ENGINE),
+        ("engine/baseline.toml", "format = 1\n"),
+        ("games/g/game.toml", GAME),
+        ("games/g/map.toml", ""),
+        ("games/g/baseline.toml", "format = 1\n"),
+    ] {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+    }
+    root.join("games/g")
+}

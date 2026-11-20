@@ -137,6 +137,10 @@ pub mod export_z80;
 /// The new driver's harness seams (G0b Task 5).
 pub mod driver_seams;
 
+/// A described shape built through the game-as-data driver, for the harness's tests and
+/// tools (G0b Task 11).
+pub mod shapes;
+
 use sigil_link::LinkedImage;
 
 // The region base LMAs are NOT constants here. Each has exactly one authority, and a

@@ -8,12 +8,10 @@
 //! empty game map are all the gate needs, because it runs before anything else
 //! of the build. No reference tree is read, so this never skips.
 //!
-//! THE EXIT CODE CARRIES NO SIGNAL HERE, by construction (the same reason as
-//! `flag_result_gate.rs`): the gate's frozen baselines are sized to aeon's
-//! corpus, and over a tree this small they report every pinned row GONE and fail
-//! the gate too. So every assertion reads the refusal TEXT, and two controls
-//! stand beside the firing tree: the same procs written cleanly reach the gate's
-//! verdict without any of the three headers, and `SIGIL_CONTRACTS=0` skips the
+//! The fixture is a described project with empty contract baselines (the same harness as
+//! `flag_result_gate.rs`, G0b Task 11), so the gate's verdict is the fixture's alone, and
+//! two controls stand beside the firing tree: the same procs written cleanly PASS the
+//! gate without any of the three headers, and `SIGIL_CONTRACTS=0` skips the
 //! gate before any refusal.
 
 use std::path::Path;
@@ -88,16 +86,14 @@ const HEADERS: [&str; 3] = [
 /// Write the fixture tree: the module and the empty game map the shape's define
 /// merge requires.
 fn tree(root: &Path, src: &str) {
-    std::fs::create_dir_all(root.join("engine")).unwrap();
-    std::fs::create_dir_all(root.join("games/sonic4")).unwrap();
+    sigil_harness::test_support::write_project_fixture(root);
     std::fs::write(root.join("engine/printfix.emp"), src).unwrap();
-    std::fs::write(root.join("games/sonic4/map.toml"), "").unwrap();
 }
 
-/// `sigil build --native --game sonic4` over `root`, returning stderr.
+/// `sigil build --project <root>/games/g --shape release` over the fixture, returning stderr.
 fn build_stderr(root: &Path, contracts_off: bool) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(root).args(["--native", "--game", "sonic4", "-o"]);
+    cmd.args(["build", "--project"]).arg(root.join("games/g")).args(["--shape", "release", "-o"]).env_remove("AEON_DIR");
     cmd.arg(root.join("out.bin"));
     if contracts_off {
         cmd.env("SIGIL_CONTRACTS", "0");
@@ -170,8 +166,8 @@ fn the_build_gate_refuses_each_printed_family_with_its_location() {
     assert!(err.contains(&slot), "missing refusal line\n  {slot}\ngot:\n{err}");
 }
 
-/// CONTROL: the same procs written cleanly reach the gate's verdict (the baseline
-/// rows fail it, as over any tree this small) with none of the three headers. A
+/// CONTROL: the same procs written cleanly pass the gate (the fixture's baselines are
+/// empty) with none of the three headers. A
 /// gate that refused unconditionally would print them here.
 #[test]
 fn clean_shapes_draw_no_printed_family_refusal() {
@@ -179,8 +175,8 @@ fn clean_shapes_draw_no_printed_family_refusal() {
     tree(tmp.path(), CLEAN);
     let err = build_stderr(tmp.path(), false);
     assert!(
-        err.contains("error: contract closure gate FAILED."),
-        "the control must reach the gate's verdict, or it shows nothing: {err}"
+        err.contains("contract closure gate: passed ("),
+        "the control must pass the gate, or it shows nothing: {err}"
     );
     for h in HEADERS {
         assert!(!err.contains(h), "no {h:?} refusal expected in:\n{err}");

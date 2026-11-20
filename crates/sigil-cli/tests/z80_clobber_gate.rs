@@ -8,11 +8,11 @@
 //! excluded BY ANNOTATION, `@allow("clobbers.computed-dispatch", "<reason>")`,
 //! never by name.
 //!
-//! The real binary over a self-contained fixture tree (one Z80 module and an empty
-//! game map), the same harness as `clobber_gate_location.rs`. THE EXIT CODE
-//! CARRIES NO SIGNAL HERE: the gate's frozen baselines are sized to aeon's corpus
-//! and fail over a tree this small too, so every assertion reads the refusal TEXT,
-//! with the gate's own verdict line as the control that the gate ran at all.
+//! The real binary over a self-contained described project (one Z80 module in the engine
+//! root, `test_support::write_project_fixture`, `--project` since G0b Task 11), the same
+//! harness as `clobber_gate_location.rs`. The fixture's contract baselines are empty, so
+//! the gate's verdict is the fixture's alone; every assertion reads the refusal TEXT, with
+//! the gate's own verdict line as the control that the gate ran at all.
 
 use std::path::Path;
 use std::process::Command;
@@ -50,21 +50,21 @@ section z80fix (cpu: z80) {
 ";
 
 const HEADER: &str = "error: [call.clobbers-incomplete] (Z80) closure firings";
-const VERDICT: &str = "error: contract closure gate FAILED.";
+/// The gate's pass line: the fixture's baselines are empty, so a tree with nothing to
+/// refuse passes (G0b Task 11).
+const PASSED: &str = "contract closure gate: passed (";
 
 fn tree(root: &Path, src: &str) -> std::path::PathBuf {
-    std::fs::create_dir_all(root.join("engine")).unwrap();
-    std::fs::create_dir_all(root.join("games/sonic4")).unwrap();
+    sigil_harness::test_support::write_project_fixture(root);
     let f = root.join("engine/z80fix.emp");
     std::fs::write(&f, src).unwrap();
-    std::fs::write(root.join("games/sonic4/map.toml"), "").unwrap();
     f
 }
 
-/// `sigil build --native --game sonic4` over `root`, returning stderr.
+/// `sigil build --project <root>/games/g --shape release` over the fixture, returning stderr.
 fn build_stderr(root: &Path, contracts_off: bool) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(root).args(["--native", "--game", "sonic4", "-o"]);
+    cmd.args(["build", "--project"]).arg(root.join("games/g")).args(["--shape", "release", "-o"]).env_remove("AEON_DIR");
     cmd.arg(root.join("out.bin"));
     if contracts_off {
         cmd.env("SIGIL_CONTRACTS", "0");
@@ -110,13 +110,13 @@ fn the_build_gate_refuses_a_z80_clobber_underclaim_with_its_location() {
 }
 
 /// An `@allow("clobbers.computed-dispatch", …)` proc is out of the direct-call
-/// closure's scope: the row is absent, while the gate still ran (its verdict line).
+/// closure's scope: the row is absent, and the gate ran and passed (its pass line).
 #[test]
 fn a_computed_dispatch_allow_excludes_the_proc() {
     let tmp = tempfile::tempdir().unwrap();
     tree(tmp.path(), Z80_ALLOWED);
     let err = build_stderr(tmp.path(), false);
-    assert!(err.contains(VERDICT), "the control must reach the gate's verdict, got:\n{err}");
+    assert!(err.contains(PASSED), "the gate must run and pass, got:\n{err}");
     assert!(!err.contains(HEADER), "an excluded proc must not be refused, in:\n{err}");
 }
 
@@ -141,9 +141,10 @@ fn the_contract_report_prints_the_z80_family() {
         let tmp = tempfile::tempdir().unwrap();
         tree(tmp.path(), src);
         let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
-            .args(["build", "--aeon"])
-            .arg(tmp.path())
-            .args(["--native", "--game", "sonic4", "--report", "contracts"])
+            .args(["build", "--project"])
+            .arg(tmp.path().join("games/g"))
+            .args(["--shape", "release", "--report", "contracts"])
+        .env_remove("AEON_DIR")
             .env_remove("SIGIL_CONTRACTS")
             .output()
             .expect("run sigil build --report contracts");
@@ -306,7 +307,7 @@ fn an_annotated_proc_reached_only_by_a_jump_is_allowed() {
     let tmp = tempfile::tempdir().unwrap();
     tree(tmp.path(), Z80_JUMPED);
     let err = build_stderr(tmp.path(), false);
-    assert!(err.contains(VERDICT), "the control must reach the gate's verdict, got:\n{err}");
+    assert!(err.contains(PASSED), "the gate must run and pass, got:\n{err}");
     assert!(!err.contains("[clobbers.computed-dispatch-called]"), "got:\n{err}");
 }
 

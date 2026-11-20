@@ -200,6 +200,11 @@ pub struct BuildOutput {
     pub rom: Vec<u8>,
     /// The assembled image's length (`EndOfRom`).
     pub assembled_len: usize,
+    /// The assembled image as the emit wrote it (`assembled_len` bytes, the header's
+    /// checksum and ROM-end fields folded over the image alone), before any appendix: the
+    /// whole file of a shape without the MD Debugger island, the prefix of one with it
+    /// (whose header the appendix step re-folds over the full file).
+    pub image: Vec<u8>,
     pub listing: Vec<sigil_link::ListingSymbol>,
     pub export_inputs: ExportInputs,
     pub warnings: Vec<BuildWarning>,
@@ -968,6 +973,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
         })
         .map_err(ctx)?;
     let assembled_len = rom.len();
+    let image = rom.clone();
     let full = if island {
         let facts = crate::appendix::AppendixFacts {
             blob_label: &p.engine.error_handler_blob,
@@ -984,6 +990,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     Ok(Outcome::Built(Box::new(BuildOutput {
         rom: full,
         assembled_len,
+        image,
         listing,
         export_inputs,
         warnings,
