@@ -787,6 +787,22 @@ pub fn emit_generated_in(
     Ok(resident)
 }
 
+/// For a standalone gate that lowers ONE sound module with no build around it (the
+/// `soundbankhead`/`sfx_bank_blob`/`dac_banks` ports): the seams' artifacts emitted into
+/// a fresh build directory, and the sonic4 roots with that directory as their `generated`
+/// root (G0b Task 9), so the module's `embed("generated/sound/...")` reads them and the
+/// tree is not written. Keep the [`BuildDir`](sigil_build::build_dir::BuildDir) alive
+/// while lowering; dropping it removes the files.
+pub fn standalone_sound_roots(
+    aeon: &Path,
+) -> (sigil_build::build_dir::BuildDir, std::sync::Arc<sigil_span::roots::SourceRoots>) {
+    let dir = sigil_build::build_dir::BuildDir::create().unwrap_or_else(|e| panic!("{e}"));
+    let sound = dir.sound().unwrap_or_else(|e| panic!("{e}"));
+    emit_generated_in(aeon, &sound, None).unwrap_or_else(|e| panic!("emit the sound artifacts: {e}"));
+    let roots = sonic4_profile(false).legacy_roots(aeon, Some(dir.generated()));
+    (dir, roots)
+}
+
 /// [`emit_generated`] for a TEST that wants a failure to be its own failure: the
 /// gates run it as a precondition step, where a panic is the right outcome. It writes
 /// the reference tree's mount, as [`emit_generated`] does; no build calls it.

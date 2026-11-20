@@ -33,7 +33,8 @@
 #     roots, `<engine.root>/` and `games/<g>/`, where the legacy driver walks the whole
 #     tree. So every `.emp` READ row outside those two roots (another game's modules,
 #     `tools/fixtures/`) is not read, DIGEST-SCAN counts and hashes the legacy listing's
-#     own `.emp` rows inside them, and the export's `files` drops the same modules.
+#     own `.emp` rows inside them, and the export's `files` drops the same modules (the
+#     line table's file indices renumbered to match).
 # The job transforms the LEGACY listing and export into the artifacts the new driver must
 # write (DIGEST-SHAPE `target=` -> the row name; exactly those DIGEST-READ rows, each file
 # named from the copy's own descriptions, crc and size from the copy's own files, inserted
@@ -236,8 +237,21 @@ def expected_export(old: dict) -> dict:
     e["shape"]["shape"] = shape
     # The scan (G0b Task 9): another game's modules are not read. The export's `game` root
     # holds the games (`<g>/...`).
-    e["files"] = [f for f in e["files"]
-                  if not (f.get("lang") == "emp" and f.get("root") == "game" and not f["path"].startswith(game + "/"))]
+    # The line table names a file by its index into `files`, so the kept files are
+    # renumbered there; a row naming a dropped file (a module the new driver does not read
+    # placed bytes) cannot be stated and is refused.
+    drop = [f.get("lang") == "emp" and f.get("root") == "game" and not f["path"].startswith(game + "/") for f in e["files"]]
+    renum, n = {}, 0
+    for i, d in enumerate(drop):
+        if not d:
+            renum[i] = n; n += 1
+    e["files"] = [f for f, d in zip(e["files"], drop) if not d]
+    col = e["lines"]["columns"].index("file")
+    for sec in e["lines"]["sections"].values():
+        for row in sec["rows"]:
+            if row[col] not in renum:
+                raise ValueError(f"a line row names dropped file {row[col]}: {row}")
+            row[col] = renum[row[col]]
     return e
 
 rom_ok = sha_l == sha_p

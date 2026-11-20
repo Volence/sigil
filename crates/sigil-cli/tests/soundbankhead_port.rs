@@ -47,13 +47,14 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     // EMIT-FIRST: the embedded head .bin are gitignored build artifacts.
-    native::ensure_generated(&aeon);
+    // The embedded artifacts come from the build's `generated` root (G0b Task 9).
+    let (_generated, roots) = native::standalone_sound_roots(&aeon);
     let path = aeon.join("games/sonic4/data/sound/soundbankhead.emp");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read: {e}"));
     let (file, pd) = parse_str(&src);
     assert!(pd.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {pd:?}");
     let opts = LowerOptions {
-        roots: None,
+        roots: Some(roots),
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: Some(aeon.clone()),

@@ -2037,6 +2037,9 @@ until its row is removed.
 ## G0A-SCAN-READS-TOOL-FIXTURES
 
 - state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- 2026-11-20 (G0b Task 9): a `--project` build no longer reads `tools/fixtures/` (its scan is the engine and game
+  roots). The constant stays while the legacy driver walks the tree; it goes at Task 11 (see
+  G0A-SCAN-READS-OTHER-GAME's residue).
 - Found in G0a Task 3. Four `.emp` fixtures under the aeon `tools/fixtures/anchor_sweep/` are read by every build
   only because the module scan reads every `*.emp` in the tree. They are not part of the program and fit none of
   the four export roots. Ruling: a scan-scope defect, not a missing root. `UNROOTED_AEON_DIRS = ["tools/fixtures"]`
@@ -2044,9 +2047,23 @@ until its row is removed.
   under `tools/` is an error naming the path. The hole is DELETED when G0b scopes the module scan to the engine and
   game roots; then the constant and its test go with it.
 
-## G0A-SCAN-READS-OTHER-GAME
+## G0A-SCAN-READS-OTHER-GAME: CLOSED (game-as-data driver), residue on the legacy driver
 
-- state: **OPEN** 2026-11-18  size: `M`  project: `G0A-BUILD-EXPORT`  closed by: G0b (two-root module scan)
+- state: **CLOSED** 2026-11-20 (G0b Task 9) for the game-as-data driver  size: `M`  project: `G0A-BUILD-EXPORT`
+- Closed by `Project::scan` (`Manifest::scan_roots` over the engine root and the game's sources root, each module
+  tagged with its root), used by every scan of a `--project` build: the required-constant check, the RAM harvest,
+  the program lowering and the contract gate. The sound seams' import check resolves among the same roots
+  (`import_check::seam_roots`). Witnesses, each red-first: `sigil-build/tests/two_roots.rs`
+  `engine_root_alone_does_not_pull_other_games` (games/demo's scan holds no sonic4 module, by id or path, and
+  every module is tagged inside its root; control: the whole checkout holds them) and `project_contract_gate.rs`
+  `another_games_broken_module_is_not_scanned` (a module in the other game that breaks any whole-tree scan does
+  not reach the build). Measured: demo's `--project` listing DIGEST-SCAN 208 -> 80 files; its export carries no
+  `game/sonic4/...` row (the comparison job's declared delta drops exactly those, byte-exact on 10 shapes).
+- RESIDUE, the legacy driver (`--legacy`, deleted at Task 11): it still walks the whole tree, so its demo export
+  still lists sonic4's sources. The two gate-8 assertions below and `UNROOTED_AEON_DIRS`
+  (G0A-SCAN-READS-TOOL-FIXTURES) are pinned to legacy-driver exports, so they land with Task 11's cutover, when
+  every build is a `--project` build.
+- The original text follows.
 - Found by the G0a final review (A-I2); controller ruling: BOOK, do not fix in G0a (narrowing the scan changes the
   front end beyond G0a's scope). The module scan reads every `*.emp` in the tree, so each game's export lists the
   OTHER game's sources in `files` and hashes them into `inputsSha256` (`sigil-harness/src/export_files.rs` says so in
@@ -2440,9 +2457,22 @@ until its row is removed.
 - `.aeon-g0b` carries no `engine/debug/generated/` blobs (untracked build outputs), so a debug shape cannot build
   from a bare copy of it; the Task 5 comparisons copied them from the 99cb963d reference.
 
-## G0B-GENERATED-ROOT-SCOPE
+## G0B-GENERATED-ROOT-SCOPE: CLOSED
 
-- state: **open** 2026-11-19 (G0b Task 6)  size: `S`  project: `G0B-GAME-AS-DATA`  closed by: G0b Task 9
+- state: **CLOSED** 2026-11-20 (G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- Both halves are gone. The thread-local (`sigil_frontend_emp::generated_root`) is deleted: the generated root is
+  a named root of the lowering options (`LowerOptions::roots`, `sigil_span::roots::SourceRoots`), handed to the
+  evaluator as a `Sandbox::Roots` like any other root. The prefix alias (`build_dir::GENERATED_MOUNT`,
+  `generated_root_for`) is deleted: the seams write `<build>/generated/sound/`, aeon spells the 13 embeds
+  `embed("generated/sound/<file>")` (paired aeon commit), and a build with no generated root refuses a
+  `generated/` path by name ([root.missing]). The record layer (`export_files::GeneratedRoot`) keeps G0a's
+  equivalence `generated/<sub>/<rest>` = `engine/<sub>/generated/<rest>`, so digest and export rows for generated
+  reads are unchanged.
+- Residue: the legacy driver keeps a legacy sound mount (`SourceRoots::with_legacy_sound_mount`: an
+  `engine/sound/generated/<rest>` spelling reads `generated/sound/<rest>`) because the step-0 reference tree (aeon
+  99cb963d) still spells the old path. It dies with the legacy driver (Task 11). The standalone port gates still
+  provision the tree's mount (`native::ensure_generated`); they go with the seams in G0c.
+- The original text follows.
 - A build's generated root (`sigil_frontend_emp::generated_root`) is THREAD-SCOPED: the build enters it, and
   `run_on_eval_stack` carries it to the comptime evaluation thread. It is not a `LowerOptions` field because the
   sandbox is reached from data lowering, constant folding and layout registration, and `LowerOptions` has 372
@@ -2539,7 +2569,13 @@ until its row is removed.
 
 ## G0B-TASK9A-RESIDUE
 
-- state: open 2026-11-20 (found in G0b Task 9a)  size: `S`  project: `G0B-GAME-AS-DATA`
+- state: open 2026-11-20 (found in G0b Task 9a); item 2 CLOSED 2026-11-20 (G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **Item 2 closed (G0b Task 9):** candidate scope is root membership (`roots::in_candidate_scope` asks
+  `ParsedModule::root`), the build scans exactly the closure's roots, and `check_placed_in_analysed` refuses a placed
+  module outside them by name ([gate.placed-not-analysed], red-first unit test). One rule. Consequence measured:
+  sonic4's four `data.*` seam-input modules became candidates (`data.dac_samples` defines `Dac_Temp_Blip` as
+  `games.sonic4.dac_banks` does) and are gated out by name in aeon's `games/sonic4/game.toml`; ROM bytes unchanged.
+  Items 1 and 3 stand.
 - What Task 9a (required game constants, the narrowed project gate) leaves for later tasks:
   1. **`--closure-scope corpus|game` is a legacy-only report flag.** The comparison job's `report=` column needs the
      two drivers' censuses over ONE module set, and a `--project` shape now analyses engine + its own game while the
@@ -2557,6 +2593,27 @@ until its row is removed.
      about the sound-on BUILD: the Z80 sound seams still read sonic4's `config/sound_ids.emp` by fixed path
      (`seam2::SOUND_IDS_REL`, and `seam1`'s table pins `SFXID_REV_LOOP` = `$AB`), so how a sound-on game's own value
      reaches the Z80 driver is a G0c question (aeon DEFERRED_WORK G0C-SOUND-SEAMS). Cherub (Task 13) is sound-off.
+
+## G0B-UNROOTED-TREE-READS
+
+- state: open 2026-11-20 (found in G0b Task 9)  size: `M`  project: `G0B-GAME-AS-DATA`
+- Two-root resolution keeps one transitional rule: an UNROOTED path (no `engine/`, `game/` or `generated/` first
+  segment) that no root holds resolves against the engine's checkout, and ONLY for a game inside that checkout
+  (`SourceRoots::with_tree`; an out-of-tree game such as Cherub gets `[root.unrooted]`). An unrooted path a root
+  does hold is refused `[root.ambiguous]`. aeon's spellings that ride the fallback, counted at aeon e6fb33d7 (embed/import/include spellings):
+  68 `games/sonic4/data/...` (generator output included: `ojz_block_gen.py`, `bg_emit`, `effects_gen`,
+  `smps_import`), 12 `art/...` at the aeon root, 2 `games/sonic4/test/...`. Respell each as `game/...` (or move
+  the shared `art/` under a root) and the generators with them, then delete the tree fallback. A G0c item
+  (the generators are aeon's).
+
+## G0B-DIGEST-OUT-OF-TREE-ROOTS
+
+- state: open 2026-11-20 (found in G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- The listing digest names a file outside the aeon tree under its build root (`root=engine|game|generated`,
+  `origin=source`) and a scan member there as `<root>:<path>` (`digest_names_each_root`). No shipped shape writes
+  such a row (both games are in the tree); the first is Cherub (Task 13). The G0a EXPORT has no equivalent yet: its
+  `files` roots are computed against the aeon tree, so an out-of-tree game's export placement is Task 13's to
+  settle (the listing grammar is ready, FORMAT unchanged).
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
