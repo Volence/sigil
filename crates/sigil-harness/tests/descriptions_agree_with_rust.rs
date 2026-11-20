@@ -485,8 +485,33 @@ fn descriptions_agree_with_rust() {
         let rules: Vec<&GateRule> = engine.gate.iter().chain(&side.desc.gate).collect();
         let game_scope = format!("{}.", p.game_module_prefix());
         let desc_scope = format!("{prefix_desc}.");
+        // The `--project` driver scopes candidates by ROOT (G0b Task 9,
+        // `roots::in_candidate_scope`): a module under the game's sources root is a candidate
+        // whatever its id. The Rust driver scopes by id prefix and never places such a module
+        // (sonic4's `data.*` seam inputs), so the description must place it in no shape;
+        // those are compared here, and their gate rows have no Rust twin.
+        let game_root = std::fs::canonicalize(aeon.join(&side.dir_rel).join(&side.desc.sources.root))
+            .unwrap_or_else(|e| panic!("{at}: the game's sources root: {e}"));
+        let root_only = |m: &sigil_frontend_emp::resolve::manifest::ParsedModule| {
+            let id = m.id.as_str();
+            !(id.starts_with("engine.") || id.starts_with(&game_scope) || id.starts_with(&desc_scope))
+                && sigil_build::driver::under_roots(&m.path, std::slice::from_ref(&game_root))
+        };
+        let mut root_only_ids: BTreeSet<String> = BTreeSet::new();
         for m in &manifest.modules {
             let id = m.id.as_str();
+            if root_only(m) {
+                root_only_ids.insert(id.to_string());
+                let desc = match desc_place(&rules, id, &shape, &engine) {
+                    Ok(v) => v.unwrap_or(true),
+                    Err(err) => {
+                        t.errs.push(format!("[placement] module `{id}` in shape {at}: {err}"));
+                        continue;
+                    }
+                };
+                t.check("placement", !desc, || format!("module `{id}` (under the game's root, outside the Rust id scope) in shape {at}: Rust places it false, the description true"));
+                continue;
+            }
             let rust_in = (id.starts_with("engine.") || id.starts_with(&game_scope)) && !SIGIL_PROBE_FIXTURES.contains(&id);
             let rust = rust_in && gate_of(id).is_none_or(|gt| gt.admits(&rshape));
             let desc_in = id.starts_with("engine.") || id.starts_with(&desc_scope);
@@ -518,7 +543,7 @@ fn descriptions_agree_with_rust() {
         // names every always-placed module (`place_in = "all"`, G0b Task 5), and those rows
         // have no Rust twin. The placement scan above still compares every module.
         let desc_ids: BTreeSet<String> =
-            rules.iter().filter(|r| r.place_in != PlaceIn::All).map(|r| r.modules.clone()).collect();
+            rules.iter().filter(|r| r.place_in != PlaceIn::All && !root_only_ids.contains(&r.modules)).map(|r| r.modules.clone()).collect();
         t.rows("gate rows", &format!("{at}: gated module ids (SHAPE_GATES + SIGIL_PROBE_FIXTURES vs gate rules)"), &rust_ids.iter().cloned().collect::<Vec<_>>(), &desc_ids.iter().cloned().collect::<Vec<_>>());
         for id in rust_ids.intersection(&desc_ids) {
             let rust = !SIGIL_PROBE_FIXTURES.contains(&id.as_str()) && gate_of(id).is_none_or(|gt| gt.admits(&rshape));
