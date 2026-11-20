@@ -2372,7 +2372,7 @@ until its row is removed.
   `<stem>.build.json` export (unless `--no-build-json`) through the SAME writer as `--aeon`
   (`write_build_artifacts`; each driver supplies a `BuildIdentity`). The `engine/debug/generated/` item below is
   handled by the comparison job, which produces the blobs in each clone with `tools/gen_compression_vectors.py`.
-- **Still open, and it blocks Task 8 (demo cutover):** the CONTRACT GATE (`run_contract_gate`) does not run on
+- **Still open, ruled as Task 8's step 0 (not Task 7's):** the CONTRACT GATE (`run_contract_gate`) does not run on
   `--project`. It is keyed to the legacy `BuildTarget`/`GameProfile` (`corpus_closure_or_exit`, `diff_d1c(profile)`,
   baselines from `contract_baseline.rs`), so a `build.sh` arm switched to `--project` would ship builds no closure gate
   checked. It does not affect the comparison (its reads were already in the old read set; the listings agree on every
@@ -2488,7 +2488,24 @@ until its row is removed.
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
-- state: **open, needs a ruling** 2026-11-20 (found in G0b Task 7)  size: `S`  project: `G0B-GAME-AS-DATA`
+- state: **closed** 2026-11-20, G0b Task 7 round 2 (found in Task 7)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **Ruled (proxy, Fable aae3c4f22e38f080a, owner may override): option (a), a narrow declared delta.** Implemented in
+  `scripts/compare-drivers.sh`: the LEGACY listing and export are transformed into what the game-as-data driver must
+  write (DIGEST-SHAPE `target=` -> the `[shapes.*]` row, checked against the copy's game.toml; exactly the two
+  description DIGEST-READ rows, crc/size from the copy's files, inserted in digest order; aggregate recomputed; export
+  `shape.shape` -> the row name, all else untouched) and compared byte for byte with the new artifacts; nothing is
+  stripped from the new side. The delta is required (`MATCH (declared delta)`, `driver_comparison` accepts nothing
+  else). Measured on aeon 559b8910: `SHAPES 10/10 MATCH`. After cutover the export shape name and DIGEST-SHAPE
+  `target=` are the description's row name. The keystones fixture's pairing row is its own name; its ROM equals
+  config-a's on both drivers, so it adds no separate byte evidence.
+- Booked consumers (not implemented here):
+  - **aeon `tools/gate_cut_shape.py`** treats `target == game` as "canonical build"; with `target=release` its rename
+    guard would SILENTLY stop firing. Re-key it on (game, target), accepting both spellings until Task 10, in Task 8's
+    paired aeon change. (`tools/leg_provenance.py` records `target` but needs no code change.)
+  - **Oracle** re-pins `fixtures/g0a/s4.trim.build.json` and `crates/oracle-aether/tests/build_export_real.rs` at
+    Task 10 (the export's `shape.shape` becomes the row name).
+  - **Task 11** checks whether any golden pins a listing (the DIGEST-SHAPE `target=` and read rows change at cutover).
+- The text below is the finding as booked before the ruling.
 - The comparison job (`scripts/compare-drivers.sh`, `crates/sigil-cli/tests/driver_comparison.rs`) builds all 10
   shapes with both drivers: ROM 10/10 identical, `.lst` 0/10, export 1/10 (lean). Every listing and export difference
   is one of exactly two kinds, on every shape (the job's `declared-delta` line checks this byte-exactly, diagnostic
