@@ -794,6 +794,11 @@ pub fn ensure_generated(aeon: &Path) {
 /// in the listing; and [`harvest_game_constants`] seeds it into the game modules'
 /// folds.
 pub fn harvest_engine_constants(aeon: &Path, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
+    unrooted_read_fails_loud(aeon, || harvest_engine_constants_in(aeon, profile))
+}
+
+/// [`harvest_engine_constants`] with a generated root already in force.
+fn harvest_engine_constants_in(aeon: &Path, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     let path = aeon.join("engine/system/constants.emp");
     let src = sigil_span::read_set::read_to_string(&path)
         .map_err(|e| format!("harvest_engine_constants: read {}: {e}", path.display()))?;
@@ -837,6 +842,11 @@ pub fn harvest_engine_constants(aeon: &Path, profile: &GameProfile) -> Result<Ve
 /// (`eval_path` falls back to defines after consts/equs), the same pattern the
 /// `-D` seam already uses.
 pub fn harvest_game_constants(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
+    unrooted_read_fails_loud(aeon, || harvest_game_constants_in(aeon, rel, profile))
+}
+
+/// [`harvest_game_constants`] with a generated root already in force.
+fn harvest_game_constants_in(aeon: &Path, rel: &str, profile: &GameProfile) -> Result<Vec<(String, i64)>, String> {
     // Seed the engine constants, harvested in this shape, as defines so the game
     // module's lone cross-module reference (`COLLECTED_MASK_BYTES`) folds inside the
     // standalone eval. Also seed `DEBUG` (the build shape): `sound_ids.emp`'s
@@ -896,6 +906,11 @@ const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
 /// record's tail again (bug005 had it at `frame_off - 2` while the cache
 /// was the tail).
 pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
+    unrooted_read_fails_loud(aeon, || harvest_engine_struct_offsets_in(aeon))
+}
+
+/// [`harvest_engine_struct_offsets`] with a generated root already in force.
+fn harvest_engine_struct_offsets_in(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     use sigil_frontend_emp::layout::layout_struct_ambient;
 
     let types_src = sigil_span::read_set::read_to_string(aeon.join("engine/system/types.emp"))
@@ -969,6 +984,14 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
 /// Shape-specific: the merge carries `DEBUG` (0/1), so the debug prof block's
 /// shift flows through to every downstream label's harvested address.
 pub fn harvest_engine_ram_addresses(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<Vec<(String, i64)>, String> {
+    unrooted_read_fails_loud(aeon, || harvest_engine_ram_addresses_in(aeon, profile))
+}
+
+/// [`harvest_engine_ram_addresses`] with a generated root already in force.
+fn harvest_engine_ram_addresses_in(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<Vec<(String, i64)>, String> {
@@ -1348,11 +1371,45 @@ pub fn name_env_report(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<(Vec<sigil_frontend_emp::resolve::hygiene::NameEnvRow>, Vec<sigil_span::Diagnostic>), String> {
-    let p = prepare_program(aeon, profile)?;
-    Ok(resolve::name_env_report(&p.manifest, &p.entry_id, None, &p.opts))
+    unrooted_read_fails_loud(aeon, || {
+        let p = prepare_program(aeon, profile)?;
+        Ok(resolve::name_env_report(&p.manifest, &p.entry_id, None, &p.opts))
+    })
 }
 
+/// Run `f`, a lowering of `aeon` that emits no sound artifacts, under a generated root
+/// for `aeon` ([`sigil_build::build_dir::with_generated_root`]). Inside a build the
+/// build's root is already in force and is reused. Called on its own, `f` gets a fresh
+/// EMPTY root, so an `embed` under the generated mount fails as `[embed.not-found]`
+/// rather than reading whatever an earlier process left in the tree's
+/// `engine/sound/generated/`.
+fn unrooted_read_fails_loud<T>(aeon: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    sigil_build::build_dir::with_generated_root(aeon, |_| f())
+}
+
+/// The `.emp` program of `profile`, built hermetically: a fresh build directory
+/// outside the tree becomes the generated root, a sound-on profile's artifacts are
+/// emitted into it ([`emit_generated_in`]), and the lowering embeds them from there.
+/// The tree's own `engine/sound/generated/` is never read, whether it is absent, stale
+/// or poisoned (`build_emp_hermetic` in `sigil-cli/tests/build_hermetic.rs`).
+///
+/// The root is always fresh, never reused from an enclosing build: this call emits,
+/// and emitting into a root another build is reading would rewrite its inputs. The
+/// chained and frozen resolves emit into their own root and call [`build_emp_in`].
 pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
+    let dir = sigil_build::build_dir::BuildDir::create()?;
+    let root = dir.root_for(aeon)?;
+    let generated = root.dir.clone();
+    let _root = sigil_frontend_emp::generated_root::enter(root);
+    if profile.sound_on {
+        emit_generated_in(aeon, &generated, profile.anchor_overlay.as_ref())?;
+    }
+    build_emp_in(aeon, profile)
+}
+
+/// [`build_emp`] with a generated root already in force, its sound artifacts already
+/// emitted into it.
+fn build_emp_in(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
     let PreparedProgram { manifest, mdiags, pdiags, source, registry, removed_import_errors, entry_id, opts } =
         prepare_program(aeon, profile)?;
 
@@ -2213,7 +2270,7 @@ fn resolve_chained_in(aeon: &Path, gen: &Path, profile: &GameProfile) -> Result<
     let AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as_side(aeon, profile)?;
     let EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } =
-        build_emp(aeon, profile)?;
+        build_emp_in(aeon, profile)?;
     // The AS front end's side table, while its sections are still its own.
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
     let as_code = as_module.named_code_marks();
@@ -2522,7 +2579,7 @@ fn resolve_frozen_sections_in(aeon: &Path, gen: &Path, profile: &GameProfile) ->
     // same throwaway treatment the drift warnings below get.
     let as_side = assemble_as_side(aeon, profile)?;
     let mut sections: Vec<Section> = as_side.module.sections;
-    sections.extend(build_emp(aeon, profile)?.sections);
+    sections.extend(build_emp_in(aeon, profile)?.sections);
     // K5: the declared map order drives the walk, and the declared anchors are its
     // islands — the SAME inputs the emit path feeds it, so this resolve and the build
     // never diverge on a stale provisional gap. Drift warnings are the build's to

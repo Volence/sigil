@@ -20,7 +20,21 @@
 //! evaluation thread through [`crate::eval::run_on_eval_stack`], the one place this
 //! crate spawns a thread. Two builds on two threads of one process each see their own
 //! root, so concurrent builds of one tree (with different anchor overlays, say) cannot
-//! read each other's files. Interim: G0b's two-root resolution (Task 9) names roots in
+//! read each other's files.
+//!
+//! # Who enters it
+//!
+//! The guarantee holds only while a root is in force: with none, the sandbox resolves a
+//! mount path against the tree like any other path (this crate does not know which
+//! tree paths a project mounts). So every build entry point enters one:
+//! `sigil build` (both drivers, `--check` included), the harness's chained and frozen
+//! resolves, `native::build_emp` (always a fresh root, with the sound artifacts emitted
+//! into it), and the harness's focused lowerings (`harvest_*`, `name_env_report`), which
+//! reuse an enclosing build's root or else get an empty one, so a mount read there
+//! fails loudly. What still lowers with no root: single-module port tests that
+//! provision the tree's mount themselves first (`native::ensure_generated`, which writes
+//! the tree on purpose), and the generic `sigil emp --root` path, which builds no aeon
+//! sound. Interim: G0b's two-root resolution (Task 9) names roots in
 //! the lowering options, and this scope folds into it there (queue row
 //! `G0B-GENERATED-ROOT-SCOPE`).
 
