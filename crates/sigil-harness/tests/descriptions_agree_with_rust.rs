@@ -596,9 +596,9 @@ fn descriptions_agree_with_rust() {
     let req: Vec<String> = lst.lines().filter(|l| l.contains(".get(\"")).flat_map(literals).collect();
     t.check("engine", req == engine.required_labels, || format!("required_labels Rust {req:?} vs engine.toml {:?}", engine.required_labels));
     let first_join = |body: &str| body.split("aeon.join(\"").nth(1).and_then(|s| s.split('"').next()).map(|s| s.trim_start_matches("engine/").to_string());
-    let consts = first_join(fn_body(&nsrc, "harvest_engine_constants"));
+    let consts = first_join(fn_body(&nsrc, "harvest_engine_constants_in"));
     t.check("engine", consts.as_deref() == Some(&*norm(&engine.constants)), || format!("constants Rust {consts:?} vs `{}`", engine.constants.display()));
-    let types = first_join(fn_body(&nsrc, "harvest_engine_struct_offsets"));
+    let types = first_join(fn_body(&nsrc, "harvest_engine_struct_offsets_in"));
     t.check("engine", types.as_deref() == Some(&*norm(&engine.types)), || format!("types Rust {types:?} vs `{}`", engine.types.display()));
     // [sound]
     let ssrc = harness_src("sound_bank_ids.rs");
