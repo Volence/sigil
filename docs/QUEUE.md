@@ -2222,4 +2222,13 @@ until its row is removed.
     `section:player_climb`, which would have shrunk the pin by the insta-shield section). `region_end_contracts`
     is re-grounded: the parse guard on the manifest's `[[region]]` count, the negative control on re-spelling
     each `section:` end as its successor's head label (78 of 80). Red-first in `region-end-contracts-rf.txt`.
+  - LESSON, process: tip #210's attest was recorded FAILED (6090/1) because `repin_pins`'
+    `generated_pins_match_the_hand_typed_baseline` asserts literal bases that the in-place slide moved (nine
+    literals). A byte-moving freeze must run that test (and fix its literals) BEFORE `refreeze --attest`; an
+    attest cannot be retried. Closed by #211 `walk-measure-in-place-r2` (`--supersede-tip`, byte-identical goldens),
+    attested PASSED 6091/0/3. A `refreeze --freeze` pre-flight that runs `repin_pins` would make this impossible.
+  - OPEN, pre-existing (not this parcel; old sigil 4104e5df identical): aeon `tools/landing_build.sh` at 99cb963d
+    passes every lane but cannot stamp, because sigil's G0a build export writes `<stem>.build.json` beside each
+    ROM and aeon's land-gate reads the untracked files as the tree changing mid-run. Either aeon ignores
+    `*.build.json` or sigil writes the export outside the tree. `docs/evidence/walk-measure-in-place/landing-build.txt`.
 

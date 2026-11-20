@@ -1,0 +1,43 @@
+aeon tools/landing_build.sh on pycache-free git clones of aeon 99cb963d (round 2, 2026-11-20).
+
+== NEW sigil (this branch, sigil 0.1.0 (70719785)): clone .walk-landbuild2-aeon
+Assembler: sigil 707197857846 (clean at capture, no uncommitted changes)
+4220 passed, 2 skipped, 43 deselected, 12 warnings, 162 subtests passed in 243.71s (0:04:03)
+14 passed, 29 skipped, 4222 deselected, 40 subtests passed in 8.99s
+EXIT_s4=0 size=850262 secs=463
+Assembler: sigil 707197857846 (clean at capture, no uncommitted changes)
+21 passed, 22 skipped, 4222 deselected in 21.56s
+EXIT_s4.debug=0 size=870606 secs=44
+Assembler: sigil 707197857846 (clean at capture, no uncommitted changes)
+2 passed, 41 skipped, 4222 deselected in 0.68s
+EXIT_demo.debug=0 size=106981 secs=5
+40 passed, 3 skipped, 4222 deselected, 40 subtests passed in 40.95s
+EXIT_needs_build=0
+land-gate: NO STAMP: the tree CHANGED during the run (3 code path(s) dirty now, clean at start). What was built is not what is committed:
+land-gate:     ?? demo.debug.build.json
+land-gate:     ?? s4.build.json
+land-gate:     ?? s4.debug.build.json
+END rc=2
+
+== OLD sigil (4104e5df, master closure): clone .walk-landbuild3-aeon
+Assembler: sigil 4104e5df6913 (clean at capture, no uncommitted changes)
+4220 passed, 2 skipped, 43 deselected, 12 warnings, 162 subtests passed in 261.27s (0:04:21)
+14 passed, 29 skipped, 4222 deselected, 40 subtests passed in 8.50s
+EXIT_s4=0 size=850296 secs=480
+Assembler: sigil 4104e5df6913 (clean at capture, no uncommitted changes)
+21 passed, 22 skipped, 4222 deselected in 19.71s
+EXIT_s4.debug=0 size=870560 secs=42
+Assembler: sigil 4104e5df6913 (clean at capture, no uncommitted changes)
+2 passed, 41 skipped, 4222 deselected in 0.61s
+EXIT_demo.debug=0 size=106981 secs=4
+40 passed, 3 skipped, 4222 deselected, 40 subtests passed in 37.76s
+EXIT_needs_build=0
+land-gate: NO STAMP: the tree CHANGED during the run (3 code path(s) dirty now, clean at start). What was built is not what is committed:
+land-gate:     ?? demo.debug.build.json
+land-gate:     ?? s4.build.json
+land-gate:     ?? s4.debug.build.json
+END rc=2
+
+Every lane passes on both sides. Neither stamps, for the same reason: sigil's G0a build export writes
+<stem>.build.json beside each ROM, which aeon 99cb963d neither ignores nor expects, so land-gate sees a tree that
+changed during the run. Pre-existing (the old sigil does it too); not this parcel.
