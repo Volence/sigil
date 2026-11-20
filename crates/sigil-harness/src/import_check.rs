@@ -36,12 +36,13 @@ thread_local! {
     static SCANS: RefCell<Vec<(ScanRoots, Fingerprint, Rc<Manifest>)>> = const { RefCell::new(Vec::new()) };
 }
 
-/// The roots the sound seams' modules resolve among: the engine root and the root of the
-/// game the seams serve (sonic4, whose sources hold every module they lower), as that
-/// game's build scans them.
+/// The roots the sound seams' modules resolve among: the engine root and the directory of
+/// the game description the seams read (`seam2::SOUND_GAME_DESC_REL`, the seam-2 sound
+/// fact that names the game whose sources hold every module they lower), as that game's
+/// build scans them.
 pub fn seam_roots(aeon: &Path) -> ScanRoots {
-    let game = crate::native::sonic4_profile(false).game_root(aeon);
-    let game_dir = game.parent().map(Path::to_path_buf).unwrap_or_else(|| aeon.to_path_buf());
+    let desc = aeon.join(crate::seam2::SOUND_GAME_DESC_REL);
+    let game_dir = desc.parent().map(Path::to_path_buf).unwrap_or_else(|| aeon.to_path_buf());
     vec![(sigil_span::roots::RootName::Engine, aeon.join("engine")), (sigil_span::roots::RootName::Game, game_dir)]
 }
 

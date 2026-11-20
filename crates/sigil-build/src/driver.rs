@@ -822,13 +822,20 @@ fn prepare_emp(
         .collect::<Result<_, String>>()
         .map_err(ctx)?;
     let entry_id = "native_flip_entry";
+    let src = synthetic_entry_src(entry_id, &seeds, &registry, &extra);
+    let source = push_synthetic(&mut manifest, entry_id, &src, &p.checkout)?;
+    let lopts = lower_options(p, defines, generated);
+    Ok(PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts })
+}
+
+/// The synthetic entry module's source: one `use` per seed, then per placed module root,
+/// then per `--extra-entry`, and nothing else (it emits no code).
+fn synthetic_entry_src(entry_id: &str, seeds: &[String], registry: &[ModuleSpec], extra: &[String]) -> String {
     let mut src = format!("module {entry_id}\n\n");
     for s in seeds.iter().map(String::as_str).chain(registry.iter().map(|m| m.module_id.as_str())).chain(extra.iter().map(String::as_str)) {
         src.push_str(&format!("use {s}\n"));
     }
-    let source = push_synthetic(&mut manifest, entry_id, &src, &p.checkout)?;
-    let lopts = lower_options(p, defines, generated);
-    Ok(PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts })
+    src
 }
 
 fn build_emp(
@@ -1404,5 +1411,41 @@ mod tests {
         relocate_rows(&mut order, &["Pool".into()], &["ReleaseFault".into(), "BusError".into()]).unwrap();
         assert_eq!(order, ["A", "B", "Pool", "ReleaseFault", "BusError", "EndOfRom"]);
         assert!(relocate_rows(&mut order, &["Gone".into()], &["BusError".into()]).is_err());
+    }
+
+    // ── Moved from the profile-driven driver's `entry_synth_tests` (G0b Task 11). ──
+
+    fn seeds() -> Vec<String> {
+        ["engine.contract", "games.sonic4.game", "engine.ram", "games.sonic4.ram"].iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn synthetic_entry_emits_no_code() {
+        let src = synthetic_entry_src("native_flip_entry", &seeds(), &[], &[]);
+        let (file, perrs) = sigil_frontend_emp::parse_file(&src, sigil_span::SourceId(0));
+        assert!(perrs.iter().all(|d| d.level != sigil_span::Level::Error), "the synthetic entry must parse clean: {perrs:?}");
+        for item in &file.items {
+            assert!(
+                matches!(item, sigil_frontend_emp::ast::Item::Use(_)),
+                "the synthetic entry holds a non-`use` item, it now emits code, so its items must be \
+                 `ItemAuthor::EntrySynth`-stamped with a declared obligation home before shipping: {item:?}"
+            );
+        }
+        assert!(!file.items.is_empty(), "the entry drives reachability via `use` lines");
+    }
+
+    /// An extra entry becomes one more `use` edge and nothing else.
+    #[test]
+    fn extra_entries_ride_the_use_edge_list() {
+        let extras = ["games.a.one".to_string(), "games.b.two".to_string()];
+        let src = synthetic_entry_src("native_flip_entry", &seeds(), &[], &extras);
+        assert!(src.contains("\nuse games.a.one\n"), "{src}");
+        assert!(src.contains("\nuse games.b.two\n"), "{src}");
+        let (file, perrs) = sigil_frontend_emp::parse_file(&src, sigil_span::SourceId(0));
+        assert!(perrs.iter().all(|d| d.level != sigil_span::Level::Error), "{perrs:?}");
+        for item in &file.items {
+            assert!(matches!(item, sigil_frontend_emp::ast::Item::Use(_)), "{item:?}");
+        }
+        assert!(!synthetic_entry_src("native_flip_entry", &seeds(), &[], &[]).contains("games.a.one"));
     }
 }

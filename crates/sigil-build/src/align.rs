@@ -155,4 +155,104 @@ mod tests {
         let bad = [row("X", 3)];
         assert!(AlignTable::new([("g", &bad[..])]).unwrap_err().contains("power of two"));
     }
+
+    // ── Moved from the profile-driven driver's `declared_alignment_tests` (G0b Task 11),
+    // onto this table: the post-resolve half (`validate_resolved`) and the walk's rounding
+    // (`packed_base`). The pre-walk "every head label has a row" half has no successor: an
+    // undeclared section takes the evenness default by design (spec section 2). ──
+
+    fn sec(name: &str, label: &str, lma: u32) -> sigil_ir::Section {
+        let span = sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+        sigil_ir::Section {
+            name: name.into(),
+            cpu: sigil_ir::Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![sigil_ir::Label { name: label.into(), offset: 0 }],
+            fragments: vec![sigil_ir::Fragment::Data(sigil_ir::DataFragment { bytes: vec![0u8; 0x10], fixups: vec![], span })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0x10,
+            group: None,
+            bank: None,
+            space: sigil_ir::AddressSpace::Image,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// The sound rows the moved tests were written against: `Sfx_33` 8 (aeon's mod-8 fold
+    /// wall), `Dac_Temp_Blip` `$8000` (one Z80 `SetBank` window).
+    fn sound_table() -> AlignTable {
+        let game = [row("Sfx_33", 8), row("Dac_Temp_Blip", 0x8000)];
+        AlignTable::new([("games/sonic4/game.toml", &game[..])]).unwrap()
+    }
+
+    #[test]
+    fn a_declared_section_at_a_conforming_base_passes() {
+        sound_table().validate_resolved(&[sec("sfx_bank_blob", "Sfx_33", 0xA3B20)]).unwrap();
+    }
+
+    /// A base the declaration forbids is refused, naming the section, its head label, the
+    /// requirement, the row's file and the base.
+    #[test]
+    fn a_resolved_base_that_violates_the_declaration_is_refused() {
+        let e = sound_table().validate_resolved(&[sec("sfx_bank_blob", "Sfx_33", 0xA3B24)]).unwrap_err();
+        assert!(e.contains("[layout.alignment-violated]"), "{e}");
+        assert!(e.contains("`sfx_bank_blob`") && e.contains("`Sfx_33`"), "{e}");
+        assert!(e.contains("needs alignment 8"), "{e}");
+        assert!(e.contains("games/sonic4/game.toml"), "the row's file is not named: {e}");
+        assert!(e.contains("0xa3b24"), "the base is not named: {e}");
+    }
+
+    /// The Z80 bank window is a requirement the walk never rounds to (the bank heads are
+    /// anchor-held), so this check is the only instrument on it, and it reads the
+    /// requirement itself, not a capped quantum.
+    #[test]
+    fn the_bank_window_requirement_is_measured_on_the_resolved_anchor() {
+        let t = sound_table();
+        t.validate_resolved(&[sec("dac_banks", "Dac_Temp_Blip", 0x90000)]).unwrap();
+        let e = t.validate_resolved(&[sec("dac_banks", "Dac_Temp_Blip", 0x90010)]).unwrap_err();
+        assert!(e.contains("needs alignment 32768"), "{e}");
+        assert!(e.contains("0x90010"), "{e}");
+    }
+
+    /// A section no row names is measured against the evenness default (the successor of
+    /// `an_unpinned_section_needs_a_declaration_and_is_measured_after_the_walk`, whose
+    /// "needs a declaration" half the spec replaced by the default).
+    #[test]
+    fn an_undeclared_section_is_measured_against_the_evenness_default() {
+        let t = sound_table();
+        t.validate_resolved(&[sec("palette", "Palette_LoadPal", 0x2000)]).unwrap();
+        let e = t.validate_resolved(&[sec("palette", "Palette_LoadPal", 0x2001)]).unwrap_err();
+        assert!(e.contains("`Palette_LoadPal`") && e.contains("evenness default"), "{e}");
+    }
+
+    /// A label-less blob has nothing to declare under, and is skipped.
+    #[test]
+    fn a_label_less_blob_is_out_of_both_halves_scope() {
+        let mut blob = sec("boot_blob", "unused", 0x3D7);
+        blob.labels.clear();
+        sound_table().validate_resolved(std::slice::from_ref(&blob)).unwrap();
+    }
+
+    /// Every fault in one run, so a report names all of them rather than the first.
+    #[test]
+    fn every_faulting_section_is_named_in_one_report() {
+        let secs = [sec("sfx_bank_blob", "Sfx_33", 0x1004), sec("palette", "Palette_LoadPal", 0x2001)];
+        let e = sound_table().validate_resolved(&secs).unwrap_err();
+        assert!(e.contains("2 section(s)"), "{e}");
+        assert!(e.contains("`Sfx_33`") && e.contains("`Palette_LoadPal`"), "{e}");
+    }
+
+    /// The walk's rounding (and seam 2's prediction) is a function of the running cursor
+    /// and the declaration for the head label, and nothing else; an undeclared head label
+    /// rounds to the evenness default.
+    #[test]
+    fn packed_chained_base_rounds_to_the_declared_alignment_only() {
+        let t = sound_table();
+        assert_eq!(t.packed_base(0x1011, "Sfx_33"), 0x1018);
+        assert_eq!(t.packed_base(0x1011, "GameLoop"), 0x1012);
+        assert_eq!(t.packed_base(0x1011, "Dac_Temp_Blip"), 0x8000);
+        assert_eq!(t.packed_base(0x1018, "Sfx_33"), 0x1018, "already aligned: unmoved");
+        assert_eq!(t.packed_base(0x1011, "NoSuchHeadLabelAnywhere"), 0x1012);
+    }
 }

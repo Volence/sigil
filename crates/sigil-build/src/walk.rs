@@ -359,4 +359,186 @@ mod tests {
             WalkError::AnchorUnbound { anchor: "x".into(), holds: "Gone".into() }
         );
     }
+
+    // ── Moved from the profile-driven driver's walk tests (`placement_validation_tests`,
+    // `derived_layout_tests`, G0b Task 11) onto this walk. What they proved about the frozen
+    // provisional bases (the pin residue, drift warnings, the tolerance, the prov-sort
+    // fallback) has no successor here: this walk reads no frozen table. Every expectation is
+    // derived from the fixture's sizes, the declared alignments and the anchors. ──
+
+    fn order_of(rows: &[&str]) -> Vec<String> {
+        rows.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn pin(holds: &str, at: u32) -> AnchorPin {
+        AnchorPin { name: format!("a_{holds}"), holds: holds.into(), at }
+    }
+
+    fn even() -> AlignTable {
+        AlignTable::new(std::iter::empty()).unwrap()
+    }
+
+    fn bases(secs: &[Section], order: &[String], anchors: &[AnchorPin], align: &AlignTable) -> Vec<Option<u32>> {
+        true_bases(secs, order, anchors, align, &|_| None).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// The map's rank sequences the walk, whatever the sections' baked bases say: `High`
+    /// (baked 0x200) declared ahead of `Low` (baked 0x100) heads the run at its anchor, and
+    /// `Low` packs right after it.
+    #[test]
+    fn drives_order_by_map_rank() {
+        let mut low = sec("Low", 0x10);
+        low.lma = 0x100;
+        let mut high = sec("High", 0x10);
+        high.lma = 0x200;
+        let got = bases(&[low, high], &order_of(&["High", "Low"]), &[pin("High", 0x200)], &even());
+        assert_eq!(got, vec![Some(0x210), Some(0x200)]);
+    }
+
+    /// The `section:<name>` spelling of a row ranks exactly as the head-label spelling does.
+    #[test]
+    fn section_row_drives_the_packer_rank() {
+        let secs = [sec("Low", 0x10), sec("High", 0x10)];
+        let by_name = bases(&secs, &order_of(&["section:s_High", "Low"]), &[pin("section:s_High", 0x200)], &even());
+        let by_label = bases(&secs, &order_of(&["High", "Low"]), &[pin("High", 0x200)], &even());
+        assert_eq!(by_name, vec![Some(0x210), Some(0x200)], "High heads the run, Low packs after it");
+        assert_eq!(by_name, by_label, "a `section:` row ranks exactly as the label row would");
+    }
+
+    /// The alignment input is the declaration: `Sfx_33` declares 8 and `GameLoop` takes the
+    /// evenness default, both baked at a 16-aligned 0x1020 (the residue a base-reading walk
+    /// would turn into 16). After a 0x11-byte head the cursor is 0x1011, so `Sfx_33` packs at
+    /// 0x1018 and `GameLoop` at 0x1012.
+    #[test]
+    fn the_walk_packs_to_the_declared_alignment_not_the_pin_residue() {
+        let rows = [crate::describe::AlignRow { label: "Sfx_33".into(), align: 8 }];
+        let align = AlignTable::new([("game.toml", &rows[..])]).unwrap();
+        for (label, want) in [("Sfx_33", 0x1018u32), ("GameLoop", 0x1012)] {
+            let mut tail = sec(label, 0x10);
+            tail.lma = 0x1020;
+            let got = bases(&[sec("Head", 0x11), tail], &order_of(&["Head", label]), &[pin("Head", 0x1000)], &align);
+            assert_eq!(got[1], Some(want), "`{label}` packs to its declaration");
+        }
+    }
+
+    /// The zero-byte terminus lands exactly at the image end by its own (default)
+    /// alignment, with no special case in the walk.
+    #[test]
+    fn the_zero_byte_terminus_packs_to_the_image_end_by_declaration() {
+        let got = bases(&[sec("Head", 0x12), sec("EndOfRom", 0)], &order_of(&["Head", "EndOfRom"]), &[pin("Head", 0x1000)], &even());
+        assert_eq!(got[1], Some(0x1012));
+    }
+
+    /// A pure-data section grown 8 KB keeps its base and packs its neighbour downstream by
+    /// exactly the growth (the profile-driven driver also warned with the delta against its
+    /// frozen provisional base; there is none here).
+    #[test]
+    fn grown_pure_data_packs_downstream() {
+        let order = order_of(&["Head", "Grown", "Tail"]);
+        let at = |grown: u32| bases(&[sec("Head", 0x10), sec("Grown", grown), sec("Tail", 0x10)], &order, &[pin("Head", 0x1000)], &even());
+        assert_eq!(at(0x10), vec![Some(0x1000), Some(0x1010), Some(0x1020)]);
+        assert_eq!(at(0x10 + 0x2000), vec![Some(0x1000), Some(0x1010), Some(0x1020 + 0x2000)]);
+    }
+
+    /// A gap before a section is preserved only when an anchor declares it: the same
+    /// section baked at 0x2000 packs contiguously unless an anchor holds it there.
+    #[test]
+    fn stale_provisional_gap_is_an_island_only_when_declared() {
+        let mut next = sec("Next", 0x10);
+        next.lma = 0x2000;
+        let secs = [sec("Head", 0x10), next];
+        let order = order_of(&["Head", "Next"]);
+        assert_eq!(bases(&secs, &order, &[pin("Head", 0x1000)], &even())[1], Some(0x1010), "undeclared gap packs contiguously");
+        assert_eq!(
+            bases(&secs, &order, &[pin("Head", 0x1000), pin("Next", 0x2000)], &even())[1],
+            Some(0x2000),
+            "a declared anchor stays absolute"
+        );
+    }
+
+    /// A declared anchor is hard: growth that fills the room before it builds with the
+    /// anchor where the map says, and one byte more is refused naming the overrun.
+    #[test]
+    fn growth_into_a_declared_anchor_still_fails_loud() {
+        let order = order_of(&["Head", "Grown", "Bank"]);
+        let anchors = [pin("Head", 0x1000), pin("Bank", 0x2000)];
+        let room = 0x2000 - 0x1010;
+        let walk = |grown: u32| true_bases(&[sec("Head", 0x10), sec("Grown", grown), sec("Bank", 0x10)], &order, &anchors, &even(), &|_| None);
+        assert_eq!(walk(room).unwrap()[2], Some(0x2000), "the declared anchor is held absolute");
+        let e = walk(room + 1).unwrap_err();
+        assert!(matches!(e, WalkError::AnchorOverrun { overrun: 1, .. }), "{e}");
+    }
+
+    /// A CODE section holding exactly one `lea (T).w/.l, a0`: 4 bytes when `T` resolves
+    /// under $8000 on the 24-bit bus, 6 above.
+    fn code_abs(label: &str, target: &str) -> Section {
+        use sigil_ir::{Expr, Fixup, FixupKind, RelaxCandidate};
+        let sym = || Expr::Sym(target.into());
+        let short = RelaxCandidate { bytes: vec![0x41, 0xF8, 0, 0], fixup: Fixup { kind: FixupKind::Abs16Be, offset: 2, target: sym() } };
+        let long = RelaxCandidate { bytes: vec![0x41, 0xF9, 0, 0, 0, 0], fixup: Fixup { kind: FixupKind::Abs32Be, offset: 2, target: sym() } };
+        let span = Span { source: SourceId(0), start: 0, end: 0 };
+        let mut s = sec(label, 0);
+        s.fragments = vec![Fragment::RelaxAbsSym { short, long, target: sym(), span }];
+        s.reserved_span = 4;
+        s
+    }
+
+    /// `Wide` fills up to $7FE0, then a growable allotment, then the code, then the data
+    /// its operand targets.
+    fn boundary_walk(allot: u32) -> Result<Vec<Option<u32>>, WalkError> {
+        let secs = [sec("Wide", 0x6FE0), sec("Allot", allot), code_abs("Code", "T"), sec("T", 0x10)];
+        true_bases(&secs, &order_of(&["Wide", "Allot", "Code", "T"]), &[pin("Wide", 0x1000)], &even(), &|_| None)
+    }
+
+    /// Below the boundary the code measures its SHORT form (4 B): T sits right after it.
+    #[test]
+    fn base_dependent_length_reproduces_provisional_bases_at_frozen_sizes() {
+        assert_eq!(boundary_walk(0x10).unwrap(), vec![Some(0x1000), Some(0x7FE0), Some(0x7FF0), Some(0x7FF4)]);
+    }
+
+    /// Growth pushes the code past $8000, where its operand widens (4 -> 6 B): T is placed
+    /// from the length the code has AT ITS PACKED BASE (0x8010 + 6 = 0x8016; the abs.w
+    /// arithmetic would give 0x8014).
+    #[test]
+    fn growth_across_the_boundary_places_the_successor_from_the_long_form() {
+        let got = boundary_walk(0x30).unwrap();
+        assert_eq!(got[2], Some(0x8010));
+        assert_eq!(got[3], Some(0x8016), "T is placed from the LONG form");
+    }
+
+    /// An operand naming a symbol no section defines cannot be measured at any base: the
+    /// walk refuses instead of packing from a fabricated length.
+    #[test]
+    fn an_unresolvable_operand_refuses_loud() {
+        let secs = [sec("Head", 0x10), code_abs("Code", "Nowhere")];
+        let e = true_bases(&secs, &order_of(&["Head", "Code"]), &[pin("Head", 0x1000)], &even(), &|_| None).unwrap_err();
+        assert!(e.to_string().contains("Nowhere"), "{e}");
+    }
+
+    /// Where a zero-byte, label-less section sits must not move any section: `Head` |
+    /// `Code` (`lea T, a0`) | `Next` | `Wide` (0x8000 bytes) | `ahead` zero-byte blobs | `T`.
+    /// Derived, the same for every `ahead`: Code at 0x1010 measuring 6 B (T is above
+    /// $8000), Next 0x1016, Wide 0x1026, T 0x9026.
+    #[test]
+    fn zero_byte_sections_ahead_of_a_never_pinned_target_move_nothing() {
+        let blob = || {
+            let mut b = sec("x", 0);
+            b.name = "text".into();
+            b.labels.clear();
+            b
+        };
+        for ahead in 0..=41usize {
+            let mut secs = vec![sec("Head", 0x10), code_abs("Code", "T"), sec("Next", 0x10), sec("Wide", 0x8000)];
+            secs.extend((0..ahead).map(|_| blob()));
+            secs.push(sec("T", 0x10));
+            let last = secs.len() - 1;
+            let got = true_bases(&secs, &order_of(&["Head", "Code", "Next", "Wide", "T"]), &[pin("Head", 0x1000)], &even(), &|_| None)
+                .unwrap_or_else(|e| panic!("{ahead} zero-byte sections ahead: {e}"));
+            assert_eq!(
+                [got[0], got[1], got[2], got[3], got[last]],
+                [Some(0x1000), Some(0x1010), Some(0x1016), Some(0x1026), Some(0x9026)],
+                "{ahead} zero-byte label-less sections ahead of `T` moved the layout"
+            );
+        }
+    }
 }
