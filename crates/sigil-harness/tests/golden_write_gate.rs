@@ -106,7 +106,9 @@ python3 -c "import sys; sys.stdout.buffer.write(((' NEW %s.bin' % sys.argv[1]).e
 printf '     0/  00000200 : EndOfRom:\n' > "$name.lst"
 "#,
         );
-        // The three off-canonical shapes go through `sigil build --config-*`/`--lean`.
+        // The three off-canonical shapes go through `sigil build --project games/sonic4
+        // --shape <row>` (the row `config-a` is the golden `config_a.bin`). The profile-driven
+        // flags are refused, as the real binary refuses them since G0b Task 11.
         write_script(
             &bed.bin().join("sigil"),
             r#"#!/bin/bash
@@ -114,7 +116,8 @@ set -euo pipefail
 shape=""; rom=""; lst=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --config-a) shape=config_a;; --config-b) shape=config_b;; --lean) shape=lean;;
+        --shape) shape="${2//-/_}"; shift;; --project) shift;;
+        --config-a|--config-b|--lean|--aeon|--game|--native) echo "error: unexpected argument '$1'" >&2; exit 2;;
         -o) rom="$2"; shift;; --emit-lst) lst="$2"; shift;;
     esac
     shift
