@@ -531,16 +531,30 @@ fn pub_consts(p: &Project, path: &Path, seed: &[(String, i128)], what: &str) -> 
     Ok(vals)
 }
 
-/// The engine's public constants (the AS side's guarded defines), evaluated in `defines`.
-fn engine_constants(p: &Project, defines: &[(String, i128)]) -> Result<Vec<(String, i64)>, BuildError> {
+/// The engine's public constants (the AS side's guarded defines), evaluated in `defines`,
+/// less every name a struct twin also produces (`twins`, [`struct_offsets`]): the twin is
+/// the AS side's spelling of that name (aeon: `VDP_Shadow_len`, a `pub const` of the
+/// constants module and the `VdpShadow` twin's `<prefix>_len`).
+fn engine_constants(p: &Project, defines: &[(String, i128)], twins: &[(String, i64)]) -> Result<Vec<(String, i64)>, BuildError> {
     let vals = pub_consts(p, &p.engine_dir.join(&p.engine.constants), defines, "engine constants")?;
-    // `VDP_Shadow_len` is also a struct-twin offset; the twin is the AS side's spelling.
-    Ok(vals.into_iter().filter(|(n, _)| n != "VDP_Shadow_len").collect())
+    let twin_names: std::collections::HashSet<&str> = twins.iter().map(|(n, _)| n.as_str()).collect();
+    Ok(vals.into_iter().filter(|(n, _)| !twin_names.contains(n.as_str())).collect())
 }
 
 /// The engine structs' field offsets, under the AS spelling `<prefix>_<field>` and
-/// `<prefix>_len`, for each `struct_twins` row.
+/// `<prefix>_len`, for each `struct_twins` row, each twin followed by the
+/// `struct_tail_equates` of its struct (`name = sizeof - from_end`).
 fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
+    for t in &p.engine.struct_tail_equates {
+        if !p.engine.struct_twins.iter().any(|(_, sname, _)| *sname == t.of) {
+            return Err(BuildError::Desc(format!(
+                "{}: `struct_tail_equates` row `{}` names struct `{}`, which no `struct_twins` row lays out",
+                p.engine_path.display(),
+                t.name,
+                t.of
+            )));
+        }
+    }
     let types = parse_emp(&p.engine_dir.join(&p.engine.types), "struct offsets")?;
     let mut out = Vec::new();
     for (rel, sname, prefix) in &p.engine.struct_twins {
@@ -554,12 +568,17 @@ fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
             out.push((format!("{prefix}_{}", f.name), f.offset as i64));
         }
         out.push((format!("{prefix}_len"), layout.size as i64));
-        if sname == "Sst" {
-            // `SST_interact` is the last word of the slot (sst.emp `interact_off()`).
-            if !layout.fields.iter().any(|f| f.name == "frame_off") {
-                return Err(ctx("struct offsets: Sst lost frame_off; re-derive SST_interact against sst.emp"));
+        for t in p.engine.struct_tail_equates.iter().filter(|t| t.of == *sname) {
+            if t.from_end as u64 > layout.size as u64 {
+                return Err(BuildError::Desc(format!(
+                    "{}: `struct_tail_equates` row `{}` reaches {} bytes back from the end of `{sname}`, which is {} bytes",
+                    p.engine_path.display(),
+                    t.name,
+                    t.from_end,
+                    layout.size
+                )));
             }
-            out.push(("SST_interact".to_string(), layout.size as i64 - 2));
+            out.push((t.name.clone(), layout.size as i64 - t.from_end as i64));
         }
     }
     Ok(out)
@@ -583,7 +602,7 @@ fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)], genera
         return Err(ctx(format!("ram harvest: build: {e:?}")));
     }
     let mut out = Vec::new();
-    for sec in sections.iter().filter(|s| s.vma_origin() >= 0x00F0_0000) {
+    for sec in sections.iter().filter(|s| s.vma_origin() >= p.engine.ram_floor) {
         for l in &sec.labels {
             out.push((l.name.clone(), sec.vma_origin().wrapping_add(l.offset) as i64));
         }
@@ -630,9 +649,10 @@ fn push_synthetic(manifest: &mut resolve::manifest::Manifest, id: &str, src: &st
 
 /// The residual AS side, assembled with the defines the descriptions derive.
 fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], seeds: (&str, &str), generated: &Path) -> Result<crate::harvest::AsSide, BuildError> {
-    let engine = engine_constants(p, defines)?;
+    let twins = struct_offsets(p)?;
+    let engine = engine_constants(p, defines, &twins)?;
     let mut guarded = engine.clone();
-    guarded.extend(struct_offsets(p)?);
+    guarded.extend(twins);
     let mut seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
     seed.push(("DEBUG".to_string(), shape.features.debug as i128));
     let e = &p.game.entry;
@@ -640,15 +660,7 @@ fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], s
         guarded.extend(pub_consts(p, &p.game_dir.join(rel), &seed, "game constants")?);
     }
     let mut plain = ram_addresses(p, seeds.1, defines, Some(generated))?;
-    if shape.features.sound {
-        plain.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-    }
-    if shape.features.debug {
-        plain.push(("__DEBUG__".to_string(), 1));
-    }
-    if shape.features.debug || shape.features.crash_report {
-        plain.push(("__MDDBG__".to_string(), 1));
-    }
+    plain.extend(as_feature_defines(p, &shape.features, defines)?);
     let opts = sigil_frontend_as::Options {
         initial_cpu: Some(Cpu::M68000),
         defines: plain,
@@ -666,6 +678,22 @@ fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], s
             sources: a.sources,
         })
         .map_err(|f| ctx(format!("assemble {}: {} diagnostic(s); first: {:?}", root.display(), f.diags.len(), f.diags.first())))
+}
+
+/// The residual AS side's feature defines for a shape: each `as_feature_defines` row whose
+/// `when` holds for `features` (a define it reads is looked up in `defines`), as `name = 1`,
+/// in description order.
+fn as_feature_defines(p: &Project, features: &describe::Features, defines: &[(String, i128)]) -> Result<Vec<(String, i64)>, BuildError> {
+    let mut out = Vec::new();
+    for d in &p.engine.as_feature_defines {
+        let on = d.when.eval(features, &|n| defines.iter().find(|(k, _)| k == n).map(|(_, v)| *v as i64)).map_err(|e| {
+            BuildError::Desc(format!("{}: `as_feature_defines` row `{}`: {e}", p.engine_path.display(), d.name))
+        })?;
+        if on {
+            out.push((d.name.clone(), 1));
+        }
+    }
+    Ok(out)
 }
 
 // ───────────────────────────── the .emp side ─────────────────────────────
@@ -1140,6 +1168,12 @@ mod tests {
         error_handler_blob_len = 1
         convsym = "c"
         fault_island_heads = []
+        ram_floor = 0xF00000
+        as_feature_defines = [
+            { name = "SND_ON", when = "sound" },
+            { name = "ISLAND", when = "debug || crash_report" },
+            { name = "KEYS", when = "HOTKEYS" },
+        ]
         [defines]
         HOTKEYS = 0
         [sound]
@@ -1197,6 +1231,43 @@ mod tests {
             engine_path: "engine/engine.toml".into(),
             engine: toml::from_str(engine).unwrap(),
         }
+    }
+
+    /// The residual AS's feature defines come from `as_feature_defines` (G0b Task 11; the
+    /// driver held `SOUND_DRIVER_ENABLED`/`__DEBUG__`/`__MDDBG__` as literals before): each
+    /// row whose `when` holds is defined, in description order, a define-reading `when`
+    /// reads the shape's merged defines, and a `when` naming a define the shape lacks is
+    /// refused naming the row.
+    #[test]
+    fn the_residual_as_feature_defines_follow_the_description() {
+        let p = project(GAME, ENGINE);
+        let names = |shape: &str| -> Vec<String> {
+            let rs = describe::resolve_shape(&p.game, shape).unwrap();
+            let env = merged_defines(&p, &rs, "").unwrap();
+            as_feature_defines(&p, &rs.features, &env).unwrap().into_iter().map(|(n, v)| {
+                assert_eq!(v, 1, "a feature define is defined as 1");
+                n
+            }).collect()
+        };
+        assert_eq!(names("release"), ["ISLAND"], "release: crash_report, no sound, HOTKEYS 0");
+        assert_eq!(names("keys"), ["ISLAND", "KEYS"], "keys overrides HOTKEYS = 1");
+        let rs = describe::resolve_shape(&p.game, "release").unwrap();
+        let err = as_feature_defines(&p, &rs.features, &[]).expect_err("KEYS reads HOTKEYS, absent here").to_string();
+        assert!(err.contains("`as_feature_defines` row `KEYS`") && err.contains("HOTKEYS"), "names the row and the define: {err}");
+        let none = project(GAME, &ENGINE.replace("as_feature_defines = [", "unused = [").replace("unused = [\n            { name = \"SND_ON\", when = \"sound\" },\n            { name = \"ISLAND\", when = \"debug || crash_report\" },\n            { name = \"KEYS\", when = \"HOTKEYS\" },\n        ]\n", ""));
+        assert!(none.engine.as_feature_defines.is_empty(), "an engine whose AS tests no feature declares none");
+        assert!(as_feature_defines(&none, &rs.features, &[]).unwrap().is_empty());
+    }
+
+    /// `struct_tail_equates` rows (G0b Task 11; `SST_interact` was a literal) must name a
+    /// struct a `struct_twins` row lays out, and may not reach past its start: both refused
+    /// by name before any file is read.
+    #[test]
+    fn a_struct_tail_equate_must_name_a_twin() {
+        let p = project(GAME, &ENGINE.replace("fault_island_heads = []\n", "fault_island_heads = []\n        struct_tail_equates = [{ name = \"T_tail\", of = \"Nope\", from_end = 2 }]\n"));
+        assert_eq!(p.engine.struct_tail_equates.len(), 1, "the fixture row parsed");
+        let err = struct_offsets(&p).expect_err("no twin lays out `Nope`").to_string();
+        assert!(err.contains("`struct_tail_equates` row `T_tail` names struct `Nope`"), "names the row: {err}");
     }
 
     fn defines(p: &Project, shape: &str, map: &str) -> Result<Vec<(String, i128)>, BuildError> {

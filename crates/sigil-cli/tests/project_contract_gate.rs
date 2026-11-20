@@ -39,6 +39,7 @@ error_handler_blob = "x"
 error_handler_blob_len = 1
 convsym = "convsym"
 fault_island_heads = []
+ram_floor = 0xF00000
 [defines]
 HOTKEYS = 0
 [sound]

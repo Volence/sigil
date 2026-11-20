@@ -399,6 +399,37 @@ pub struct EngineDesc {
     /// Added by Task 2: the head labels of the two fault-handler arms, the anchor
     /// `relocate_fixture_pool` inserts before.
     pub fault_island_heads: Vec<String>,
+    /// Added by G0b Task 11: the defines the residual AS side receives (each = 1) on a shape
+    /// whose features satisfy the row's `when`. The engine's AS sources test them with
+    /// `ifdef` (aeon's `game_root.asm` includes the MD Debugger glue under `__MDDBG__`). An
+    /// engine whose residual AS tests none declares none.
+    #[serde(default)]
+    pub as_feature_defines: Vec<AsFeatureDefine>,
+    /// Added by G0b Task 11: the lowest address of work RAM. The focused RAM harvest hands
+    /// the residual AS every label and equate of a section placed at or above it.
+    pub ram_floor: u32,
+    /// Added by G0b Task 11: residual-AS equates derived from a struct twin's size, each
+    /// `name = sizeof(of) - from_end`, emitted right after that twin's `<prefix>_len`.
+    #[serde(default)]
+    pub struct_tail_equates: Vec<StructTailEquate>,
+}
+
+/// One residual-AS feature define ([`EngineDesc::as_feature_defines`]).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsFeatureDefine {
+    pub name: String,
+    pub when: FeatureExpr,
+}
+
+/// One struct-tail equate ([`EngineDesc::struct_tail_equates`]): `of` names a struct a
+/// `struct_twins` row lays out.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructTailEquate {
+    pub name: String,
+    pub of: String,
+    pub from_end: u32,
 }
 
 /// What `sound_bank_ids.rs` holds: the resident blob's bank-id consts, the labels each must
@@ -778,6 +809,7 @@ mod tests {
             error_handler_blob_len = 1
             convsym = "c"
             fault_island_heads = []
+            ram_floor = 0
             [sound]
             blob_bank_ids = []
             blob_start = "a"
