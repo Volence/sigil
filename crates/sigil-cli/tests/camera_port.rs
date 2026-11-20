@@ -66,10 +66,9 @@ fn camera_contract_env(jump_lock: bool) -> sigil_frontend_emp::contract::Interfa
 /// compare to was built with exactly these bindings. Replaces a hardcoded
 /// `jump_lock = 1` that meant "sonic4 declares true" without saying so.
 fn sonic4_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
-    let profile = sigil_harness::native::sonic4_profile(false);
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
-    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &profile, &defines)
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
+    let defines = sigil_harness::test_support::contract_defines(&aeon_dir(), &shape);
+    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &shape, &defines)
 }
 
 fn region_base(debug: bool) -> u32 {

@@ -251,12 +251,11 @@ fn two_module_flip_resolves_debug_music_toggle() {
     // test resolves across the seam. Derived from aeon's contract + that manifest
     // rather than restated here: the binding under test is then the shape's real
     // one, and the interface cannot go stale against the engine.
-    let gl_profile = sigil_harness::native::config_a_profile();
-    let gl_defines: Vec<(String, i128)> =
-        gl_profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let gl_shape = sigil_harness::shapes::Shape::new("sonic4", "config-a");
+    let gl_defines = sigil_harness::test_support::contract_defines(&aeon, &gl_shape);
     let gl_env = sigil_harness::test_support::game_contract_env_from_aeon(
         &aeon,
-        &gl_profile,
+        &gl_shape,
         &gl_defines,
     );
     let (gl_mod, gld) = lower_module_with_contracts(

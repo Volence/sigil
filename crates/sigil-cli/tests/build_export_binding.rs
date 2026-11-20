@@ -20,8 +20,7 @@ static TREE: OnceLock<Option<PathBuf>> = OnceLock::new();
 fn tree() -> Option<(MutexGuard<'static, ()>, PathBuf)> {
     let guard = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = TREE.get_or_init(|| {
-        let profile = sigil_harness::native::demo_profile(false);
-        let aeon = sigil_harness::test_support::reference_tree_for_profile(&profile)?;
+        let aeon = sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("demo", "release"))?;
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("build_export_binding_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -41,7 +40,10 @@ fn scratch(tree: &Path, case: &str) -> PathBuf {
 
 fn run(tree: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(tree).args(["--game", "demo"]).args(args);
+    // The copy is the build's own checkout: AEON_DIR naming the reference tree would be a
+    // second answer to "which engine" (`[engine.conflict]`).
+    cmd.args(["build", "--project"]).arg(tree.join("games/demo")).args(["--shape", "release"]).args(args);
+    cmd.env_remove("AEON_DIR");
     cmd.env_remove("SIGIL_TEST_FAIL_BEFORE_SIDECAR").env_remove("SIGIL_TEST_FAIL_EXPORT");
     for (k, v) in envs {
         cmd.env(k, v);
@@ -106,7 +108,8 @@ fn sidecar_beside_rom_names_its_sha256() {
     assert_eq!(v["format"], "empyrean.build");
     assert_eq!(v["version"]["major"], 1);
     assert_eq!(v["shape"]["game"], "demo");
-    assert_eq!(v["shape"]["shape"], "demo plain");
+    // The description's row name (G0b declared delta; the profile-driven driver said `demo plain`).
+    assert_eq!(v["shape"]["shape"], "release");
 
     // The ROM is the one the sidecar names, and no other byte string is.
     let mut patched = rom.clone();
@@ -192,7 +195,8 @@ fn no_build_json_writes_none() {
     build_ok(&tree, &["-o", rom.to_str().unwrap(), "--no-build-json"]);
     assert!(rom.exists());
     assert!(!dir.join("n.build.json").exists());
-    // Without -o there is no ROM to bind, so the build WRITES no sidecar anywhere. The
+    // Without -o there is no ROM to bind, so the build WRITES no sidecar anywhere (the
+    // `--project` grammar refuses a ROM build without -o outright, exit 2). The
     // claim is about what this build writes, not about what the tree already holds: a
     // reference tree that `build.sh demo` has run in carries a (gitignored)
     // `demo.build.json`, and that file must come through untouched, absent staying
@@ -200,7 +204,9 @@ fn no_build_json_writes_none() {
     // tree to make the check pass.
     let tree_sidecar = tree.join("demo.build.json");
     let before = sidecar_state(&tree_sidecar);
-    build_ok(&tree, &[]);
+    let o = run(&tree, &[], &[]);
+    assert_eq!(o.status.code(), Some(2), "a build without -o is refused:\n{}", String::from_utf8_lossy(&o.stderr));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--project needs -o"), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(
         sidecar_state(&tree_sidecar),
         before,
@@ -306,7 +312,14 @@ fn files_have_no_absolute_paths() {
     let text = std::fs::read_to_string(dir.join("p.build.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     let files = v["files"].as_array().unwrap();
-    assert!(files.len() > 100, "a real demo build reads far more than {} source files", files.len());
+    // A `--project` demo build reads its engine closure and its own game root only (G0b
+    // Task 9 scoped the scan; 73 engine + 8 game + 1 generated files at aeon 80c69206, where
+    // the profile-driven driver's whole-tree read listed more than 100). The floor still
+    // refuses a degenerate list, and both source roots must be present.
+    assert!(files.len() > 50, "a real demo build reads far more than {} source files", files.len());
+    for root in ["engine", "game"] {
+        assert!(files.iter().any(|f| f["root"] == root), "no `{root}` file in the export");
+    }
     for f in files {
         let p = f["path"].as_str().unwrap();
         assert!(!p.starts_with('/') && !p.contains('\\') && !p.contains(".."), "{p}");

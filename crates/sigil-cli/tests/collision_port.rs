@@ -252,11 +252,10 @@ fn compile_real_file(
     // single-module lower does not. Bound from aeon's own interface against
     // sonic4's own `implement Game` at THIS shape (test_support section 4), so the
     // hook set and its targets are the ones the reference ROM was built with.
-    let profile = sigil_harness::native::sonic4_profile(shape.debug);
-    let profile_defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let row = sigil_harness::shapes::Shape::new("sonic4", if shape.debug { "debug" } else { "release" });
+    let row_defines = sigil_harness::test_support::contract_defines(&aeon, &row);
     let contracts =
-        sigil_harness::test_support::game_contract_env_from_aeon(&aeon, &profile, &profile_defines);
+        sigil_harness::test_support::game_contract_env_from_aeon(&aeon, &row, &row_defines);
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

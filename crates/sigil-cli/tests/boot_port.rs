@@ -322,12 +322,11 @@ fn lower_boot(
     // ENTRY_ID and the entry symbol are read out of the manifest instead of copied
     // here (a copy the day sonic4 re-points its entry would gate the wrong value),
     // and boot_hook stays unbound because hotkeys are off in that shape.
-    let profile = sigil_harness::native::sonic4_profile(debug);
-    let contract_defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let shape = sigil_harness::shapes::Shape::new("sonic4", if debug { "debug" } else { "release" });
+    let contract_defines = sigil_harness::test_support::contract_defines(&aeon_dir(), &shape);
     let env = sigil_harness::test_support::game_contract_env_from_aeon(
         &aeon_dir(),
-        &profile,
+        &shape,
         &contract_defines,
     );
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &env);

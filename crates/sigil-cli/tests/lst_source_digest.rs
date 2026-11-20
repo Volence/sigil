@@ -35,15 +35,14 @@ use std::time::{Duration, SystemTime};
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const SHAPES: &[(&str, &[&str])] = &[
-    ("s4", &[]),
-    ("s4.debug", &["--debug"]),
-    ("demo", &["--game", "demo"]),
-    ("demo.debug", &["--game", "demo", "--debug"]),
+    ("s4", &["sonic4", "release"]),
+    ("s4.debug", &["sonic4", "debug"]),
+    ("demo", &["demo", "release"]),
+    ("demo.debug", &["demo", "debug"]),
 ];
 
 fn aeon_dir() -> Option<PathBuf> {
-    let profile = sigil_harness::native::sonic4_profile(false);
-    sigil_harness::test_support::reference_tree_for_profile(&profile)
+    sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("sonic4", "release"))
 }
 
 fn fresh_dir(case: &str) -> PathBuf {
@@ -58,12 +57,12 @@ struct Built {
     lst: String,
 }
 
-/// `sigil build --aeon <aeon> --native <args> -o <out>/<name>.bin --emit-lst <out>/<name>.lst`.
+/// `sigil build --project <aeon>/games/<args[0]> --shape <args[1]> -o <out>/<name>.bin --emit-lst <out>/<name>.lst`.
 fn build(aeon: &Path, out: &Path, name: &str, args: &[&str], env: &[(&str, &Path)]) -> Result<Built, String> {
     let bin = out.join(format!("{name}.bin"));
     let lst = out.join(format!("{name}.lst"));
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(aeon).arg("--native").args(args);
+    cmd.args(["build", "--project"]).arg(aeon.join("games").join(args[0])).args(["--shape", args[1]]);
     cmd.arg("-o").arg(&bin).arg("--emit-lst").arg(&lst);
     cmd.env("AEON_DIR", aeon);
     for (k, v) in env {
@@ -446,7 +445,7 @@ fn with_edit(tree: &Path, out: &Path, file: &str, mutate: &dyn Fn(&[u8]) -> Vec<
     assert_ne!(edited, original, "the edit to {file} changed nothing, so its build would test nothing");
     std::fs::write(&path, &edited).expect("write the edit");
     assert_eq!(std::fs::read(&path).expect("read back"), edited, "the edit to {file} did not land");
-    let result = build(tree, out, "s4", &[], &[]);
+    let result = build(tree, out, "s4", &["sonic4", "release"], &[]);
     std::fs::write(&path, &original).expect("undo the edit");
     result
 }
@@ -475,13 +474,13 @@ fn the_digest_moves_with_content_and_never_with_time() {
     let out = dir.join("out");
     std::fs::create_dir_all(&out).expect("out dir");
 
-    let base = build(&tree, &out, "s4", &[], &[]).unwrap_or_else(|e| panic!("{e}"));
+    let base = build(&tree, &out, "s4", &["sonic4", "release"], &[]).unwrap_or_else(|e| panic!("{e}"));
     let s0 = section(&base.lst).to_string();
     let d0 = digest(&base.lst);
     let rows0 = aeon_rows(&d0);
 
     // Two builds of one tree: byte-identical sections.
-    let again = build(&tree, &out, "s4", &[], &[]).unwrap_or_else(|e| panic!("{e}"));
+    let again = build(&tree, &out, "s4", &["sonic4", "release"], &[]).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(section(&again.lst), s0, "two builds of one tree gave different digests");
 
     // Every file the build read, touched forward an hour: an identical section.
@@ -496,19 +495,25 @@ fn the_digest_moves_with_content_and_never_with_time() {
         touched += 1;
     }
     assert!(touched > 100, "only {touched} files touched, the digest names too few rows to test");
-    let after_touch = build(&tree, &out, "s4", &[], &[]).unwrap_or_else(|e| panic!("{e}"));
+    let after_touch = build(&tree, &out, "s4", &["sonic4", "release"], &[]).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(section(&after_touch.lst), s0, "touching {touched} files moved the digest; it is reading time, not content");
 
     // One edit per kind of input. Each kind's file is DERIVED: from the rows, from the
-    // profile, or from the source text of the rows (what the build's own reads name).
-    let profile = sigil_harness::native::sonic4_profile(false);
-    let game_root = profile.game_root_rel.to_string();
-    let map = profile
-        .map_path(Path::new(""))
-        .to_str()
-        .expect("UTF-8 map path")
-        .trim_start_matches('/')
-        .to_string();
+    // description, or from the source text of the rows (what the build's own reads name).
+    let project = sigil_harness::shapes::Shape::new("sonic4", "release").project(&tree).unwrap_or_else(|e| panic!("{e}"));
+    // The digest spells a row without `.` components (`sources.root = "."` puts one in the
+    // joined path).
+    let rel = |p: PathBuf| -> String {
+        let p = p.strip_prefix(&tree).expect("under the tree");
+        let parts: Vec<&str> = p
+            .components()
+            .filter(|c| !matches!(c, std::path::Component::CurDir))
+            .map(|c| c.as_os_str().to_str().expect("UTF-8"))
+            .collect();
+        parts.join("/")
+    };
+    let game_root = rel(project.sources_root().join(&project.game.sources.residual_as));
+    let map = rel(project.map_path());
     let source_rows: Vec<&String> =
         rows0.iter().filter(|(_, (_, _, o))| *o == DigestOrigin::Source).map(|(p, _)| p).collect();
     let text_of = |p: &str| std::fs::read_to_string(tree.join(p)).unwrap_or_default();
@@ -624,7 +629,7 @@ fn the_digest_moves_with_content_and_never_with_time() {
     let probe_rel = "engine/zz_digest_probe.emp";
     let probe = tree.join(probe_rel);
     std::fs::write(&probe, "module zz_digest_probe\n").expect("write the probe module");
-    let with_probe = build(&tree, &out, "s4", &[], &[]);
+    let with_probe = build(&tree, &out, "s4", &["sonic4", "release"], &[]);
     std::fs::remove_file(&probe).expect("remove the probe module");
     let d = digest(&with_probe.unwrap_or_else(|e| panic!("a new empty module failed the build: {e}")).lst);
     assert_eq!(d.scan_files, d0.scan_files + 1, "the new module is not a scan member");
@@ -632,6 +637,6 @@ fn the_digest_moves_with_content_and_never_with_time() {
     assert_eq!(changed_rows(&d0, &d), one(probe_rel), "a new module must add exactly its own row");
 
     // Every edit undone: the original section, byte for byte.
-    let restored = build(&tree, &out, "s4", &[], &[]).unwrap_or_else(|e| panic!("{e}"));
+    let restored = build(&tree, &out, "s4", &["sonic4", "release"], &[]).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(section(&restored.lst), s0, "undoing every edit did not restore the digest");
 }

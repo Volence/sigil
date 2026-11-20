@@ -501,7 +501,7 @@ fn lower_and_place(
         // (COLLECTED_WINDOW_SLOTS, MAX_RING_BUFFER, VRAM_RING_PLACEHOLDER), the
         // SOUND_DRIVER_ENABLED gate on section.emp's RedrawPlanes sound bracket, and
         // the GAME_SCANLINE_CAPS the engine.parallax consts section.emp imports fold.
-        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
+        defines: sigil_harness::test_support::shape_defines_for(&aeon_dir(), "sonic4", if debug { "debug" } else { "release" }),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

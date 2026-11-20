@@ -28,22 +28,26 @@
 //! ```
 
 use sigil_frontend_emp::contract::{InterfaceEnv, ResolvedInterface};
-use sigil_harness::native::{demo_profile, sonic4_profile, GameProfile};
+use sigil_harness::shapes::Shape;
 use sigil_harness::test_support::{
-    game_contract_declared_members, game_contract_env_from_aeon, game_contract_missing_members,
-    game_manifest_path, reference_tree_for_profile, GAME_CONTRACT_IFACE_REL,
+    contract_defines, game_contract_declared_members, game_contract_env_from_aeon, game_contract_missing_members,
+    game_manifest_path, reference_tree_for_shape, GAME_CONTRACT_IFACE_REL,
 };
 
 /// The shipped games, each at the build shape whose manifest bindings are the
 /// plainest (canonical, hotkeys off). Both must bind the SAME interface — the
 /// contract is engine-owned, one declaration for every game.
-fn shipped() -> Vec<GameProfile> {
-    vec![sonic4_profile(false), sonic4_profile(true), demo_profile(false), demo_profile(true)]
+fn shipped() -> Vec<Shape> {
+    vec![
+        Shape::new("sonic4", "release"),
+        Shape::new("sonic4", "debug"),
+        Shape::new("demo", "release"),
+        Shape::new("demo", "debug"),
+    ]
 }
 
-/// A profile's comptime environment, as the profile itself declares it.
-fn defines(profile: &GameProfile) -> Vec<(String, i128)> {
-    profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect()
+fn reference() -> Option<std::path::PathBuf> {
+    reference_tree_for_shape(&Shape::new("sonic4", "release"))
 }
 
 /// THE GATE. For every shipped game, the env derived from aeon's own contract
@@ -56,15 +60,15 @@ fn defines(profile: &GameProfile) -> Vec<(String, i128)> {
 /// env does not know at all — the shape that made `rings.emp` fail at lower.
 #[test]
 fn derived_env_covers_every_declared_member() {
-    let Some(aeon) = reference_tree_for_profile(&sonic4_profile(false)) else { return };
+    let Some(aeon) = reference() else { return };
     let declared = game_contract_declared_members(&aeon);
     for profile in shipped() {
-        let env = game_contract_env_from_aeon(&aeon, &profile, &defines(&profile));
+        let env = game_contract_env_from_aeon(&aeon, &profile, &contract_defines(&aeon, &profile));
         let missing = game_contract_missing_members(&aeon, &env);
         assert!(
             missing.is_empty(),
             "`{}`: the derived env misses {:?} of the {} members declared in {}",
-            profile.name,
+            profile.name(),
             missing,
             declared.len(),
             aeon.join(GAME_CONTRACT_IFACE_REL).display()
@@ -81,10 +85,10 @@ fn derived_env_covers_every_declared_member() {
 /// declares, so this probe follows the contract too.
 #[test]
 fn a_member_filtered_out_of_the_env_is_reported_by_name() {
-    let Some(aeon) = reference_tree_for_profile(&sonic4_profile(false)) else { return };
+    let Some(aeon) = reference() else { return };
     let declared = game_contract_declared_members(&aeon);
-    let profile = sonic4_profile(false);
-    let env = game_contract_env_from_aeon(&aeon, &profile, &defines(&profile));
+    let profile = Shape::new("sonic4", "release");
+    let env = game_contract_env_from_aeon(&aeon, &profile, &contract_defines(&aeon, &profile));
 
     for victim in &declared {
         let game = env.interfaces.get("Game").expect("the derived env carries `Game`");
@@ -111,12 +115,12 @@ fn a_member_filtered_out_of_the_env_is_reported_by_name() {
 }
 
 /// The paths the derived env reads are the ones the REAL BUILD reads: each
-/// profile's manifest is the file its declared `manifest_module` names, at the
-/// place the profile's own residual root puts it. A manifest that moved without
+/// game's manifest is the file its description's `entry.game` names, inside the
+/// game's own directory. A manifest that moved without
 /// the derivation moving is caught here rather than as a mystery bind failure.
 #[test]
 fn every_shipped_manifest_is_where_the_profile_says() {
-    let Some(aeon) = reference_tree_for_profile(&sonic4_profile(false)) else { return };
+    let Some(aeon) = reference() else { return };
     assert!(
         aeon.join(GAME_CONTRACT_IFACE_REL).is_file(),
         "the engine contract must be at {}",
@@ -126,18 +130,18 @@ fn every_shipped_manifest_is_where_the_profile_says() {
         let path = game_manifest_path(&aeon, &profile);
         assert!(
             path.is_file(),
-            "`{}`: no manifest at {} (derived from game_root_rel `{}`)",
-            profile.name,
-            path.display(),
-            profile.game_root_rel
+            "`{}`: no manifest at {} (derived from the game directory)",
+            profile.name(),
+            path.display()
         );
+        let entry = profile.project(&aeon).expect("description loads").game.entry.game;
         let src = std::fs::read_to_string(&path).expect("manifest reads");
         let (file, _) = sigil_frontend_emp::parse_str(&src);
         assert_eq!(
             file.module.path.segments.join("."),
-            profile.manifest_module,
-            "`{}`: {} declares a different module than the profile names",
-            profile.name,
+            entry,
+            "`{}`: {} declares a different module than the description's `entry.game` names",
+            profile.name(),
             path.display()
         );
     }

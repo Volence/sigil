@@ -4,8 +4,9 @@
 //! The binary aeon builds every ROM with is compiled in a sigil worktree and then used
 //! from elsewhere. On 2026-09-26 that worktree was removed and every aeon build of every
 //! shape failed, because the assembler read its off-canonical size tables at run time
-//! from a path fixed at compile time. The tables are compiled in now
-//! (`sigil_harness::native::FROZEN_TABLES`), and this gate holds the property rather
+//! from a path fixed at compile time. The tables were compiled in after that (the
+//! profile-driven driver's `FROZEN_TABLES`), and the game-as-data driver that replaced it
+//! (G0b Task 11) reads only the tree it builds; this gate holds the property rather
 //! than the mechanism: it runs the real binary with the whole compiling checkout HIDDEN
 //! (`bwrap`, an empty tmpfs mounted over it) and requires all four shapes to build, byte
 //! for byte the ROMs the same binary writes with the checkout visible.
@@ -34,10 +35,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const SHAPES: &[(&str, &[&str])] = &[
-    ("s4", &[]),
-    ("s4.debug", &["--debug"]),
-    ("demo", &["--game", "demo"]),
-    ("demo.debug", &["--game", "demo", "--debug"]),
+    ("s4", &["sonic4", "release"]),
+    ("s4.debug", &["sonic4", "debug"]),
+    ("demo", &["demo", "release"]),
+    ("demo.debug", &["demo", "debug"]),
 ];
 
 /// A file every checkout of this repository carries, used as the hiding control.
@@ -69,7 +70,7 @@ fn sandboxed(hidden: &Path, keep: &[&Path]) -> Command {
 fn run_build(mut cmd: Command, sigil: &Path, aeon: &Path, out: &Path, name: &str, args: &[&str]) -> (Vec<u8>, String) {
     let bin = out.join(format!("{name}.bin"));
     let lst = out.join(format!("{name}.lst"));
-    cmd.arg(sigil).args(["build", "--aeon"]).arg(aeon).arg("--native").args(args);
+    cmd.arg(sigil).args(["build", "--project"]).arg(aeon.join("games").join(args[0])).args(["--shape", args[1]]);
     cmd.arg("-o").arg(&bin).arg("--emit-lst").arg(&lst);
     cmd.env("AEON_DIR", aeon);
     let o = cmd.output().unwrap_or_else(|e| panic!("spawn {name} build: {e}"));
@@ -93,8 +94,8 @@ fn unsandboxed() -> Command {
 
 #[test]
 fn installed_binary_needs_no_build_tree() {
-    let profile = sigil_harness::native::sonic4_profile(false);
-    let Some(aeon) = sigil_harness::test_support::reference_tree_for_profile(&profile) else { return };
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
+    let Some(aeon) = sigil_harness::test_support::reference_tree_for_shape(&shape) else { return };
     let aeon = aeon.canonicalize().expect("canonical aeon");
     let checkout = sigil_harness::source_digest::sigil_source_root();
     let sigil = PathBuf::from(env!("CARGO_BIN_EXE_sigil")).canonicalize().expect("canonical sigil binary");

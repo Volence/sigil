@@ -19,8 +19,7 @@ static TREE: OnceLock<Option<PathBuf>> = OnceLock::new();
 fn tree() -> Option<(MutexGuard<'static, ()>, PathBuf)> {
     let guard = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = TREE.get_or_init(|| {
-        let profile = sigil_harness::native::sonic4_profile(false);
-        let aeon = sigil_harness::test_support::reference_tree_for_profile(&profile)?;
+        let aeon = sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("sonic4", "release"))?;
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("build_export_layouts_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -40,8 +39,10 @@ fn build_plain(tree: &Path) -> serde_json::Value {
     std::fs::create_dir_all(&dir).unwrap();
     let rom = dir.join("plain.bin");
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
-        .args(["build", "--aeon"])
-        .arg(tree)
+        .args(["build", "--project"])
+        .arg(tree.join("games/sonic4"))
+        .args(["--shape", "release"])
+        .env_remove("AEON_DIR")
         .arg("-o")
         .arg(&rom)
         .output()

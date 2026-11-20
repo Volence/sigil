@@ -54,6 +54,14 @@
 # accounted for was scratch-measurement padding. The parser now refuses the key
 # as an unknown field. Gates: `tests/region_end_contracts.rs`.
 
+[shapes]
+# The described shapes the plain and debug pin columns are read off: `sigil build
+# --project <aeon>/games/<game> --shape <row>` (G0b Task 11; before it, the
+# profile-driven driver's canonical sonic4 plain/debug resolve).
+game = "sonic4"
+plain = "release"
+debug = "debug"
+
 [rom]
 # The listing END-line address per shape — the assembled (pre-convsym) ROM
 # lengths ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN.

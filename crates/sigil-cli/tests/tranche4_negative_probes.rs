@@ -409,9 +409,9 @@ fn place_act_at(act_src: &str, structs_src: &str, base: u32) -> Vec<Section> {
         &[(ACT_REL, act_src), ("engine/structs.emp", structs_src)],
     )
     .unwrap_or_else(|e| panic!("shadow aeon tree: {e}"));
-    let profile = sigil_harness::native::sonic4_profile(false);
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
     let sigil_harness::test_support::NativeSection { section, .. } =
-        sigil_harness::test_support::native_section(shadow.root(), &profile, "act_descriptor", &[])
+        sigil_harness::test_support::native_section(shadow.root(), &shape, "act_descriptor", &[])
             .unwrap_or_else(|e| panic!("native act_descriptor closure: {e}"));
     let map_toml = format!(
         "fill = 0x00\n\

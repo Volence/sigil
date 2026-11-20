@@ -36,15 +36,16 @@ static LOCK: Mutex<()> = Mutex::new(());
 static AEON: OnceLock<Option<PathBuf>> = OnceLock::new();
 static BUILT: OnceLock<Vec<Built>> = OnceLock::new();
 
-/// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical, by name and flags.
+/// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical, by name and
+/// `[game, shape row]` (`sigil build --project <tree>/games/<game> --shape <row>`).
 const SHAPES: [(&str, &[&str]); 7] = [
-    ("plain", &[]),
-    ("debug", &["--debug"]),
-    ("demo", &["--game", "demo"]),
-    ("demo_debug", &["--game", "demo", "--debug"]),
-    ("config_a", &["--config-a"]),
-    ("config_b", &["--config-b"]),
-    ("lean", &["--lean"]),
+    ("plain", &["sonic4", "release"]),
+    ("debug", &["sonic4", "debug"]),
+    ("demo", &["demo", "release"]),
+    ("demo_debug", &["demo", "debug"]),
+    ("config_a", &["sonic4", "config-a"]),
+    ("config_b", &["sonic4", "config-b"]),
+    ("lean", &["sonic4", "lean"]),
 ];
 
 /// Builds per shape in gate 7.
@@ -67,8 +68,7 @@ fn scratch(what: &str) -> PathBuf {
 
 fn aeon() -> Option<&'static Path> {
     AEON.get_or_init(|| {
-        let profile = sigil_harness::native::sonic4_profile(false);
-        sigil_harness::test_support::reference_tree_for_profile(&profile)
+        sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("sonic4", "release"))
     })
     .as_deref()
 }
@@ -82,9 +82,10 @@ fn lock() -> MutexGuard<'static, ()> {
 fn build(tree: &Path, flags: &[&str], rom: &Path, cwd: &Path) -> (Vec<u8>, Vec<u8>) {
     std::fs::create_dir_all(rom.parent().unwrap()).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
-        .args(["build", "--aeon"])
-        .arg(tree)
-        .args(flags)
+        .args(["build", "--project"])
+        .arg(tree.join("games").join(flags[0]))
+        .args(["--shape", flags[1]])
+        .env_remove("AEON_DIR")
         .arg("-o")
         .arg(rom)
         .current_dir(cwd)

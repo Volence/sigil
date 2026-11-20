@@ -77,10 +77,9 @@ use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 /// would restate the interface here and go stale the day the engine grows a
 /// member game_loop names.
 fn game_loop_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
-    let profile = sigil_harness::native::sonic4_profile(false);
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
-    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &profile, &defines)
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
+    let defines = sigil_harness::test_support::contract_defines(&aeon_dir(), &shape);
+    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &shape, &defines)
 }
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;

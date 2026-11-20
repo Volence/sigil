@@ -259,12 +259,28 @@ pub struct SectionExtent {
 #[derive(Debug)]
 pub struct Manifest {
     pub rom: RomSpec,
+    /// `[shapes]` — which described shapes the pins are read off. Optional to the
+    /// parser (fixtures omit it); the `repin` tool refuses a manifest without it.
+    #[serde(default)]
+    pub shapes: Option<ShapesSpec>,
     #[serde(default, rename = "region")]
     pub regions: Vec<RegionSpec>,
     #[serde(default, rename = "symbol")]
     pub symbols: Vec<SymbolSpec>,
     #[serde(default, rename = "offset")]
     pub offsets: Vec<OffsetSpec>,
+}
+
+/// `[shapes]` — the game (its directory under the checkout's `games/`) and the two
+/// `[shapes.*]` rows of its `game.toml` the pins' plain and debug columns are read off
+/// (G0b Task 11: the profile-driven driver's canonical pair is a description now).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[derive(Debug)]
+pub struct ShapesSpec {
+    pub game: String,
+    pub plain: String,
+    pub debug: String,
 }
 
 /// `[rom]` — the assembled-length pins. `end_symbol` must be the `__END__`
@@ -1470,6 +1486,256 @@ pub fn zero_consumer_report(orphans: &[String], scanned: usize) -> String {
     s
 }
 
+// ── The canonical layout's readers (G0b Task 11: moved from `native.rs`, where they read
+// the profile-driven driver's canonical resolve; they now read whatever resolved layout
+// the caller hands them, `shapes::resolved_layout` for a described shape) ──
+
+
+/// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
+/// source that replaces parsing asl's `.lst`). Resolves the canonical layout,
+/// dumps the fully-resolved symbol table (labels + folded equates — incl. the
+/// `MDDBG__*` link-external-base table), DEMANGLES the `.emp` locals (`$module$Parent$
+/// local` → `Parent.local`, matching the deb2 appendix) so a dotted-local offset spec
+/// like `AnimateSprite.cc_delete` resolves, and returns `(name → address, end_addr)`.
+/// A demangle collision on distinct addresses is a hard error (the asl parser rejected
+/// duplicate names; this preserves that guarantee).
+pub fn symbol_listing_of(resolved: &[sigil_ir::Section]) -> Result<(HashMap<String, u32>, u32), String> {
+    let stubs = sigil_ir::SymbolTable::new();
+    let raw = sigil_link::resolved_symbols(resolved, &stubs);
+    // Demangle via the deb2 path so dotted locals resolve; keep RAM + ROM + equates.
+    let listing_syms: Vec<sigil_link::ListingSymbol> = raw
+        .iter()
+        .map(|(name, val)| sigil_link::ListingSymbol {
+            name: name.clone(),
+            value: *val as u32,
+            is_equate: false,
+            unused: false,
+            // This path reads `resolved_symbols`, a name/value map with no section
+            // behind it, so phase is not recoverable here. `None` is the honest
+            // answer for a consumer that only queries names.
+            lma: None,
+        })
+        .collect();
+    let demangled = sigil_link::demangle_symbols(&listing_syms);
+    // Demangle can map two DISTINCT internal `.emp` locals (e.g. `raise_error` scratch
+    // labels in sibling procs) to the same `Parent.local` — the asl `.lst` never did
+    // (its names were already unique). Such an alias is AMBIGUOUS, so it is DROPPED, not
+    // resolved to an arbitrary one. Every symbol the manifest queries is unique (a proc
+    // name or a global), so it survives; a query for a dropped/absent name fails loudly
+    // in `resolve()` (naming it) — never a silent wrong value.
+    let mut values: HashMap<String, std::collections::HashSet<u32>> = HashMap::new();
+    for s in &demangled {
+        values.entry(s.name.clone()).or_default().insert(s.value);
+    }
+    let mut map: HashMap<String, u32> = values
+        .into_iter()
+        .filter_map(|(name, vs)| if vs.len() == 1 { Some((name, vs.into_iter().next().unwrap())) } else { None })
+        .collect();
+    // Section-END markers (`<Base>_End`): the one-past-end boundary labels asl listed but
+    // sigil emits IMPLICITLY (the `.emp` data modules carry no `_End` label; the `.asm`
+    // twins that did are deleted). Synthesize each from its section's resolved geometry —
+    // the base (offset-0) label's name + `_End` at `lma + image_len` — matching P4a's
+    // `derive_frozen_table`. Real labels win (only added when absent).
+    for s in resolved {
+        if !sigil_build::place::is_rom_section(s) {
+            continue;
+        }
+        if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
+            let end_name = format!("{}_End", base.name);
+            map.entry(end_name).or_insert_with(|| sigil_build::place::section_end(s));
+        }
+    }
+    let end_addr = *map
+        .get("EndOfRom")
+        .ok_or("symbol_listing_of: `EndOfRom` absent from the resolved layout")?;
+    Ok((map, end_addr))
+}
+
+
+/// The placed ROM section table for `repin` (REPIN-END): every ROM section's name,
+/// LMA and one-past-end, from the same canonical resolve the symbol listing reads.
+/// A region boundary spelled `section:<name>` measures against THIS — its `end` is
+/// the section's own end, so alignment pad before the successor's head never enters
+/// a pin. Zero-byte sections are listed too (their `end == lma`); a `section:` naming
+/// one measures exactly zero bytes, loudly visible in the pin.
+pub fn section_extents_of(resolved: &[sigil_ir::Section]) -> Result<Vec<SectionExtent>, String> {
+    Ok(resolved
+        .iter()
+        .filter(|s| sigil_build::place::is_rom_section(s))
+        .map(|s| SectionExtent { name: s.name.clone(), lma: s.lma, end: sigil_build::place::section_end(s) })
+        .collect())
+}
+
+
+/// Phase-bank label LOAD addresses (T4). For every PHASE-BANK ROM section — a
+/// `vma:`-windowed bank whose labels resolve at a VMA distinct from where its bytes
+/// physically land (`vma_base != lma && vma_base >= $8000`, the `soundbankhead`
+/// precedent) — map each label to its LMA (`lma + offset`), NOT the VMA that
+/// `sigil_native_symbol_listing` returns.
+///
+/// repin pins a `phase_bank` region's base to this LMA, so the emitted `Region` base
+/// is uniformly the PLACEMENT address in every shape — the same meaning a non-phase
+/// region's base already has (there `vma == lma`). Every consumer of a region base
+/// (the port gates' reference windows, `repin`'s own re-derivation) therefore reads a
+/// LOAD address and never has to ask which of the two a phase bank's pin holds. The
+/// phase VMA stays the SOLE property of the section's own `vma:` declaration in the
+/// `.emp`.
+///
+/// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
+/// already IS the LMA). Empty for a program with no phase-bank section.
+/// Which ROM SECTION DEFINES each label (parcel R6): `label name → section name`, plus
+/// each section's synthesized `<Base>_End` marker attributed to the section it measures.
+///
+/// This is the discriminator the ADDRESS cannot supply. A region whose `end` names the
+/// successor's head label and whose window happens to sit flush against its own content
+/// today measures ZERO pad — indistinguishable, by address alone, from a region ending at
+/// a label it owns. The two are not the same contract: the first moves when the neighbour
+/// moves. Ownership settles it, and it is read from the same resolve the section table is.
+///
+/// A name defined in more than one section (`text` carries twenty-odd zero-length
+/// instances) is DROPPED rather than attributed to an arbitrary one — an ambiguous
+/// ownership is no ownership, and the caller must treat it as unknown, never as a match.
+pub fn section_label_owners_of(resolved: &[sigil_ir::Section]) -> Result<HashMap<String, String>, String> {
+    let mut owners: HashMap<String, String> = HashMap::new();
+    let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let note = |owners: &mut HashMap<String, String>,
+                    ambiguous: &mut std::collections::HashSet<String>,
+                    name: String,
+                    sec: &str| {
+        match owners.entry(name) {
+            std::collections::hash_map::Entry::Occupied(e) => {
+                if e.get() != sec {
+                    ambiguous.insert(e.key().clone());
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(sec.to_string());
+            }
+        }
+    };
+    for s in resolved {
+        if !sigil_build::place::is_rom_section(s) {
+            continue;
+        }
+        for lab in &s.labels {
+            note(&mut owners, &mut ambiguous, lab.name.clone(), &s.name);
+        }
+        if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
+            note(&mut owners, &mut ambiguous, format!("{}_End", base.name), &s.name);
+        }
+    }
+    for name in ambiguous {
+        owners.remove(&name);
+    }
+    Ok(owners)
+}
+
+
+pub fn phase_bank_lmas_of(resolved: &[sigil_ir::Section]) -> Result<HashMap<String, u32>, String> {
+    let mut out = HashMap::new();
+    for s in resolved {
+        if !sigil_build::place::is_rom_section(s) {
+            continue;
+        }
+        let is_phase = s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
+        if !is_phase {
+            continue;
+        }
+        for l in &s.labels {
+            out.insert(l.name.clone(), s.lma.wrapping_add(l.offset));
+        }
+    }
+    Ok(out)
+}
+
+/// The [`Listing`] the pins resolve against, read off one resolved layout: its symbols,
+/// phase-bank LMAs, section extents and label owners, stamped `stamp`.
+pub fn listing_of(resolved: &[sigil_ir::Section], stamp: &str) -> Result<Listing, String> {
+    let (symbols, end) = symbol_listing_of(resolved)?;
+    Ok(Listing::from_symbols(symbols, end, stamp.to_string())
+        .with_phase_lma(phase_bank_lmas_of(resolved)?)
+        .with_sections(section_extents_of(resolved)?)
+        .with_label_owners(section_label_owners_of(resolved)?))
+}
+
+// ── The off-canonical size tables (`golden/offcanonical_sizes/<target>.txt`) ──
+//
+// G0b Task 11: the tables are FREEZE RECORDS, read by the golden gates (the authoritative
+// anchor_end of an off-canonical target, `refreeze`'s `authoritative_anchor_ends`) and
+// re-derived by `derive_offcanon` off a described shape's resolved layout. They are no
+// longer a build input: the profile-driven driver compiled them in (`FROZEN_TABLES`) as
+// its provisional sizes, and it is deleted.
+
+/// Parse a size table's text: its `LABEL 0xADDR` rows (comment lines skipped), `label → addr`.
+pub fn parse_size_table(text: &str) -> HashMap<String, u32> {
+    let mut m = HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((name, addr)) = line.rsplit_once(' ') {
+            let a = addr.trim().trim_start_matches("0x");
+            if let Ok(v) = u32::from_str_radix(a, 16) {
+                m.insert(name.trim().to_string(), v);
+            }
+        }
+    }
+    m
+}
+
+/// The boundary addresses of `want` read off `resolved`: each label's ROM address
+/// (`section.lma + label.offset`, the LMA, so a phased section reports where it is
+/// loaded), and each `<Stem>_End` label no section carries synthesized as the one-past
+/// end of the one section whose labels include `<Stem>`. A label of `want` the layout
+/// cannot place is an error naming it (a dropped boundary is a regression, never a
+/// silent omission).
+pub fn boundary_table_of(
+    resolved: &[sigil_ir::Section],
+    want: &HashSet<String>,
+) -> Result<BTreeMap<String, u32>, String> {
+    use sigil_build::place::{is_rom_section, section_end};
+    let mut out: BTreeMap<String, u32> = BTreeMap::new();
+    for s in resolved.iter().filter(|s| is_rom_section(s)) {
+        for l in &s.labels {
+            if want.contains(&l.name) {
+                out.insert(l.name.clone(), s.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    for name in want {
+        if out.contains_key(name) {
+            continue;
+        }
+        let Some(stem) = name.strip_suffix("_End") else { continue };
+        let owner: Vec<&sigil_ir::Section> =
+            resolved.iter().filter(|s| is_rom_section(s) && s.labels.iter().any(|l| l.name == stem)).collect();
+        match owner.as_slice() {
+            [s] => {
+                out.insert(name.clone(), section_end(s));
+            }
+            [] => {}
+            many => {
+                return Err(format!(
+                    "section-end label `{name}` stem `{stem}` names {} sections, ambiguous",
+                    many.len()
+                ))
+            }
+        }
+    }
+    let mut missing: Vec<&String> = want.iter().filter(|n| !out.contains_key(*n)).collect();
+    missing.sort();
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} committed boundary label(s) absent from the resolved layout (first: {:?}), \
+             a real regression, not a silent drop",
+            missing.len(),
+            missing.first()
+        ));
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2077,3 +2343,4 @@ tests = ["rings_port"]
         }
     }
 }
+

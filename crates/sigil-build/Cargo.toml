@@ -23,3 +23,8 @@ sigil-frontend-emp = { path = "../sigil-frontend-emp" }
 sigil-frontend-as = { path = "../sigil-frontend-as" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[dev-dependencies]
+# The warn-tier and chained-locator gates moved from sigil-harness (G0b Task 11) need a
+# real on-disk source file: `SourceIndex` resolves `path:line:col` by READING the file.
+tempfile = "3"

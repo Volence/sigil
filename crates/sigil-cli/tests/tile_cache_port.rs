@@ -291,7 +291,7 @@ fn compile_real_file(
         embed_base: None,
         // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
         // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
-        defines: sigil_harness::test_support::sonic4_shape_defines(&sigil_harness::test_support::aeon_dir(), debug),
+        defines: sigil_harness::test_support::shape_defines_for(&sigil_harness::test_support::aeon_dir(), "sonic4", if debug { "debug" } else { "release" }),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -470,7 +470,7 @@ fn lower_and_place(
         embed_base: None,
         // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
         // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
-        defines: sigil_harness::test_support::sonic4_shape_defines(&sigil_harness::test_support::aeon_dir(), debug),
+        defines: sigil_harness::test_support::shape_defines_for(&sigil_harness::test_support::aeon_dir(), "sonic4", if debug { "debug" } else { "release" }),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

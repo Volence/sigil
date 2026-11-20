@@ -119,7 +119,7 @@ fn act_sec_rows(harvest: &[(String, i64)]) -> Vec<(String, String)> {
 /// The [`act_sec_field_equs`] rows for the tree at `aeon`, or the harvest's error
 /// with that tree named in it.
 fn act_sec_supply_from(aeon: &std::path::Path) -> Result<Vec<(String, String)>, String> {
-    let harvest = crate::native::harvest_engine_struct_offsets(aeon).map_err(|e| {
+    let harvest = crate::shapes::engine_struct_offsets(aeon).map_err(|e| {
         format!(
             "the Act/Sec/DMAEntry/parallax_config field supply is the struct-offset harvest \
              of {}, and that harvest failed, so no gate reading the supply can measure \
@@ -304,17 +304,10 @@ pub fn game_contract_env(
 /// unlike the manifest it has nothing to derive from a profile.
 pub const GAME_CONTRACT_IFACE_REL: &str = "engine/system/game_contract.emp";
 
-/// The profile's game manifest (`games/<g>/config/game.emp`) — the one
-/// `implement Game`. DERIVED from [`GameProfile::game_root_rel`] exactly as
-/// [`GameProfile::map_path`] derives the placement map: the residual root's
-/// directory, one known file inside it.
-pub fn game_manifest_path(
-    aeon: &std::path::Path,
-    profile: &crate::native::GameProfile,
-) -> PathBuf {
-    let root = std::path::Path::new(profile.game_root_rel);
-    let dir = root.parent().unwrap_or(std::path::Path::new(""));
-    aeon.join(dir).join("config/game.emp")
+/// The shape's game manifest (`games/<g>/config/game.emp`) — the one
+/// `implement Game`: one known file inside the game's directory.
+pub fn game_manifest_path(aeon: &std::path::Path, shape: &crate::shapes::Shape) -> PathBuf {
+    shape.game_dir(aeon).join("config/game.emp")
 }
 
 /// Parse an `.emp` file, panicking (naming the path) if it is missing or carries
@@ -375,13 +368,15 @@ pub fn game_contract_declared_members(aeon: &std::path::Path) -> Vec<String> {
 /// members than the interface declares.
 pub fn game_contract_env_from_aeon(
     aeon: &std::path::Path,
-    profile: &crate::native::GameProfile,
+    shape: &crate::shapes::Shape,
     defines: &[(String, i128)],
 ) -> sigil_frontend_emp::contract::InterfaceEnv {
     use sigil_frontend_emp::resolve::contract::{bind_with_ambient, ContractModule};
 
     let iface_path = aeon.join(GAME_CONTRACT_IFACE_REL);
-    let impl_path = game_manifest_path(aeon, profile);
+    let impl_path = game_manifest_path(aeon, shape);
+    let project = shape.project(aeon).unwrap_or_else(|e| panic!("shape `{}`: {e}", shape.name()));
+    let manifest_module = project.game.entry.game.clone();
     let ef = parse_emp_or_panic(&iface_path);
     let gf = parse_emp_or_panic(&impl_path);
 
@@ -389,12 +384,12 @@ pub fn game_contract_env_from_aeon(
     let gid = gf.module.path.segments.join(".");
     assert_eq!(
         gid,
-        profile.manifest_module,
-        "manifest at {} declares module `{gid}`, but profile `{}` names \
+        manifest_module,
+        "manifest at {} declares module `{gid}`, but game `{}`'s `entry.game` names \
          `{}`, the derivation found the wrong file",
         impl_path.display(),
-        profile.name,
-        profile.manifest_module
+        shape.game,
+        manifest_module
     );
 
     // The manifest's own imports, followed to their files: a binding value that
@@ -776,7 +771,7 @@ pub fn section_streamer_labels_if_defined(debug: bool) -> Vec<(String, u32)> {
 /// window), for a gate lowering section.emp standalone to PREPEND. Each const arrives
 /// with its defining expression and neither module emits bytes (see
 /// [`zero_byte_module`]). Their consts fold the game's `GAME_SCANLINE_CAPS` define
-/// where the tree declares one, so the caller lowers under [`sonic4_shape_defines`].
+/// where the tree declares one, so the caller lowers under [`shape_defines_for`].
 pub fn section_const_modules(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::File> {
     vec![
         zero_byte_module(aeon, "engine/level/parallax.emp"),
@@ -1626,12 +1621,11 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
     Some(aeon)
 }
 
-/// The guard a PROFILE-DRIVEN gate opens with: `Some(aeon)` when the tree carries the
-/// two files `profile`'s build reads before anything else — its AS residual root
-/// ([`GameProfile::game_root_rel`], `games/<g>/game_root.asm`) and its placement map
-/// ([`GameProfile::map_path`]'s `map.toml`, that root's sibling). Both paths are
-/// DERIVED FROM THE PROFILE the caller goes on to build, so the guard cannot name
-/// inputs the gate does not use.
+/// The guard a SHAPE-BUILDING gate opens with: `Some(aeon)` when the tree carries the
+/// file the shape's build reads before anything else, its game description
+/// (`games/<g>/game.toml`, [`crate::shapes::Shape::game_dir`]), which names every other
+/// input (the engine, the map, the residual root). The path is DERIVED FROM THE SHAPE the
+/// caller goes on to build, so the guard cannot name inputs the gate does not use.
 ///
 /// A built ROM is not one of them. These gates assemble aeon SOURCE and compare
 /// against sigil's own committed goldens, so a source-only checkout — every `.emp`
@@ -1640,11 +1634,18 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
 ///
 /// Skip/panic semantics are [`reference_tree`]'s: skip green when a path is absent,
 /// panic naming it under `SIGIL_STRICT_GATE=1`.
+/// Transitional (G0b Task 11): the profile-driven form of [`reference_tree_for_shape`],
+/// deleted with the profiles.
 pub fn reference_tree_for_profile(profile: &crate::native::GameProfile) -> Option<PathBuf> {
     let root = std::path::Path::new(profile.game_root_rel);
     let map = root.parent().unwrap_or(std::path::Path::new("")).join("map.toml");
     let map = map.to_str().expect("game_root_rel is UTF-8");
     reference_tree(&[profile.game_root_rel, map])
+}
+
+pub fn reference_tree_for_shape(shape: &crate::shapes::Shape) -> Option<PathBuf> {
+    let desc = format!("games/{}/game.toml", shape.game);
+    reference_tree(&[desc.as_str()])
 }
 
 /// The guard a SUITE-ROOT reader closes with when its own derivation finds none.
@@ -2079,27 +2080,25 @@ pub fn engine_constant_equs_imported_by(aeon: &std::path::Path, rel: &str) -> Ve
     out
 }
 
-/// The comptime `-D` set a single-module port oracle lowers sonic4 code under at one
-/// shape: the shipping profile's built-in rows merged with the `[defines]` table of
-/// the aeon tree's own `games/sonic4/map.toml`, via [`crate::native::shape_defines`],
-/// the same merge the whole-program build reads.
+/// The comptime `-D` set a single-module port oracle lowers a game's code under at one
+/// shape (`games/<game>/game.toml` row `shape`): the shape's merged define environment,
+/// via [`crate::shapes::shape_defines`], the same merge the whole-program build reads.
 ///
 /// A port that binds only `DEBUG` goes stale in one direction: the engine starts
-/// reading another build define (`CRASH_REPORT` from the profile,
+/// reading another build define (`CRASH_REPORT` from the shape's features,
 /// `GAME_SCANLINE_CAPS` from the game's map) and the standalone lower aborts with
 /// `unknown name` before it reaches the bytes it compares. Reading the merge instead
 /// hands the oracle every define the reference ROM was built with, and a tree whose
 /// map declares no `[defines]` table contributes no game rows, so an older tree gets
 /// exactly the env its own build used. Loud on a missing or malformed map.
-pub fn sonic4_shape_defines(aeon: &std::path::Path, debug: bool) -> Vec<(String, i128)> {
-    let profile = crate::native::sonic4_profile(debug);
-    crate::native::shape_defines(&profile, aeon)
-        .unwrap_or_else(|e| panic!("sonic4_shape_defines: {e}"))
+pub fn shape_defines_for(aeon: &std::path::Path, game: &str, shape: &str) -> Vec<(String, i128)> {
+    let s = crate::shapes::Shape::new(game, shape);
+    crate::shapes::shape_defines(aeon, &s).unwrap_or_else(|e| panic!("shape_defines_for({game} {shape}): {e}"))
 }
 
 /// The resolved game-contract env the raster / parallax / buffers oracles lower
-/// against — sonic4's WHOLE contract via [`game_contract_env_from_aeon`] at the
-/// canonical shape, not a one-member stub.
+/// against — the shape's WHOLE contract via [`game_contract_env_from_aeon`], not a
+/// one-member stub.
 ///
 /// Named for `Game.SCANLINE_CAPS` because that is the member those modules gate
 /// their blocks on today; the env carries every other member too, so a second
@@ -2108,11 +2107,15 @@ pub fn sonic4_shape_defines(aeon: &std::path::Path, debug: bool) -> Vec<(String,
 /// that file rather than by re-spelling one line of it.
 pub fn scanline_caps_contract_env(
     aeon: &std::path::Path,
+    shape: &crate::shapes::Shape,
 ) -> sigil_frontend_emp::contract::InterfaceEnv {
-    let profile = crate::native::sonic4_profile(false);
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
-    game_contract_env_from_aeon(aeon, &profile, &defines)
+    game_contract_env_from_aeon(aeon, shape, &contract_defines(aeon, shape))
+}
+
+/// The defines a contract bind reads for `shape`: its merged define environment
+/// ([`crate::shapes::shape_defines`]), the env the whole-program build binds under.
+pub fn contract_defines(aeon: &std::path::Path, shape: &crate::shapes::Shape) -> Vec<(String, i128)> {
+    crate::shapes::shape_defines(aeon, shape).unwrap_or_else(|e| panic!("shape `{}`: {e}", shape.name()))
 }
 
 // ── 6. Zero-byte ambient modules ────────────────────────────────────────────
@@ -2342,7 +2345,7 @@ pub fn parse_dac_declarations(src: &str) -> DacDeclarations {
 // act rig failed on names the real build resolves without a word.
 //
 // The rig below follows the module's own `use` edges instead, through the SAME
-// native closure the ROM is built by ([`build_emp`](crate::native::build_emp) —
+// native closure the ROM is built by ([`emp_program`](crate::shapes::emp_program) —
 // manifest scan, helper normalisation, game-contract bind, `build_program`), and
 // slices the one section the oracle gates out of the placed program. A dependency
 // the module grows is followed by construction; one it loses stops being lowered.
@@ -2527,7 +2530,7 @@ pub fn shadow_aeon_tree(
 
 /// One section sliced out of a native whole-program build — see [`native_section`].
 pub struct NativeSection {
-    /// The placed section, exactly as [`build_emp`](crate::native::build_emp)
+    /// The placed section, exactly as [`emp_program`](crate::shapes::emp_program)
     /// emitted it (the caller re-places it under its own map).
     pub section: Section,
     /// The program's deferred link asserts whose source lies in the files the
@@ -2535,7 +2538,7 @@ pub struct NativeSection {
     pub link_asserts: Vec<LinkAssert>,
 }
 
-/// Build `profile` natively from `aeon` (a real tree or a [`ShadowTree`] root)
+/// Lower `shape` natively from `aeon` (a real tree or a [`ShadowTree`] root)
 /// and slice out the one section named `section`. `assert_files` are the
 /// aeon-relative sources whose link asserts ride along; the rest of the
 /// program's asserts reference AS-side labels a single-section oracle never
@@ -2545,17 +2548,17 @@ pub struct NativeSection {
 /// function …`, `unknown name …` — inside the returned `Err`.
 pub fn native_section(
     aeon: &std::path::Path,
-    profile: &crate::native::GameProfile,
+    shape: &crate::shapes::Shape,
     section: &str,
     assert_files: &[&str],
 ) -> Result<NativeSection, String> {
-    let program = crate::native::build_emp(aeon, profile)?;
+    let program = crate::shapes::emp_program(aeon, shape)?;
     let mut hits: Vec<Section> =
         program.sections.into_iter().filter(|s| s.name == section).collect();
     if hits.len() != 1 {
         return Err(format!(
             "expected exactly one `{section}` section in the {} program, found {}",
-            profile.name,
+            shape.name(),
             hits.len()
         ));
     }

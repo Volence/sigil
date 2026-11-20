@@ -199,9 +199,10 @@ if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
     echo "ERROR: set SIGIL_EMIT to <a build dir of this run's own>/release/emit_sound_blob (sound-on builds need it)."
     exit 1
 fi
-# The off-canonical Config-A/B shapes have no build.sh env path (post-flip build.sh
-# forwards only --game/--debug to sigil); they build through `sigil build --config-*`
-# directly. The canonical four still go through build.sh.
+# The off-canonical Config-A/B/lean shapes have no build.sh env path; they build through
+# `sigil build --project games/sonic4 --shape <row>` directly (G0b Task 11: the
+# profile-driven `--aeon . --native --config-*` grammar is deleted). The canonical four
+# still go through build.sh.
 # ── THE ASSEMBLER, NAMED OR REFUSED — never reached for in a shared directory ────────
 # This script CAPTURES THE GOLDENS. The binary chosen here is the one every frozen
 # expectation is afterwards attributed to, and a wrong choice does not error: it
@@ -277,16 +278,17 @@ capture() {
     if [[ "$WRITE" == "1" ]]; then freeze_stage "$path" "$golden"; echo "   staged -> $golden"; fi
 }
 
-# capture_config <golden_name> <--config-a|--config-b> <out_rom> <out_lst>
-# The off-canonical shapes: `sigil build --config-*` directly (the whole shape is
-# fixed by the flag). Same stale-artifact-trap guard as `capture`.
+# capture_config <golden_name> <game>:<shape row> <out_rom> <out_lst>
+# The off-canonical shapes: `sigil build --project games/<game> --shape <row>` directly
+# (the whole shape is the description's row). Same stale-artifact-trap guard as `capture`.
 capture_config() {
-    local golden="$1" flag="$2" rom="$3" lst="$4"
+    local golden="$1" shape="$2" rom="$3" lst="$4"
+    local game="${shape%%:*}" row="${shape#*:}"
     local path="$AEON/$rom" lstp="$AEON/$lst"
     local marker; marker="$(mktemp)"; sleep 0.01
     rm -f "$path"
-    echo ">> $golden  (sigil build $flag)"
-    ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" "$SIGIL_BUILD" build --aeon . --native "$flag" \
+    echo ">> $golden  (sigil build --project games/$game --shape $row)"
+    ( cd "$AEON" && env -u AEON_DIR SIGIL_EMIT="$SIGIL_EMIT" "$SIGIL_BUILD" build --project "games/$game" --shape "$row" \
         -o "$rom" --emit-lst "$lst" >/dev/null )
     [[ -f "$path" ]] || { echo "FAIL: $rom not produced"; rm -f "$marker"; exit 1; }
     [[ "$path" -nt "$marker" ]] || { echo "FAIL: $rom not newer than the pre-build marker (stale-capture guard)"; rm -f "$marker"; exit 1; }
@@ -330,15 +332,15 @@ capture demo.bin      demo   demo.bin      demo.lst
 capture demo.debug.bin demo  demo.debug.bin demo.debug.lst DEBUG=1
 
 # 5-6: the off-canonical configs (CLOBBER s4.debug.bin / s4.bin — captured into
-# distinct golden blobs; canonical is rebuilt below). Built via `sigil build
-# --config-*` directly (the stale SOUND_* env path through build.sh is gone post-flip).
-capture_config config_a.bin  --config-a  s4.debug.bin  s4.debug.lst
-capture_config config_b.bin  --config-b  s4.bin        s4.lst
+# distinct golden blobs; canonical is rebuilt below). Built via `sigil build --project`
+# directly (the stale SOUND_* env path through build.sh is gone post-flip).
+capture_config config_a.bin  sonic4:config-a  s4.debug.bin  s4.debug.lst
+capture_config config_b.bin  sonic4:config-b  s4.bin        s4.lst
 
 # 7: the LEAN shape (crash-report OFF: no MD Debugger island, no deb2 appendix, faults
 # route at ReleaseFault). Also CLOBBERS s4.bin — so it MUST come before the restore
 # below, not after it.
-capture_config lean.bin      --lean      s4.bin        s4.lst
+capture_config lean.bin      sonic4:lean      s4.bin        s4.lst
 
 # The set is complete, so the committed blobs are replaced now — before the restore
 # below, which is about the aeon tree and cannot invalidate a capture that already

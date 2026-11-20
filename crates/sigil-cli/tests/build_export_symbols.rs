@@ -20,22 +20,22 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 static LOCK: Mutex<()> = Mutex::new(());
 static TREE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-/// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical, by name and flags.
+/// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical, by name and
+/// `[game, shape row]` (`sigil build --project <tree>/games/<game> --shape <row>`).
 const SHAPES: [(&str, &[&str]); 7] = [
-    ("plain", &[]),
-    ("debug", &["--debug"]),
-    ("demo", &["--game", "demo"]),
-    ("demo_debug", &["--game", "demo", "--debug"]),
-    ("config_a", &["--config-a"]),
-    ("config_b", &["--config-b"]),
-    ("lean", &["--lean"]),
+    ("plain", &["sonic4", "release"]),
+    ("debug", &["sonic4", "debug"]),
+    ("demo", &["demo", "release"]),
+    ("demo_debug", &["demo", "debug"]),
+    ("config_a", &["sonic4", "config-a"]),
+    ("config_b", &["sonic4", "config-b"]),
+    ("lean", &["sonic4", "lean"]),
 ];
 
 fn tree() -> Option<(MutexGuard<'static, ()>, PathBuf)> {
     let guard = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = TREE.get_or_init(|| {
-        let profile = sigil_harness::native::sonic4_profile(false);
-        let aeon = sigil_harness::test_support::reference_tree_for_profile(&profile)?;
+        let aeon = sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("sonic4", "release"))?;
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("build_export_symbols_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -59,9 +59,10 @@ fn build_shape(tree: &Path, name: &str, flags: &[&str]) -> (String, serde_json::
     let rom = dir.join(format!("{name}.bin"));
     let lst = dir.join(format!("{name}.lst"));
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
-        .args(["build", "--aeon"])
-        .arg(tree)
-        .args(flags)
+        .args(["build", "--project"])
+        .arg(tree.join("games").join(flags[0]))
+        .args(["--shape", flags[1]])
+        .env_remove("AEON_DIR")
         .arg("-o")
         .arg(&rom)
         .arg("--emit-lst")
@@ -229,7 +230,7 @@ fn every_listing_symbol_is_in_the_export_at_the_same_address() {
 #[test]
 fn queue_dma_deferrable_is_a_proc_with_extent() {
     let Some((_g, tree)) = tree() else { return skip() };
-    let (_, export) = build_shape(&tree, "plain", &[]);
+    let (_, export) = build_shape(&tree, "plain", &["sonic4", "release"]);
     let syms = export["symbols"].as_array().unwrap();
     let q = syms.iter().find(|s| s["name"] == "QueueDMA_Deferrable").expect("QueueDMA_Deferrable exported");
     assert_eq!(q["kind"], "proc", "{q}");
@@ -262,7 +263,7 @@ fn queue_dma_deferrable_is_a_proc_with_extent() {
 #[test]
 fn equates_have_no_space() {
     let Some((_g, tree)) = tree() else { return skip() };
-    let (text, export) = build_shape(&tree, "plain", &[]);
+    let (text, export) = build_shape(&tree, "plain", &["sonic4", "release"]);
     let listing = parse_listing(&text).unwrap();
     let syms = export["symbols"].as_array().unwrap();
     let equs: Vec<_> = syms.iter().filter(|s| s["kind"] == "equ").collect();
@@ -284,7 +285,7 @@ fn equates_have_no_space() {
 #[test]
 fn pub_data_exports_public_and_private_data_does_not() {
     let Some((_g, tree)) = tree() else { return skip() };
-    let (_, export) = build_shape(&tree, "demo", &["--game", "demo"]);
+    let (_, export) = build_shape(&tree, "demo", &["demo", "release"]);
     let syms = export["symbols"].as_array().unwrap();
     let find = |n: &str| syms.iter().find(|s| s["name"] == n).unwrap_or_else(|| panic!("{n} not exported"));
     // `pub data ObjDef_DemoBox` and `data DemoObjectList_Term` (games/demo).

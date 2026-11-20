@@ -238,8 +238,11 @@ impl Project {
         self.game.entry.game.rsplit_once('.').map_or(self.game.entry.game.as_str(), |(p, _)| p)
     }
     /// The game's sources root.
+    /// The game's source root, `sources.root` under the game's directory, spelled without
+    /// `.` components: `sources.root = "."` must not put a `games/<g>/./` into every path a
+    /// diagnostic renders (G0b Task 11; the digest already spelled rows without them).
     pub fn sources_root(&self) -> PathBuf {
-        self.game_dir.join(&self.game.sources.root)
+        self.game_dir.join(&self.game.sources.root).components().filter(|c| !matches!(c, std::path::Component::CurDir)).collect()
     }
     pub fn map_path(&self) -> PathBuf {
         self.game_dir.join(&self.game.map)
@@ -549,21 +552,27 @@ fn engine_constants(p: &Project, defines: &[(String, i128)], twins: &[(String, i
 /// The engine structs' field offsets, under the AS spelling `<prefix>_<field>` and
 /// `<prefix>_len`, for each `struct_twins` row, each twin followed by the
 /// `struct_tail_equates` of its struct (`name = sizeof - from_end`).
-fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
-    for t in &p.engine.struct_tail_equates {
-        if !p.engine.struct_twins.iter().any(|(_, sname, _)| *sname == t.of) {
+pub fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
+    engine_struct_offsets(&p.engine, &p.engine_dir, &p.engine_path)
+}
+
+/// [`struct_offsets`] of an engine description alone (`engine_dir` holds `engine_path`,
+/// the description).
+pub fn engine_struct_offsets(engine: &EngineDesc, engine_dir: &Path, engine_path: &Path) -> Result<Vec<(String, i64)>, BuildError> {
+    for t in &engine.struct_tail_equates {
+        if !engine.struct_twins.iter().any(|(_, sname, _)| *sname == t.of) {
             return Err(BuildError::Desc(format!(
                 "{}: `struct_tail_equates` row `{}` names struct `{}`, which no `struct_twins` row lays out",
-                p.engine_path.display(),
+                engine_path.display(),
                 t.name,
                 t.of
             )));
         }
     }
-    let types = parse_emp(&p.engine_dir.join(&p.engine.types), "struct offsets")?;
+    let types = parse_emp(&engine_dir.join(&engine.types), "struct offsets")?;
     let mut out = Vec::new();
-    for (rel, sname, prefix) in &p.engine.struct_twins {
-        let file = parse_emp(&p.engine_dir.join(rel), "struct offsets")?;
+    for (rel, sname, prefix) in &engine.struct_twins {
+        let file = parse_emp(&engine_dir.join(rel), "struct offsets")?;
         let (layout, d) = sigil_frontend_emp::layout::layout_struct_ambient(&file, &types.items, sname);
         if let Some(e) = d.iter().find(|d| d.level == sigil_span::Level::Error) {
             return Err(ctx(format!("struct offsets: layout {sname}: {e:?}")));
@@ -573,11 +582,11 @@ fn struct_offsets(p: &Project) -> Result<Vec<(String, i64)>, BuildError> {
             out.push((format!("{prefix}_{}", f.name), f.offset as i64));
         }
         out.push((format!("{prefix}_len"), layout.size as i64));
-        for t in p.engine.struct_tail_equates.iter().filter(|t| t.of == *sname) {
+        for t in engine.struct_tail_equates.iter().filter(|t| t.of == *sname) {
             if t.from_end as u64 > layout.size as u64 {
                 return Err(BuildError::Desc(format!(
                     "{}: `struct_tail_equates` row `{}` reaches {} bytes back from the end of `{sname}`, which is {} bytes",
-                    p.engine_path.display(),
+                    engine_path.display(),
                     t.name,
                     t.from_end,
                     layout.size
@@ -652,20 +661,48 @@ fn push_synthetic(manifest: &mut resolve::manifest::Manifest, id: &str, src: &st
     Ok(source)
 }
 
-/// The residual AS side, assembled with the defines the descriptions derive.
-fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], seeds: (&str, &str), generated: &Path) -> Result<crate::harvest::AsSide, BuildError> {
-    let twins = struct_offsets(p)?;
-    let engine = engine_constants(p, defines, &twins)?;
-    let mut guarded = engine.clone();
-    guarded.extend(twins);
-    let mut seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
+/// What the residual AS side is assembled with, each harvest by name: the guarded defines
+/// are `engine_constants`, then `struct_offsets`, then `game_constants`; the plain defines
+/// are `ram_addresses`, then `feature_defines`.
+pub struct AsInputs {
+    /// The engine's public constants ([`EngineDesc::constants`]), less the struct twins' names.
+    pub engine_constants: Vec<(String, i64)>,
+    /// The struct twins' field offsets and sizes, each followed by its tail equates.
+    pub struct_offsets: Vec<(String, i64)>,
+    /// The game's public constants (its `entry` constants, sound ids and SFX bank modules).
+    pub game_constants: Vec<(String, i64)>,
+    /// The RAM labels and equates the engine RAM and the game RAM place.
+    pub ram_addresses: Vec<(String, i64)>,
+    /// The shape's `as_feature_defines`.
+    pub feature_defines: Vec<(String, i64)>,
+}
+
+/// The residual AS side's inputs for `shape` under `defines` (see [`AsInputs`]).
+pub fn as_inputs(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], generated: Option<&Path>) -> Result<AsInputs, BuildError> {
+    let seeds = entry_seeds(p)?;
+    let struct_offsets = struct_offsets(p)?;
+    let engine_constants = engine_constants(p, defines, &struct_offsets)?;
+    let mut seed: Vec<(String, i128)> = engine_constants.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
     seed.push(("DEBUG".to_string(), shape.features.debug as i128));
     let e = &p.game.entry;
+    let mut game_constants = Vec::new();
     for rel in [&e.constants, &e.sound_ids, &e.sfx_bank].into_iter().flatten() {
-        guarded.extend(pub_consts(p, &p.game_dir.join(rel), &seed, "game constants")?);
+        game_constants.extend(pub_consts(p, &p.game_dir.join(rel), &seed, "game constants")?);
     }
-    let mut plain = ram_addresses(p, seeds.1, defines, Some(generated))?;
-    plain.extend(as_feature_defines(p, &shape.features, defines)?);
+    let ram_addresses = ram_addresses(p, &seeds[2], defines, generated)?;
+    let feature_defines = as_feature_defines(p, &shape.features, defines)?;
+    Ok(AsInputs { engine_constants, struct_offsets, game_constants, ram_addresses, feature_defines })
+}
+
+/// The residual AS side, assembled with the defines the descriptions derive.
+fn assemble_as(p: &Project, shape: &ResolvedShape, defines: &[(String, i128)], generated: &Path) -> Result<crate::harvest::AsSide, BuildError> {
+    let AsInputs { engine_constants, struct_offsets, game_constants, ram_addresses, feature_defines } =
+        as_inputs(p, shape, defines, Some(generated))?;
+    let mut guarded = engine_constants;
+    guarded.extend(struct_offsets);
+    guarded.extend(game_constants);
+    let mut plain = ram_addresses;
+    plain.extend(feature_defines);
     let opts = sigil_frontend_as::Options {
         initial_cpu: Some(Cpu::M68000),
         defines: plain,
@@ -840,6 +877,35 @@ pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> 
     }
 }
 
+/// The shape's lowered `.emp` program, as [`build_project`] lowers it before placement
+/// (the sound artifacts emitted into the build's generated root first on a sound-on
+/// shape): every placed `.emp` section, the deferred link asserts, the warnings and the
+/// location authority. For a gate or a port test that reads one section of the real
+/// program without linking the ROM.
+pub fn emp_program(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<crate::harvest::EmpProgram, BuildError> {
+    with_generated(p, opts, |generated| {
+        let Plan { shape, defines, gate_shape, pmap, .. } = plan(p, shape_name, opts)?;
+        if shape.features.sound {
+            let sound_dir = crate::build_dir::sound_dir(generated).map_err(ctx)?;
+            opts.seams.emit_sound(&p.checkout, &sound_dir, opts.anchor_overlay.as_ref(), shape.features.debug).map_err(ctx)?;
+        }
+        Ok(build_emp(p, &gate_shape, &pmap.order, &defines, opts, generated)?.program)
+    })
+}
+
+/// The shape's residual AS side, assembled with the defines the descriptions derive (the
+/// first front end [`build_project`] runs).
+pub fn as_side(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<crate::harvest::AsSide, BuildError> {
+    with_generated(p, opts, |generated| {
+        let Plan { shape, defines, .. } = plan(p, shape_name, opts)?;
+        if shape.features.sound {
+            let sound_dir = crate::build_dir::sound_dir(generated).map_err(ctx)?;
+            opts.seams.emit_sound(&p.checkout, &sound_dir, opts.anchor_overlay.as_ref(), shape.features.debug).map_err(ctx)?;
+        }
+        assemble_as(p, &shape, &defines, generated)
+    })
+}
+
 /// What `sigil build --project ... --check` reports: the guard census of a resolve that
 /// stopped before the link, and the warn tier it raised.
 pub struct CheckOutput {
@@ -914,9 +980,8 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     } else {
         None
     };
-    let seeds = entry_seeds(p)?;
     let crate::harvest::AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
-        assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]), generated)?;
+        assemble_as(p, &shape, &defines, generated)?;
     let EmpSide { program } = build_emp(p, &gate_shape, &pmap.order, &defines, opts, generated)?;
     let crate::harvest::EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } = program;
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);

@@ -414,14 +414,14 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
+        defines: sigil_harness::test_support::shape_defines_for(&aeon_dir(), "sonic4", if debug { "debug" } else { "release" }),
     };
     // The game-contract env: parallax.emp gates several blocks on
     // `Game.SCANLINE_CAPS & CAP_*`, which the whole-program bind pass resolves and a
     // single-module lower does not. Bound to SONIC4's declared mask, read from its
     // game.emp — the reference windows are sonic4-shaped, so any other binding would
     // compare a specialisation the reference never took.
-    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir(), &sigil_harness::shapes::Shape::new("sonic4", "release"));
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

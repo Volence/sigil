@@ -28,12 +28,13 @@
 //! ```
 
 use sigil_harness::native;
+use sigil_harness::shapes::{self, Shape};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn reference() -> Option<PathBuf> {
-    sigil_harness::test_support::reference_tree_for_profile(&native::sonic4_profile(false))
+    sigil_harness::test_support::reference_tree_for_shape(&Shape::new("sonic4", "release"))
 }
 
 /// A directory removed when the test ends, pass or fail.
@@ -169,18 +170,15 @@ fn check_build_writes_nothing_in_tree() {
     let stat0 = stat_tree(&tree);
     assert!(stat0.len() > 1000, "UNMEASURABLE: the clone holds only {} files", stat0.len());
 
-    let tree_s = tree.to_str().expect("UTF-8 path");
     let project = tree.join("games/sonic4");
     let project_s = project.to_str().expect("UTF-8 path");
-    let rom = out.join("s4.bin");
-    let rom_s = rom.to_str().expect("UTF-8 path");
     let prom = out.join("s4.project.bin");
     let prom_s = prom.to_str().expect("UTF-8 path");
 
-    let steps: [(&str, Vec<&str>, Option<&Path>); 5] = [
-        ("sigil build --check", vec!["build", "--aeon", tree_s, "--check"], None),
-        ("full build 1", vec!["build", "--aeon", tree_s, "-o", rom_s], Some(&rom)),
-        ("full build 2", vec!["build", "--aeon", tree_s, "-o", rom_s], Some(&rom)),
+    // G0b Task 11: the profile-driven `--aeon` check and builds this list also ran are
+    // deleted with that grammar; the `--project` check takes the check's place.
+    let steps: [(&str, Vec<&str>, Option<&Path>); 3] = [
+        ("sigil build --project --check", vec!["build", "--project", project_s, "--shape", "release", "--check"], None),
         ("--project build 1", vec!["build", "--project", project_s, "--shape", "release", "-o", prom_s], Some(&prom)),
         ("--project build 2", vec!["build", "--project", project_s, "--shape", "release", "-o", prom_s], Some(&prom)),
     ];
@@ -244,7 +242,7 @@ fn write_files(dir: &Path, files: &BTreeMap<PathBuf, Vec<u8>>) {
     }
 }
 
-/// `native::build_emp` (the in-process entry the port tests and `native_section` use)
+/// `shapes::emp_program` (the in-process entry the port tests and `native_section` use)
 /// never reads the tree's `engine/sound/generated/` (G0b Task 6 fix round 1). Its
 /// sound-on lowering embeds the sound artifacts, so with the tree's mount:
 ///   - ABSENT: the build still succeeds (an un-rooted build fails `[embed.not-found]`);
@@ -265,8 +263,8 @@ fn build_emp_never_reads_the_tree_mount() {
     let mount = tree.join(sigil_harness::native::TREE_SOUND_MOUNT);
     assert!(!mount.exists(), "UNMEASURABLE: the fresh clone already has {}", mount.display());
 
-    let profile = native::sonic4_profile(false);
-    assert!(profile.sound_on, "UNMEASURABLE: the profile must embed the sound artifacts");
+    let profile = Shape::new("sonic4", "release");
+    assert!(profile.features(&tree).sound, "UNMEASURABLE: the shape must embed the sound artifacts");
     let right = {
         let dir = sigil_build::build_dir::BuildDir::create().expect("build dir");
         native::emit_generated_in(&tree, dir.generated(), None).expect("emit the sound artifacts outside the tree");
@@ -275,16 +273,16 @@ fn build_emp_never_reads_the_tree_mount() {
     assert!(right.len() >= 10, "UNMEASURABLE: the seams emitted only {} files", right.len());
 
     let mut failures = Vec::new();
-    let absent = native::build_emp(&tree, &profile);
+    let absent = shapes::emp_program(&tree, &profile);
     if let Err(e) = &absent {
         failures.push(format!("ABSENT mount: build_emp failed, so it read the tree's mount:\n{e}"));
     }
     write_files(&mount, &right);
-    let provisioned = native::build_emp(&tree, &profile).expect("build_emp with the tree's mount provisioned");
+    let provisioned = shapes::emp_program(&tree, &profile).expect("build_emp with the tree's mount provisioned");
     let poison: BTreeMap<PathBuf, Vec<u8>> =
         right.iter().map(|(rel, bytes)| (rel.clone(), bytes.iter().map(|b| !b).collect())).collect();
     write_files(&mount, &poison);
-    let poisoned = native::build_emp(&tree, &profile).expect("build_emp with the tree's mount poisoned");
+    let poisoned = shapes::emp_program(&tree, &profile).expect("build_emp with the tree's mount poisoned");
 
     if let Ok(absent) = &absent {
         if absent.sections != provisioned.sections {

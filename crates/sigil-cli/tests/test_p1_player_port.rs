@@ -317,9 +317,9 @@ fn ref_listing(aeon: &Path, shape: &SonicShape) -> Option<PathBuf> {
 /// construction, and its absence reads as the resolver's own `unknown …`
 /// diagnostic instead of a name that survives as a label into a `u16` field.
 fn compile_sonic(aeon: &Path, shape: &SonicShape, listing: &Path) -> sigil_link::LinkedImage {
-    let profile = sigil_harness::native::sonic4_profile(shape.debug);
+    let row = sigil_harness::shapes::Shape::new("sonic4", if shape.debug { "debug" } else { "release" });
     let sigil_harness::test_support::NativeSection { section, .. } =
-        sigil_harness::test_support::native_section(aeon, &profile, "sonic", SONIC_ASSERT_FILES)
+        sigil_harness::test_support::native_section(aeon, &row, "sonic", SONIC_ASSERT_FILES)
             .unwrap_or_else(|e| panic!("native sonic closure: {e}"));
 
     let map = sigil_link::load_map(&map_toml("sonic", shape.base, shape.len)).expect("map");

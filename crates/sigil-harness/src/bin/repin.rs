@@ -18,9 +18,9 @@
 //! no fallback to the tree this binary was compiled in: every run says which tree that
 //! was beside the tree it is operating on, and says so in words when they differ.
 //!
-//! Resolves the canonical pinned layout NATIVELY for both shapes
-//! (`native::sigil_native_symbol_listing` — the fully-resolved symbol table: labels +
-//! folded equates incl. `MDDBG__*`, `.emp` locals demangled, section-END markers
+//! Builds the two described shapes `repin.toml`'s `[shapes]` names (`sigil build --project`)
+//! and reads each resolved layout (`repin::listing_of` — the fully-resolved symbol table:
+//! labels + folded equates incl. `MDDBG__*`, `.emp` locals demangled, section-END markers
 //! synthesized), resolves `repin.toml` against both, and rewrites `pins.rs` when any pin
 //! moved. `--check` diffs and exits nonzero on drift WITHOUT writing (CI/staleness).
 //!
@@ -36,7 +36,7 @@ use std::process::ExitCode;
 use sigil_harness::harness_root::{
     announce_root, resolve_passed_root, ROOT_FLAG, ROOT_OVERRIDE,
 };
-use sigil_harness::native;
+use sigil_harness::shapes::{self, Shape};
 use sigil_harness::stdout::{print, println};
 use sigil_harness::repin::{
     build_dir_of_this_run, drift_report, load_manifest, regenerate_command, render, resolve,
@@ -96,43 +96,6 @@ fn main() -> ExitCode {
         return fail("set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (the resolve builds sound-on).");
     }
 
-    // The sigil-native symbol source: resolve both shapes, read every symbol's address.
-    // Path-independent stamp (the aeon worktree path must not leak into committed pins.rs).
-    // Phase-bank label LMAs (T4): a `phase_bank` region resolves its base to the
-    // section's LMA (the placement address), not the phase VMA the symbol listing
-    // carries. Empty unless the layout holds a `vma:`-windowed bank (soundbankhead).
-    // Section extents (REPIN-END): the `section:<name>` boundary spelling measures a
-    // region against a section's OWN end (`lma + image_len`), never the successor's base.
-    let (plain, debug) = match (
-        native::sigil_native_symbol_listing(&aeon, false),
-        native::sigil_native_symbol_listing(&aeon, true),
-        native::phase_bank_lmas(&aeon, false),
-        native::phase_bank_lmas(&aeon, true),
-        native::section_extents(&aeon, false),
-        native::section_extents(&aeon, true),
-        native::section_label_owners(&aeon, false),
-        native::section_label_owners(&aeon, true),
-    ) {
-        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl), Ok(ps), Ok(ds), Ok(po), Ok(do_)) => (
-            Listing::from_symbols(pm, pe, "plain".into())
-                .with_phase_lma(pl)
-                .with_sections(ps)
-                .with_label_owners(po),
-            Listing::from_symbols(dm, de, "debug".into())
-                .with_phase_lma(dl)
-                .with_sections(ds)
-                .with_label_owners(do_),
-        ),
-        (Err(e), ..)
-        | (_, Err(e), ..)
-        | (_, _, Err(e), ..)
-        | (_, _, _, Err(e), ..)
-        | (_, _, _, _, Err(e), ..)
-        | (_, _, _, _, _, Err(e), ..)
-        | (.., Err(e), _)
-        | (.., Err(e)) => return fail(&e),
-    };
-
     let manifest_src = match std::fs::read_to_string(&manifest_path) {
         Ok(s) => s,
         Err(e) => return fail(&format!("cannot read {}: {e}", manifest_path.display())),
@@ -141,13 +104,34 @@ fn main() -> ExitCode {
         Ok(m) => m,
         Err(e) => return fail(&e),
     };
+    let Some(spec) = manifest.shapes.as_ref() else {
+        return fail(&format!(
+            "{} has no [shapes] table (game, plain, debug): the pins are read off described shapes",
+            manifest_path.display()
+        ));
+    };
+
+    // The symbol source: build both described shapes (`sigil build --project`), read every
+    // symbol's address, the phase-bank LMAs, the section extents and the label owners off
+    // each one's resolved layout. The stamp is path-independent (the aeon worktree path
+    // must not leak into committed pins.rs).
+    let read = |row: &str, stamp: &str| -> Result<Listing, String> {
+        let shape = Shape::new(&spec.game, row);
+        let resolved = shapes::resolved_layout(&aeon, &shape).map_err(|e| format!("{}: {e}", shape.name()))?;
+        sigil_harness::repin::listing_of(&resolved, stamp)
+    };
+    let (plain, debug) = match (read(&spec.plain, "plain"), read(&spec.debug, "debug")) {
+        (Ok(p), Ok(d)) => (p, d),
+        (Err(e), _) | (_, Err(e)) => return fail(&e),
+    };
+
     let resolved = match resolve(&manifest, &plain, &debug) {
         Ok(r) => r,
         Err(e) => return fail(&e),
     };
     let prov = Provenance {
-        plain_path: "sigil-native canonical resolve".into(),
-        debug_path: "sigil-native canonical resolve".into(),
+        plain_path: format!("sigil build --project games/{} --shape {}", spec.game, spec.plain),
+        debug_path: format!("sigil build --project games/{} --shape {}", spec.game, spec.debug),
         plain_stamp: plain.stamp.clone(),
         debug_stamp: debug.stamp.clone(),
     };

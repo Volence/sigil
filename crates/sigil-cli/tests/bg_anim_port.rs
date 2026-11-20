@@ -196,7 +196,7 @@ fn compile_real_file(
         embed_base: None,
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir(), &sigil_harness::shapes::Shape::new("sonic4", "release"));
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -338,7 +338,7 @@ fn flip_lower_and_place(
     };
     // Both modules of the flip lower against sonic4's contract env; bg_anim reads
     // `Game.SCANLINE_CAPS`, dma_queue reads no member and is unaffected.
-    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir(), &sigil_harness::shapes::Shape::new("sonic4", "release"));
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

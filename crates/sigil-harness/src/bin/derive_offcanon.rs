@@ -1,23 +1,31 @@
-//! `derive_offcanon` — P4a: re-derive the four off-canonical size tables from SIGIL'S
+//! `derive_offcanon` — P4a: re-derive the off-canonical size tables from SIGIL'S
 //! OWN resolved layout, retiring the asl-`.lst` parse (`capture_offcanon`, kill-list row
-//! 34). Reads each boundary label's ROM address = `section.lma + label.offset` off a
-//! native frozen-chain resolve (LMA-correct for the phased z80 idle; section-END markers
-//! synthesized from the owning section's geometry) — no asl, no listing file.
+//! 34). Reads each boundary label's ROM address = `section.lma + label.offset` off the
+//! resolved layout of a described shape (`sigil build --project`; LMA-correct for the
+//! phased z80 idle; section-END markers synthesized from the owning section's geometry,
+//! [`sigil_harness::repin::boundary_table_of`]) — no asl, no listing file.
 //!
 //! ```text
 //! SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
-//!   AEON_DIR=/path/to/aeon derive_offcanon [<out_dir>]
+//!   AEON_DIR=/path/to/aeon derive_offcanon <out_dir> <target>=<game>:<shape>:<golden>...
 //! ```
-//! `<out_dir>` defaults to `crates/sigil-harness/golden/offcanonical_sizes`. The written
+//! Each `<target>` names a table (`<out_dir>/<target>.txt`), the described shape whose
+//! layout it is read off, and the golden blob under `golden/` it is tied to. The label set
+//! of each table is the committed table's own (`golden/offcanonical_sizes/<target>.txt`):
+//! a re-derivation measures the boundaries the freeze recorded, it does not choose them.
+//! The target-to-shape table lives in the caller (`golden/derive_offcanonical_sizes.sh`). The written
 //! tables carry a sigil-native provenance header (no listing_stamp / no asl); the numbers
 //! are the same boundary addresses (proven == the committed tables by
 //! `native_offcanonical_placement::*_size_table_rederives_native`) — the SOURCE is what
 //! changes: sigil's resolve, not an asl listing. These are golden provenance; the sizes
 //! re-derive from sigil on any ruled post-flip golden re-baseline (see the handoff note).
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
-use sigil_harness::native::{self, GameProfile};
+use sigil_harness::native;
+use sigil_harness::repin::{boundary_table_of, parse_size_table};
+use sigil_harness::shapes::{self, Shape};
 use sigil_harness::stdout::println;
 
 fn main() -> std::process::ExitCode {
@@ -33,35 +41,45 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = std::env::args()
-        .skip(1)
-        .find(|a| !a.starts_with("--"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| manifest.join("golden/offcanonical_sizes"));
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some((out_dir, specs)) = args.split_first() else {
+        eprintln!("usage: derive_offcanon <out_dir> <target>=<game>:<shape>:<golden>...");
+        return std::process::ExitCode::from(2);
+    };
+    let out_dir = PathBuf::from(out_dir);
+    if specs.is_empty() {
+        eprintln!("ERROR: no <target>=<game>:<shape>:<golden> rows: nothing to derive");
+        return std::process::ExitCode::from(2);
+    }
     if let Err(e) = std::fs::create_dir_all(&out_dir) {
         eprintln!("ERROR: create {}: {e}", out_dir.display());
         return std::process::ExitCode::from(2);
     }
-
-    // (target file stem, golden blob under golden/, the profile).
-    let targets: Vec<(&str, &str, GameProfile)> = vec![
-        ("s4", "s4.bin", native::sonic4_profile(false)),
-        ("s4_debug", "s4.debug.bin", native::sonic4_profile(true)),
-        ("demo", "demo.bin", native::demo_profile(false)),
-        ("demo_debug", "demo.debug.bin", native::demo_profile(true)),
-        ("config_a", "config_a.bin", native::config_a_profile()),
-        ("config_b", "config_b.bin", native::config_b_profile()),
-        // The 7th target (crash-report OFF): the release shape with no MD Debugger
-        // island and no deb2 appendix. `ReleaseFault` lives in NO canonical listing,
-        // so `repin` cannot pin it — lean's frozen table is where its address lives.
-        ("lean", "lean.bin", native::lean_profile()),
-    ];
-
-    for (stem, golden_name, profile) in &targets {
-        let table = match native::derive_frozen_table(&aeon, profile) {
+    for spec in specs {
+        let parsed = spec
+            .split_once('=')
+            .and_then(|(t, rest)| {
+                let mut it = rest.splitn(3, ':');
+                Some((t, it.next()?, it.next()?, it.next()?))
+            })
+            .filter(|(t, g, s, b)| ![t, g, s, b].iter().any(|x| x.is_empty()));
+        let Some((stem, game, row, golden_name)) = parsed else {
+            eprintln!("ERROR: `{spec}` is not <target>=<game>:<shape>:<golden>");
+            return std::process::ExitCode::from(2);
+        };
+        let committed_path = manifest.join("golden/offcanonical_sizes").join(format!("{stem}.txt"));
+        let want: HashSet<String> = match std::fs::read_to_string(&committed_path) {
+            Ok(t) => parse_size_table(&t).into_keys().collect(),
+            Err(e) => {
+                eprintln!("ERROR: read the committed table {}: {e}", committed_path.display());
+                return std::process::ExitCode::from(2);
+            }
+        };
+        let shape = Shape::new(game, row);
+        let table = match shapes::resolved_layout(&aeon, &shape).and_then(|r| boundary_table_of(&r, &want)) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("ERROR: derive {stem}: {e}");
+                eprintln!("ERROR: derive {stem} ({}): {e}", shape.name());
                 return std::process::ExitCode::from(1);
             }
         };
@@ -76,19 +94,13 @@ fn main() -> std::process::ExitCode {
             }
         };
         let full_crc = native::crc32(&golden);
-        // EOR from the freshly-derived layout itself (`EndOfRom` boundary label). The
-        // fallback is the profile's `assembled_len()`, which reads the SAME label off
-        // the committed table — so the worst case writes the previous derived value,
-        // never a hand-typed one, and panics if even that is absent. `derive_frozen_table`
-        // already errors on any committed boundary label the resolve dropped (`EndOfRom`
-        // is a key of every committed table), so this arm is unreachable today.
-        let eor = table
-            .iter()
-            .find(|(n, _)| n.as_str() == "EndOfRom")
-            .map(|(_, a)| *a as usize)
-            .unwrap_or_else(|| profile.assembled_len());
+        // EOR from the freshly-derived layout itself (`EndOfRom` is a label of every
+        // committed table, so `boundary_table_of` has already refused a layout without it).
+        let Some(eor) = table.get("EndOfRom").map(|a| *a as usize) else {
+            eprintln!("ERROR: derive {stem}: the committed table names no `EndOfRom` boundary");
+            return std::process::ExitCode::from(1);
+        };
         let anchor = native::assembled_anchor_crc(&golden, eor);
-
         let mut out = String::new();
         out.push_str("# GENERATED, derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).\n");
         out.push_str("# Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl\n");

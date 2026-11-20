@@ -268,15 +268,15 @@ fn shape_is_debug(ds: &[(String, i128)]) -> bool {
 }
 
 /// The comptime environment the game manifest's binding groups are resolved
-/// against: the profile's OWN `emp_defines` (what the reference ROM was built
+/// against: the shape's OWN merged defines (what the reference ROM was built
 /// with — `SOUND_DEBUG_HOTKEYS` and friends live only there), with this oracle's
 /// own defines layered on top so a shape/probe variation reaches the manifest too.
 fn contract_defines(
-    profile: &sigil_harness::native::GameProfile,
+    aeon: &std::path::Path,
+    row: &sigil_harness::shapes::Shape,
     ds: &[(String, i128)],
 ) -> Vec<(String, i128)> {
-    let mut out: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let mut out = sigil_harness::test_support::contract_defines(aeon, row);
     for (n, v) in ds {
         match out.iter_mut().find(|(o, _)| o == n) {
             Some(slot) => slot.1 = *v,
@@ -321,11 +321,11 @@ fn compile_real_file_with(
     // so the binding must be sonic4's actual one, and a hand-written interface
     // cannot see a member the engine grows (`ring_collected` is exactly that).
     let is_debug = shape_is_debug(&ds);
-    let profile = sigil_harness::native::sonic4_profile(is_debug);
+    let row = sigil_harness::shapes::Shape::new("sonic4", if is_debug { "debug" } else { "release" });
     let env = sigil_harness::test_support::game_contract_env_from_aeon(
         &aeon,
-        &profile,
-        &contract_defines(&profile, &ds),
+        &row,
+        &contract_defines(&aeon, &row, &ds),
     );
 
     let opts = LowerOptions {

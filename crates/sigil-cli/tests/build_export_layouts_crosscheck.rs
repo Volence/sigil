@@ -17,12 +17,11 @@
 //! `TwoConsts`) to fire on it, so a cross-check that has gone blind fails here.
 
 use sigil_frontend_emp::export_side::{emp_consts, emp_layouts, EmpExportError, LayoutPass};
-use sigil_harness::native::{self, GameProfile};
+use sigil_harness::shapes::{self, Shape};
 use std::path::PathBuf;
 
 fn tree() -> Option<PathBuf> {
-    let profile = native::sonic4_profile(false);
-    let aeon = sigil_harness::test_support::reference_tree_for_profile(&profile)?;
+    let aeon = sigil_harness::test_support::reference_tree_for_shape(&Shape::new("sonic4", "release"))?;
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("build_export_crosscheck_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -39,17 +38,15 @@ fn skip() {
 }
 
 /// The seven shapes `scripts/step0_shapes_cmp.sh` proves byte-identical.
-type Shape = (&'static str, fn() -> GameProfile);
-
-fn shapes() -> Vec<Shape> {
+fn seven() -> Vec<(&'static str, Shape)> {
     vec![
-        ("plain", || native::sonic4_profile(false)),
-        ("debug", || native::sonic4_profile(true)),
-        ("demo", || native::demo_profile(false)),
-        ("demo_debug", || native::demo_profile(true)),
-        ("config_a", native::config_a_profile),
-        ("config_b", native::config_b_profile),
-        ("lean", native::lean_profile),
+        ("plain", Shape::new("sonic4", "release")),
+        ("debug", Shape::new("sonic4", "debug")),
+        ("demo", Shape::new("demo", "release")),
+        ("demo_debug", Shape::new("demo", "debug")),
+        ("config_a", Shape::new("sonic4", "config-a")),
+        ("config_b", Shape::new("sonic4", "config-b")),
+        ("lean", Shape::new("sonic4", "lean")),
     ]
 }
 
@@ -57,8 +54,8 @@ fn shapes() -> Vec<Shape> {
 fn no_two_views_disagree_in_any_shape_and_the_control_is_not_blind() {
     let Some(tree) = tree() else { return skip() };
     let mut census = Vec::new();
-    for (name, profile) in shapes() {
-        let build = |pass| native::build_emp(&tree, &profile().with_layout_pass(pass)).unwrap_or_else(|e| panic!("{name}: {e}")).layouts;
+    for (name, shape) in seven() {
+        let build = |pass| shapes::emp_program(&tree, &shape.clone().with_layout_pass(pass)).unwrap_or_else(|e| panic!("{name}: {e}")).layouts;
         let owner = build(LayoutPass::Owner);
         let full = build(LayoutPass::Full);
         let (l_owner, l_full) = (emp_layouts(&owner), emp_layouts(&full));

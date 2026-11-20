@@ -5,8 +5,9 @@
 # The predecessor (`capture_offcanonical_sizes.sh` + `capture_offcanon`) built each
 # target through asl and parsed its `.lst` `Symbol Table` for the boundary addresses —
 # the LAST asl-derived constants in the system. This script instead drives the native
-# derivation (`derive_offcanon` → `native::derive_frozen_table`), which resolves the
-# frozen chain in-process and reads each label's ROM LMA off the resolved sections
+# derivation (`derive_offcanon` → `repin::boundary_table_of`), which builds each target's
+# described shape in-process (`sigil build --project`, G0b Task 11) and reads each label's
+# ROM LMA off the resolved sections
 # (`section.lma + label.offset`) — LMA-correct for the phased z80 idle and synthesizing
 # the section-END markers from section geometry. No asl, no listing file, no aeon build.
 #
@@ -92,7 +93,17 @@ echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null ||
 # Passed explicitly rather than inherited, so the directory the build writes into and
 # the one the next line reads from are one statement.
 ( cd "$SIGIL_ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" cargo build --release -p sigil-harness --bin derive_offcanon )
+# Each table: <target>=<game>:<shape row>:<golden blob>. The target is the golden's name in
+# provenance.toml; the shape is the `[shapes.*]` row of `games/<game>/game.toml` the target
+# was frozen from (the 7 shipped shapes `scripts/step0_shapes_cmp.sh` compares).
 AEON_DIR="$AEON" SIGIL_EMIT="$SIGIL_EMIT" \
-    "$TARGET_DIR/release/derive_offcanon" "$HERE/offcanonical_sizes"
+    "$TARGET_DIR/release/derive_offcanon" "$HERE/offcanonical_sizes" \
+    s4=sonic4:release:s4.bin \
+    s4_debug=sonic4:debug:s4.debug.bin \
+    demo=demo:release:demo.bin \
+    demo_debug=demo:debug:demo.debug.bin \
+    config_a=sonic4:config-a:config_a.bin \
+    config_b=sonic4:config-b:config_b.bin \
+    lean=sonic4:lean:lean.bin
 
 echo "== done, tables in $HERE/offcanonical_sizes (commit them; sigil-native provenance) =="

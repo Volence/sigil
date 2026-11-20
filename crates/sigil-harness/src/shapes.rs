@@ -76,7 +76,7 @@ impl Shape {
     /// The game and the engine it names, located (the engine checkout is the one holding
     /// the game).
     pub fn project(&self, aeon: &Path) -> Result<Project, String> {
-        driver::load_project(&self.game_dir(aeon), &|k| std::env::var_os(k)).map_err(|e| e.to_string())
+        driver::load_project(&self.game_dir(aeon), &no_env).map_err(|e| e.to_string())
     }
 
     /// The row with its `extends` chain flattened.
@@ -148,16 +148,32 @@ pub fn shape_defines(aeon: &Path, s: &Shape) -> Result<Vec<(String, i128)>, Stri
 /// Build the shape (`sigil build --project`).
 pub fn build(aeon: &Path, s: &Shape) -> Result<BuildOutput, String> {
     let seams = HarnessSeams;
-    let env = |k: &str| std::env::var_os(k);
+    let env = no_env;
     driver::build(&s.game_dir(aeon), &s.shape, &s.options(&seams, &env)).map_err(|e| e.to_string())
 }
 
 /// Check the shape (`sigil build --project ... --check`).
 pub fn check(aeon: &Path, s: &Shape) -> Result<CheckOutput, String> {
     let seams = HarnessSeams;
-    let env = |k: &str| std::env::var_os(k);
+    let env = no_env;
     let p = s.project(aeon)?;
     driver::check_project(&p, &s.shape, &s.options(&seams, &env)).map_err(|e| e.to_string())
+}
+
+/// The shape's lowered `.emp` program (`driver::emp_program`), unplaced and unlinked.
+pub fn emp_program(aeon: &Path, s: &Shape) -> Result<sigil_build::harvest::EmpProgram, String> {
+    let seams = HarnessSeams;
+    let env = no_env;
+    let p = s.project(aeon)?;
+    driver::emp_program(&p, &s.shape, &s.options(&seams, &env)).map_err(|e| e.to_string())
+}
+
+/// The shape's residual AS side (`driver::as_side`).
+pub fn as_side(aeon: &Path, s: &Shape) -> Result<sigil_build::harvest::AsSide, String> {
+    let seams = HarnessSeams;
+    let env = no_env;
+    let p = s.project(aeon)?;
+    driver::as_side(&p, &s.shape, &s.options(&seams, &env)).map_err(|e| e.to_string())
 }
 
 /// The assembled image (no appendix; its header folded over the image).
@@ -179,4 +195,53 @@ pub fn resolved_layout(aeon: &Path, s: &Shape) -> Result<Vec<Section>, String> {
 /// The module roots the shape places.
 pub fn module_registry(aeon: &Path, s: &Shape) -> Result<Vec<ModuleSpec>, String> {
     Ok(build(aeon, s)?.registry)
+}
+
+/// The driver's environment for a [`Shape`] build: none. A shape names a game inside the
+/// checkout it is built from, so the engine is always the one observed beside the game,
+/// and the build reads no checkout variable (`AEON_DIR` naming another tree, as it does
+/// for a shadow copy of the reference tree, must not refuse the build).
+fn no_env(_: &str) -> Option<std::ffi::OsString> {
+    None
+}
+
+/// The engine struct twins' AS offsets of the checkout's engine (`<aeon>/engine/engine.toml`
+/// `struct_twins` and `struct_tail_equates`), the harvest every residual AS side reads.
+pub fn engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
+    let dir = aeon.join("engine");
+    let path = dir.join("engine.toml");
+    let engine = describe::load_engine(&path).map_err(|e| e.to_string())?;
+    driver::engine_struct_offsets(&engine, &dir, &path).map_err(|e| e.to_string())
+}
+
+/// The residual AS side's inputs for the shape (`driver::as_inputs`), the RAM harvest in a
+/// private build directory.
+pub fn as_inputs(aeon: &Path, s: &Shape) -> Result<driver::AsInputs, String> {
+    let p = s.project(aeon)?;
+    let (shape, defines) = driver::shape_defines(&p, &s.shape).map_err(|e| e.to_string())?;
+    let dir = sigil_build::build_dir::BuildDir::create()?;
+    driver::as_inputs(&p, &shape, &defines, Some(dir.generated())).map_err(|e| e.to_string())
+}
+
+/// For a standalone gate that lowers ONE sound module with no build around it: the seams'
+/// sound artifacts emitted into a fresh build directory, and the shape's source roots with
+/// that directory as their `generated` root, so the module's `embed("generated/sound/...")`
+/// reads them and the tree is not written. Keep the [`BuildDir`](sigil_build::build_dir::BuildDir)
+/// alive while lowering; dropping it removes the files.
+pub fn standalone_sound_roots(
+    aeon: &Path,
+    s: &Shape,
+) -> (sigil_build::build_dir::BuildDir, std::sync::Arc<sigil_span::roots::SourceRoots>) {
+    let dir = sigil_build::build_dir::BuildDir::create().unwrap_or_else(|e| panic!("{e}"));
+    let sound = dir.sound().unwrap_or_else(|e| panic!("{e}"));
+    crate::native::emit_generated_in(aeon, &sound, None).unwrap_or_else(|e| panic!("emit the sound artifacts: {e}"));
+    let roots = s.project(aeon).unwrap_or_else(|e| panic!("shape `{}`: {e}", s.name())).source_roots(Some(dir.generated()));
+    (dir, roots)
+}
+
+/// The linker memory map the shape's build reads (its game's placement map, `game.toml` `map`).
+pub fn memory_map(aeon: &Path, s: &Shape) -> Result<sigil_ir::map::MemoryMap, String> {
+    let path = s.map_path(aeon)?;
+    let src = sigil_span::read_set::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    sigil_link::load_map(&src).map_err(|e| format!("load {}: {e}", path.display()))
 }

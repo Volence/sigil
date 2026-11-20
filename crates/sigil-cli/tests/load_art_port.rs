@@ -244,7 +244,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon_dir(), debug),
+        defines: sigil_harness::test_support::shape_defines_for(&aeon_dir(), "sonic4", if debug { "debug" } else { "release" }),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -459,7 +459,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         "load_art",
         la_base,
         la_len,
-        sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
+        sigil_harness::test_support::shape_defines_for(&aeon, "sonic4", if debug { "debug" } else { "release" }),
     );
     let (vb_sections, vb_asserts) = flip_lower(
         parse_file(&aeon.join("engine/system/vblank.emp")),
@@ -495,7 +495,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         "s4lz",
         s4_base,
         s4_len,
-        sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
+        sigil_harness::test_support::shape_defines_for(&aeon, "sonic4", if debug { "debug" } else { "release" }),
     );
     sections.extend(s4_sections);
     asserts.extend(s4_asserts);

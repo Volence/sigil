@@ -6,7 +6,13 @@
 //! its AS residual and its registry. A self-contained `.emp` program cannot stand
 //! in for that (the census arithmetic is gated tree-free in
 //! `sigil-harness/tests/check_only_census.rs`); these gates drive the real CLI over
-//! the reference tree on the demo shape, the per-commit path aeon asked for.
+//! the reference tree on the demo shape, the per-commit path aeon asked for, through
+//! `sigil build --project <tree>/games/<game> --shape <row>` (G0b Task 11). A build scans
+//! only its engine root and its own game's root (G0b Task 9), so the committed poison,
+//! sonic4's, is driven on the sonic4 `release` shape, and the unreachable-guard control
+//! plants its own pure-comptime module in demo's root of a copy of the tree (no committed
+//! demo or engine module is both unreachable from demo and ensures-only with guards that
+//! hold).
 //!
 //! Asserted, each with its control:
 //!   - exit 0 and the census line on a clean tree; exit 1 with the guard's own
@@ -25,7 +31,6 @@
 //!   cargo test --release -p sigil-cli --test build_check
 //! ```
 
-use sigil_harness::native;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -34,29 +39,41 @@ use std::process::{Command, Output};
 const POISON_NESTED_PATH: &str = "games/sonic4/test/poison/poison_band_nested.emp";
 const POISON_NESTED_FRAGMENT: &str = "two bands are live on CRAM entry";
 
-/// A pure-comptime module (consts + `ensure`s) outside the DEMO closure whose
-/// guards hold: the unreachable-guard control.
-const OUTSIDE_DEMO_CLOSURE: &str = "games.sonic4.constants";
-const OUTSIDE_DEMO_CLOSURE_PATH: &str = "games/sonic4/config/constants.emp";
+/// A pure-comptime module (consts + `ensure`s) outside the DEMO closure whose guards
+/// hold: the unreachable-guard control, planted in demo's root of a copy of the tree.
+const OUTSIDE_DEMO_CLOSURE: &str = "games.demo.check_unreachable_probe";
+const OUTSIDE_DEMO_CLOSURE_PATH: &str = "games/demo/check_unreachable_probe.emp";
+const OUTSIDE_DEMO_CLOSURE_SRC: &str = "module games.demo.check_unreachable_probe
+
+const PROBE = 2
+ensure(PROBE == 2, \"build_check probe: holds\")
+ensure(PROBE > 1, \"build_check probe: holds too\")
+";
 
 /// The banner fragment every check run must print before it runs.
 const BANNER: &str = "a green check proves nothing about region budget or overlap, image bounds, \
                       the checksum or the contract closure gate, and is not a statement that the game builds";
 
 fn aeon_dir() -> Option<PathBuf> {
-    let profile = native::demo_profile(false);
-    sigil_harness::test_support::reference_tree_for_profile(&profile)
+    sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("demo", "release"))
 }
 
 // Every run reads the same tree; serialize so one run's output is its own.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Run `sigil build --aeon <tree> --game demo <args>` from `cwd`, returning the
+/// Run `sigil build --project <tree>/games/demo --shape release <args>` from `cwd`, returning the
 /// process result, stdout and stderr.
 fn sigil_demo(aeon: &Path, cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> (Output, String, String) {
+    sigil_game(aeon, "demo", cwd, args, env)
+}
+
+/// Run `sigil build --project <tree>/games/<game> --shape release <args>` from `cwd`.
+/// AEON_DIR is removed: the tree may be a copy, and the build observes its checkout.
+fn sigil_game(aeon: &Path, game: &str, cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> (Output, String, String) {
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.current_dir(cwd).args(["build", "--aeon"]).arg(aeon).args(["--game", "demo"]).args(args);
+    cmd.current_dir(cwd).args(["build", "--project"]).arg(aeon.join("games").join(game)).args(["--shape", "release"]).args(args);
+    cmd.env_remove("AEON_DIR");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -88,7 +105,7 @@ fn entries(dir: &Path) -> Vec<String> {
 fn census(stdout: &str) -> (usize, usize, usize) {
     let line = stdout
         .lines()
-        .find(|l| l.starts_with("checked: demo plain: "))
+        .find(|l| l.starts_with("checked: demo release: ") || l.starts_with("checked: sonic4 release: "))
         .unwrap_or_else(|| panic!("no census line in stdout:\n{stdout}"));
     let nums: Vec<usize> = line
         .split(|c: char| !c.is_ascii_digit())
@@ -119,7 +136,7 @@ fn a_clean_check_decides_both_families_and_writes_nothing() {
     assert!(out.status.success(), "check failed:\n{stdout}{stderr}");
     assert!(stderr.contains(BANNER), "banner missing:\n{stderr}");
     assert!(
-        stderr.lines().next().is_some_and(|l| l.starts_with("check: demo plain: ")),
+        stderr.lines().next().is_some_and(|l| l.starts_with("check: demo release: ")),
         "the banner is the first stderr line:\n{stderr}"
     );
     let (comptime, decided, inapplicable) = census(&stdout);
@@ -132,7 +149,7 @@ fn a_clean_check_decides_both_families_and_writes_nothing() {
     let rom = dir.join("demo.bin");
     let (out, stdout, stderr) = sigil_demo(&aeon, &dir, &["-o", rom.to_str().unwrap()], &[]);
     assert!(out.status.success(), "full build failed:\n{stdout}{stderr}");
-    assert!(stdout.contains("built: demo plain native ROM, crc="), "{stdout}");
+    assert!(stdout.contains("Built ") && stdout.contains(" shape `release`"), "{stdout}");
     let len = std::fs::metadata(&rom).expect("the full build wrote demo.bin").len();
     assert!(len > 0, "empty ROM");
     // A full build also writes the build-data export beside the ROM (G0a); the control
@@ -159,9 +176,9 @@ fn a_clean_check_decides_both_families_and_writes_nothing() {
 fn a_failing_guard_fails_the_check_with_its_rendered_line() {
     let Some(aeon) = aeon_dir() else { return };
     let dir = fresh_dir("failing");
-    let (out, stdout, stderr) = sigil_demo(&aeon, &dir, &["--check", "--extra-entry", POISON_NESTED_PATH], &[]);
+    let (out, stdout, stderr) = sigil_game(&aeon, "sonic4", &dir, &["--check", "--extra-entry", POISON_NESTED_PATH], &[]);
     assert_eq!(out.status.code(), Some(1), "output:\n{stdout}{stderr}");
-    assert!(stderr.contains("error: native check (demo plain): "), "{stderr}");
+    assert!(stderr.contains("error: native check (sonic4 release): "), "{stderr}");
     assert!(stderr.contains(POISON_NESTED_FRAGMENT), "the guard's own message:\n{stderr}");
     let all = format!("{stdout}{stderr}");
     assert_eq!(all.matches("[Error]").count(), 1, "one firing guard, one [Error]:\n{all}");
@@ -181,23 +198,32 @@ fn a_failing_guard_fails_the_check_with_its_rendered_line() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A guard outside the target's closure is reported, not decided: the sonic4
-/// constants module is unreachable from the demo entry, its guards are named
+/// A guard outside the target's closure is reported, not decided: the planted probe
+/// module is unreachable from the demo entry, its guards are named
 /// `[module.unreachable]` and are absent from the census. Pulling it in with
 /// `--extra-entry` removes the row and raises the comptime count, which is the
 /// proof that the count line reads the evaluator's verdicts and not the tree.
 #[test]
 fn an_unreachable_guard_is_reported_not_decided() {
-    let Some(aeon) = aeon_dir() else { return };
+    let Some(reference) = aeon_dir() else { return };
+    let copy = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("build_check_tree_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&copy);
+    std::fs::create_dir_all(&copy).unwrap();
+    let aeon = copy.join("tree");
+    sigil_harness::test_support::copy_tree(&reference, &aeon);
+    std::fs::write(aeon.join(OUTSIDE_DEMO_CLOSURE_PATH), OUTSIDE_DEMO_CLOSURE_SRC).unwrap();
     let dir = fresh_dir("unreachable");
     let full = [("SIGIL_WARNINGS", "full")];
     let row = format!("{}:", aeon.join(OUTSIDE_DEMO_CLOSURE_PATH).display());
+    let tree_prefix = format!("{}/", aeon.display());
+    let file = format!("/{}:", Path::new(OUTSIDE_DEMO_CLOSURE_PATH).file_name().unwrap().to_str().unwrap());
+    let is_row = |l: &str| l.starts_with(&row) && l.starts_with(&tree_prefix) && l.contains(&file);
 
     let (out, stdout, stderr) = sigil_demo(&aeon, &dir, &["--check"], &full);
     assert!(out.status.success(), "{stdout}{stderr}");
     let unreachable: Vec<&str> = stderr
         .lines()
-        .filter(|l| l.starts_with(&row) && l.contains("[module.unreachable]") && l.contains(OUTSIDE_DEMO_CLOSURE))
+        .filter(|l| is_row(l) && l.contains("[module.unreachable]") && l.contains(OUTSIDE_DEMO_CLOSURE))
         .collect();
     assert_eq!(unreachable.len(), 1, "the module is reported unreachable once:\n{stderr}");
     assert!(unreachable[0].contains("`ensure` guard(s) are never evaluated for this target"), "{}", unreachable[0]);
@@ -207,7 +233,7 @@ fn an_unreachable_guard_is_reported_not_decided() {
         sigil_demo(&aeon, &dir, &["--check", "--extra-entry", OUTSIDE_DEMO_CLOSURE], &full);
     assert!(out.status.success(), "{stdout}{stderr}");
     assert!(
-        !stderr.lines().any(|l| l.starts_with(&row) && l.contains("[module.unreachable]")),
+        !stderr.lines().any(|l| is_row(l) && l.contains("[module.unreachable]")),
         "the row must be gone once the module is in the closure:\n{stderr}"
     );
     let (with, decided_with, _) = census(&stdout);
@@ -215,14 +241,16 @@ fn an_unreachable_guard_is_reported_not_decided() {
     assert_eq!(decided_with, decided_without, "a pure-comptime module defers no LinkAssert");
     assert_eq!(entries(&dir), Vec::<String>::new());
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&copy);
 }
 
-/// The fixtures this file names still resolve, both directions, so a renamed
-/// poison reds here rather than inside someone else's landing.
+/// The committed fixture this file names still resolves, so a renamed poison reds here
+/// rather than inside someone else's landing (the unreachable probe is planted, not
+/// committed).
 #[test]
 fn every_aeon_fixture_this_file_names_still_resolves() {
     let Some(aeon) = aeon_dir() else { return };
-    for path in [POISON_NESTED_PATH, OUTSIDE_DEMO_CLOSURE_PATH] {
+    for path in [POISON_NESTED_PATH] {
         assert!(aeon.join(path).is_file(), "`{path}` is named by this file but is not under {}", aeon.display());
     }
 }

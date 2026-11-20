@@ -42,6 +42,7 @@
 //! under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS, the house pattern.
 
 use sigil_harness::native;
+use sigil_harness::shapes::{self, Shape};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -67,7 +68,6 @@ const CORPUS_LINTS: &[&str] = &[
     // `engine.compression_selftest`, and `games.demo.constants`. Retiring those is
     // engine work; this row is the standing record that they are unevaluated.
     "module.unreachable",
-    "module.path-mismatch",
     "proc.clobber-undeclared",
     "proc.out-unwritten",
     "proc.undeclared-fallthrough",
@@ -101,16 +101,22 @@ const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     // OPEN, booked in aeon docs/DEFERRED_WORK.md: the lint cannot express "this bare use is
     // a closure edge", so a real accidental bare use in sonic4 now hides behind these two.
     // The fix is a spelling for the idiom, not a wider baseline.
-    ("sonic4 plain", &["import.no-names"]),
-    ("sonic4 debug", &["import.no-names"]),
+    //
+    // `module.path-mismatch` moved here from CORPUS_LINTS (G0b Task 11): every file it
+    // fires on is under games/sonic4 (the generated per-act modules), and a game-as-data
+    // build scans only its engine root and its own game's root (G0b Task 9), so a demo
+    // build no longer sees them. Demo's rows not carrying it is that scoping, measured;
+    // the profile-driven driver scanned the whole tree for every shape.
+    ("sonic4 plain", &["import.no-names", "module.path-mismatch"]),
+    ("sonic4 debug", &["import.no-names", "module.path-mismatch"]),
     ("demo plain", &[]),
     ("demo debug", &[]),
-    // Same two closure edges — config_a/config_b/lean are sonic4 profiles and carry the
+    // Same two closure edges — config_a/config_b/lean are sonic4 shapes and carry the
     // same files. Added together and confirmed by re-running: the gate is bidirectional,
     // so a shape that did NOT fire would have failed as "NO LONGER FIRING".
-    ("config_a", &["import.no-names"]),
-    ("config_b", &["import.no-names"]),
-    ("lean", &["import.no-names"]),
+    ("config_a", &["import.no-names", "module.path-mismatch"]),
+    ("config_b", &["import.no-names", "module.path-mismatch"]),
+    ("lean", &["import.no-names", "module.path-mismatch"]),
 ];
 
 /// WHICH FILES an admitted lint id is allowed to fire in.
@@ -420,6 +426,18 @@ fn aeon_dir() -> Option<PathBuf> {
     Some(aeon)
 }
 
+/// The seven shipped shapes, by the label this file's baselines key on and their
+/// `[game, shape row]` (`sigil build --project <tree>/games/<game> --shape <row>`).
+const SEVEN: [(&str, &str, &str); 7] = [
+    ("sonic4 plain", "sonic4", "release"),
+    ("sonic4 debug", "sonic4", "debug"),
+    ("demo plain", "demo", "release"),
+    ("demo debug", "demo", "debug"),
+    ("config_a", "sonic4", "config-a"),
+    ("config_b", "sonic4", "config-b"),
+    ("lean", "sonic4", "lean"),
+];
+
 /// One shape's label and the warn tier its lowering produced.
 type ShapeWarnings = (&'static str, Vec<native::BuildWarning>);
 
@@ -444,11 +462,11 @@ fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
             // exist before any shape lowers.
             native::ensure_generated(&aeon);
             Some(
-                native::shipped_shapes()
-                    .into_iter()
-                    .map(|(label, profile)| {
-                        let built = native::build_emp(&aeon, &profile)
-                            .unwrap_or_else(|e| panic!("build_emp({label}): {e}"));
+                SEVEN
+                    .iter()
+                    .map(|&(label, game, row)| {
+                        let built = shapes::emp_program(&aeon, &Shape::new(game, row))
+                            .unwrap_or_else(|e| panic!("emp_program({label}): {e}"));
                         (label, built.warnings)
                     })
                     .collect(),
@@ -923,15 +941,15 @@ fn debug_shape_sr_writes_are_author_checked() {
     let mut seen_context = 0usize;
     let mut walked_debug_shapes = 0usize;
     let aeon = aeon_dir().expect("aeon tree present");
-    for (label, profile) in native::shipped_shapes() {
-        let defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+    for (label, game, row) in SEVEN {
+        let profile = Shape::new(game, row);
+        let defines = shapes::shape_defines(&aeon, &profile).expect("shape defines");
         if !defines.iter().any(|(k, v)| k == "DEBUG" && *v == 1) {
             continue;
         }
         walked_debug_shapes += 1;
         let (iface_env, bind_diags) =
-            bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
+            bind_corpus_interfaces(&files, &defines, &profile.game_module_prefix(&aeon).expect("game prefix"));
         assert!(
             bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "shape `{label}`: L1 bind errors: {bind_diags:?}"
@@ -1063,7 +1081,8 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
 
     let run = |view: Option<&str>| -> String {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native", "--report", "ram"]);
+        cmd.args(["build", "--project"]).arg(aeon.join("games/sonic4")).args(["--shape", "release", "--report", "ram"]);
+        cmd.env_remove("AEON_DIR");
         match view {
             Some(v) => cmd.env("SIGIL_WARNINGS", v),
             None => cmd.env_remove("SIGIL_WARNINGS"),
@@ -1089,17 +1108,18 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
 
     // And the printer IS reachable from this path: a `--report ram` over a tree with
     // no RAM-region module warns, and the tally names the class.
+    // The synthetic tree is the minimal described project (`write_project_fixture`: an
+    // engine and one game, an empty map that declares no `[defines]` rows) with an empty
+    // `engine.ram`, the RAM module its engine description seeds.
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("engine")).unwrap();
+    let game = sigil_harness::test_support::write_project_fixture(tmp.path());
     std::fs::write(tmp.path().join("engine/ram.emp"), "module engine.ram\n").unwrap();
-    // A synthetic tree still owes the game config `shape_defines` reads: a
-    // missing `games/<g>/map.toml` is a MISSING config and fails loud, so this
-    // fixture supplies an empty one. An empty map declares no `[defines]` rows,
-    // and this fixture's one module reads none.
-    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
-    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
+    let report = |cmd: &mut std::process::Command| {
+        cmd.args(["build", "--project"]).arg(&game).args(["--shape", "release", "--report", "ram"]);
+        cmd.env_remove("AEON_DIR");
+    };
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--report", "ram"]);
+    report(&mut cmd);
     let warned = String::from_utf8_lossy(&cmd.output().expect("run").stderr).into_owned();
     assert!(
         warned.contains("warning: ") && warned.contains("ram.no-region"),
@@ -1113,8 +1133,8 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     // `off` on the SAME tree prints no warn-tier line — proof the view is consulted
     // rather than the tier being empty.
     let mut off = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-    off.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--report", "ram"])
-        .env("SIGIL_WARNINGS", "off");
+    report(&mut off);
+    off.env("SIGIL_WARNINGS", "off");
     let silenced = String::from_utf8_lossy(&off.output().expect("run").stderr).into_owned();
     assert!(
         !silenced.contains("warning: "),

@@ -239,7 +239,7 @@ fn compile(
     // Bound to sonic4's declared SCANLINE_CAPS (read from its game.emp), matching
     // `raster_port`: probe (a) and (c) compare against the sonic4 reference window, and
     // probe (b)'s missing carriers include RAM only the anchors overlay names.
-    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir(), &sigil_harness::shapes::Shape::new("sonic4", "release"));
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 

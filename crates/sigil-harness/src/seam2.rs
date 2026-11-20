@@ -347,15 +347,43 @@ impl SoundLayout {
 /// (`*_at`), never the public `sound_layout`-consuming wrappers.
 ///
 /// The two CHAINED members (`mt_bank`, `sfx_bank`) are predicted with the packing
-/// walk's own alignment function, `native::packed_chained_base`, keyed by the same
-/// head labels the walk reads — so the prediction and the placement consume ONE
-/// declaration (`section_align::DECLARED`) and no frozen table. No shape-dependent
+/// walk's own alignment function, [`AlignTable::packed_base`](sigil_build::align::AlignTable::packed_base),
+/// over the same description rows the walk reads (`engine.toml` + the sound game's
+/// `game.toml` `[[align]]`, see [`sound_align_table`]), keyed by the same head labels — so
+/// the prediction and the placement consume ONE declaration and no frozen table. No shape-dependent
 /// input enters the alignment: the plain and debug SFX bases differ only by the MT
 /// body length ahead of them.
 pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
     sound_layout_in(aeon, None)
 }
 
+/// The sound game's description, beside [`SOUND_PLACEMENT_MAP_REL`]: its `[[align]]` rows
+/// declare the chained sound banks' alignment.
+pub const SOUND_GAME_DESC_REL: &str = "games/sonic4/game.toml";
+
+/// The alignment table the packing walk builds for the sound game (G0b Task 11: the
+/// description rows replaced `section_align::DECLARED`), the engine's rows then the game's.
+pub fn sound_align_table(aeon: &Path) -> Result<sigil_build::align::AlignTable, String> {
+    let engine_path = aeon.join("engine/engine.toml");
+    let game_path = aeon.join(SOUND_GAME_DESC_REL);
+    let engine = sigil_build::describe::load_engine(&engine_path).map_err(|e| e.to_string())?;
+    let game = sigil_build::describe::load_game(&game_path).map_err(|e| e.to_string())?;
+    let (eo, go) = (engine_path.display().to_string(), game_path.display().to_string());
+    sigil_build::align::AlignTable::new([(eo.as_str(), &engine.align[..]), (go.as_str(), &game.align[..])])
+}
+
+/// The base the walk packs a chained section headed by `head` to with its cursor at
+/// `running`, refused when no description row declares `head` (a prediction off a
+/// default would agree with the walk only by accident).
+pub fn packed_chained_base(t: &sigil_build::align::AlignTable, running: u32, head: &str) -> Result<u32, String> {
+    if !t.rows().any(|(h, _)| h == head) {
+        return Err(format!(
+            "seam 2: chained sound bank head `{head}` has no `[[align]]` row in engine.toml or {SOUND_GAME_DESC_REL}, \
+             and the packing walk's alignment is that declaration"
+        ));
+    }
+    Ok(t.packed_base(running, head))
+}
 /// [`sound_layout`] under an anchor overlay (`None` is the map as written). The memo
 /// is keyed by the aeon root AND the two anchors the derivation starts from, so one
 /// process that derives the map's layout and an overlay's gets each its own, never
@@ -412,13 +440,13 @@ pub fn sound_layout_in(aeon: &Path, ov: Option<&AnchorOverlay>) -> Result<SoundL
     //
     // So predict with the walk's OWN function, keyed by the walk's own head labels,
     // rather than restate its arithmetic or its input.
-    let mt_bank_lma =
-        crate::native::packed_chained_base(dac_sample_tab_lma + l_dach, MT_BANK_HEAD)?;
+    let align = sound_align_table(aeon)?;
+    let mt_bank_lma = packed_chained_base(&align, dac_sample_tab_lma + l_dach, MT_BANK_HEAD)?;
     let l_mt_plain = emit_mt_bank_at(aeon, false, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
     let l_mt_debug = emit_mt_bank_at(aeon, true, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
 
-    let sfx_bank_lma_plain = crate::native::packed_chained_base(mt_bank_lma + l_mt_plain, SFX_BANK_HEAD)?;
-    let sfx_bank_lma_debug = crate::native::packed_chained_base(mt_bank_lma + l_mt_debug, SFX_BANK_HEAD)?;
+    let sfx_bank_lma_plain = packed_chained_base(&align, mt_bank_lma + l_mt_plain, SFX_BANK_HEAD)?;
+    let sfx_bank_lma_debug = packed_chained_base(&align, mt_bank_lma + l_mt_debug, SFX_BANK_HEAD)?;
 
     let _ = a.sound_bank_vma; // consumed by seam1's DacSampleTable window derivation
     let layout = SoundLayout {

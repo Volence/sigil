@@ -28,6 +28,7 @@
 //! ```
 
 use sigil_harness::native;
+use sigil_harness::shapes::{self, Shape};
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -65,9 +66,38 @@ const MISSING_EXTRA_ENTRY_ID: &str = "games.sonic4.test.poison.no_such_poison";
 const MISSING_EXTRA_ENTRY_PATH: &str = "games/sonic4/test/poison/gone.emp";
 
 /// A PURE-COMPTIME module (consts + `ensure`s, no `data`/`proc`/`section`) that is
-/// outside the sonic4 profile's `use` closure and whose guards HOLD. The passing
-/// half of the flag's contract: bringing it in must move no byte.
-const PASSING_EXTRA_ENTRY: &str = "games.demo.constants";
+/// outside the sonic4 `use` closure and whose guards HOLD. The passing half of the
+/// flag's contract: bringing it in must move no byte.
+///
+/// PLANTED in sonic4's root of a copy of the tree ([`probe_tree`]): a build scans only its
+/// engine root and its own game's root (G0b Task 9), so demo's `games.demo.constants`,
+/// which this was before G0b Task 11, is not a module a sonic4 build can name, and no
+/// committed sonic4 or engine module is both unreachable and comptime-only with guards.
+const PASSING_EXTRA_ENTRY: &str = "games.sonic4.extra_entry_probe";
+const PASSING_EXTRA_ENTRY_PATH: &str = "games/sonic4/extra_entry_probe.emp";
+const PASSING_EXTRA_ENTRY_SRC: &str = "module games.sonic4.extra_entry_probe
+
+const PROBE_A = 3
+const PROBE_B = PROBE_A * 2
+ensure(PROBE_B == 6, \"extra_entry probe: holds\")
+ensure(PROBE_A < PROBE_B, \"extra_entry probe: holds too\")
+";
+
+/// A copy of the reference tree with [`PASSING_EXTRA_ENTRY`] planted, made once per
+/// process.
+fn probe_tree(aeon: &std::path::Path) -> PathBuf {
+    static TREE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    TREE.get_or_init(|| {
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("extra_entry_probe_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let tree = dir.join("tree");
+        sigil_harness::test_support::copy_tree(aeon, &tree);
+        std::fs::write(tree.join(PASSING_EXTRA_ENTRY_PATH), PASSING_EXTRA_ENTRY_SRC).expect("plant the probe");
+        tree.canonicalize().expect("canonical probe tree")
+    })
+    .clone()
+}
 
 /// Modules that CONTRIBUTE to the artifact, with the declaration kind the refusal
 /// must name: `engine.math` emits code, `engine.ram` declares the RAM regions. Both
@@ -145,8 +175,8 @@ fn every_aeon_fixture_this_file_names_still_resolves() {
 /// The native builds touch the shared `engine/sound/generated` dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The canonical target the aeon lane builds.
-const SONIC4: &[&str] = &["--game", "sonic4"];
+/// The canonical target the aeon lane builds: `[game, shape row]`.
+const SONIC4: &[&str] = &["sonic4", "release"];
 
 /// Run `sigil build` for `target` over the reference tree with `extra`
 /// `--extra-entry` arguments, discarding the ROM. Returns the process result and its
@@ -156,7 +186,8 @@ fn build_target_with(aeon: &PathBuf, target: &[&str], extra: &[&str]) -> (Output
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let out_bin = std::env::temp_dir().join(format!("sigil_extra_entry_{}.bin", std::process::id()));
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"]).arg(aeon).args(["--native"]).args(target).arg("-o").arg(&out_bin);
+    cmd.args(["build", "--project"]).arg(aeon.join("games").join(target[0])).args(["--shape", target[1]]).arg("-o").arg(&out_bin);
+    cmd.env_remove("AEON_DIR");
     for e in extra {
         cmd.args(["--extra-entry", e]);
     }
@@ -206,15 +237,14 @@ fn a_failing_extra_entry_fails_the_build_with_its_message() {
     );
 }
 
-/// The flag reaches a NON-CANONICAL target too. `--extra-entry` rides the profile, so
-/// every target honours it through one spelling — but canonical sonic4 is the only one
-/// whose driver the flag re-routes, and it is the only one the cases around this test
-/// exercise. `--config-b` (a different profile, a different `-D` set, sound off) holds
+/// The flag reaches a NON-CANONICAL target too. `--extra-entry` rides the build options,
+/// so every shape honours it through one spelling — the cases around this test exercise
+/// sonic4 `release` only. `config-b` (a different shape, a different `-D` set, sound off) holds
 /// the other side: the guard still runs and still fails the build.
 #[test]
 fn an_off_canonical_target_honours_the_flag() {
     let Some(aeon) = aeon_dir() else { return };
-    let (out, text) = build_target_with(&aeon, &["--config-b"], &[POISON_NESTED_PATH]);
+    let (out, text) = build_target_with(&aeon, &["sonic4", "config-b"], &[POISON_NESTED_PATH]);
     assert!(!out.status.success(), "expected a nonzero exit; output:\n{text}");
     assert!(
         text.contains(POISON_NESTED_FRAGMENT),
@@ -286,14 +316,15 @@ fn a_contributing_extra_entry_is_refused() {
 
 /// The CLI's own extras path writes the SAME ROM.
 ///
-/// Canonical sonic4 has two drivers — its own entry point when no extra entry is
-/// given, and the declared-order chainer (which that entry point delegates to for a
-/// frozen size source) when one has to reach `build_emp`. This is the gate on that
-/// fork: the two must be byte-identical, or `--extra-entry` would silently mean "and
+/// The profile-driven driver had two sonic4 paths, one per presence of an extra entry; the
+/// game-as-data driver has one (G0b Task 11), and this gate still holds the property the
+/// fork made worth gating: the ROM with and without a passing extra entry must be
+/// byte-identical, or `--extra-entry` would silently mean "and
 /// also build it differently".
 #[test]
 fn the_cli_writes_the_same_rom_with_a_passing_extra_entry() {
     let Some(aeon) = aeon_dir() else { return };
+    let aeon = probe_tree(&aeon);
 
     let dir = std::env::temp_dir().join(format!("sigil_extra_entry_fork_{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -301,10 +332,11 @@ fn the_cli_writes_the_same_rom_with_a_passing_extra_entry() {
         let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let out_bin = dir.join(name);
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-        cmd.args(["build", "--aeon"])
-            .arg(&aeon)
-            .args(["--native", "--game", "sonic4", "-o"])
-            .arg(&out_bin);
+        cmd.args(["build", "--project"])
+            .arg(aeon.join("games/sonic4"))
+            .args(["--shape", "release", "-o"])
+            .arg(&out_bin)
+            .env_remove("AEON_DIR");
         for e in extra {
             cmd.args(["--extra-entry", e]);
         }
@@ -342,13 +374,14 @@ fn the_cli_writes_the_same_rom_with_a_passing_extra_entry() {
 #[test]
 fn a_passing_extra_entry_moves_no_bytes() {
     let Some(aeon) = aeon_dir() else { return };
+    let aeon = probe_tree(&aeon);
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
-    let base = native::sonic4_profile(false);
-    let with = native::sonic4_profile(false).with_extra_entries([PASSING_EXTRA_ENTRY]);
+    let base = Shape::new("sonic4", "release");
+    let with = Shape::new("sonic4", "release").with_extra_entries([PASSING_EXTRA_ENTRY]);
 
-    let unreachable = |p: &native::GameProfile| -> bool {
-        native::build_emp(&aeon, p)
+    let unreachable = |p: &Shape| -> bool {
+        shapes::emp_program(&aeon, p)
             .unwrap_or_else(|e| panic!("build_emp: {e}"))
             .warnings
             .iter()
@@ -366,9 +399,9 @@ fn a_passing_extra_entry_moves_no_bytes() {
     );
 
     let base_rom =
-        native::build_full_file_chained(&aeon, &base).unwrap_or_else(|e| panic!("base: {e}"));
+        shapes::full_file(&aeon, &base).unwrap_or_else(|e| panic!("base: {e}"));
     let with_rom =
-        native::build_full_file_chained(&aeon, &with).unwrap_or_else(|e| panic!("with extra: {e}"));
+        shapes::full_file(&aeon, &with).unwrap_or_else(|e| panic!("with extra: {e}"));
     assert_eq!(
         with_rom.len(),
         base_rom.len(),

@@ -293,7 +293,7 @@ fn compile_real_file(
         // shape must reach the lowerer or the name does not resolve at all. The
         // prepended engine.parallax consts fold the game's `GAME_SCANLINE_CAPS` define
         // where the tree declares one, so the whole shape env is read, not two rows of it.
-        defines: sigil_harness::test_support::sonic4_shape_defines(&aeon, debug),
+        defines: sigil_harness::test_support::shape_defines_for(&aeon, "sonic4", if debug { "debug" } else { "release" }),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

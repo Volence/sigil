@@ -4,7 +4,8 @@
 //! its sound artifacts into the tree it builds.
 
 use sigil_harness::native;
-use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
+use sigil_harness::shapes::Shape;
+use sigil_harness::test_support::{reference_tree_for_shape, shadow_aeon_tree};
 use std::process::Command;
 
 const SIGIL: &str = env!("CARGO_BIN_EXE_sigil");
@@ -27,15 +28,16 @@ impl Drop for Scratch {
 
 #[test]
 fn an_unreadable_overlay_is_refused_before_building() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("sonic4", "release")) else { return };
     let scratch = Scratch::new("missing");
     let missing = scratch.0.join("no-such-anchors.toml");
     let rom = scratch.0.join("r.bin");
     for extra in [&["--check"][..], &["-o", rom.to_str().unwrap()]] {
         let run = Command::new(SIGIL)
-            .args(["build", "--aeon"])
-            .arg(&aeon)
-            .args(["--game", "sonic4"])
+            .args(["build", "--project"])
+            .arg(aeon.join("games/sonic4"))
+            .args(["--shape", "release"])
+            .env_remove("AEON_DIR")
             .args(extra)
             .arg("--anchor-overlay")
             .arg(&missing)
@@ -50,7 +52,7 @@ fn an_unreadable_overlay_is_refused_before_building() {
 
 #[test]
 fn an_overlay_build_names_the_overlay_in_its_source_digest() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("sonic4", "release")) else { return };
     let src = std::fs::read_to_string(aeon.join("games/sonic4/map.toml")).expect("read map.toml");
     let pmap = sigil_harness::map_placement::load_placement_map(&src).expect("map");
     let at = |n: &str| pmap.anchors_for(true).find(|a| a.name == n).unwrap_or_else(|| panic!("{n}")).at;
@@ -75,9 +77,10 @@ fn an_overlay_build_names_the_overlay_in_its_source_digest() {
     std::fs::write(&overlay, rows).expect("write overlay");
     let (rom, lst) = (scratch.0.join("r.bin"), scratch.0.join("r.lst"));
     let run = Command::new(SIGIL)
-        .args(["build", "--aeon"])
-        .arg(shadow.root())
-        .args(["--game", "sonic4", "-o"])
+        .args(["build", "--project"])
+        .arg(shadow.root().join("games/sonic4"))
+        .args(["--shape", "release", "-o"])
+        .env_remove("AEON_DIR")
         .arg(&rom)
         .arg("--emit-lst")
         .arg(&lst)

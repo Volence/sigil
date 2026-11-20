@@ -228,7 +228,7 @@ fn compile_real_file(
     // `Game.SCANLINE_CAPS & CAP_ANCHORS`, which the whole-program bind
     // pass resolves and a single-module lower does not. Bound to SONIC4's declared mask,
     // read from its game.emp — the reference windows below are sonic4-shaped.
-    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon);
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon, &sigil_harness::shapes::Shape::new("sonic4", "release"));
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

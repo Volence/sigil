@@ -342,9 +342,9 @@ fn compile_real_file(
     // one path the ROM is built by. No hand-listed ambient set: a dependency the
     // descriptor grows is lowered by construction, and its absence reads as the
     // resolver's own `unknown …` diagnostic.
-    let profile = sigil_harness::native::sonic4_profile(debug);
+    let shape = sigil_harness::shapes::Shape::new("sonic4", if debug { "debug" } else { "release" });
     let NativeSection { section, link_asserts } =
-        native_section(&aeon_root(), &profile, "act_descriptor", ACT_DESCRIPTOR_ASSERT_FILES)
+        native_section(&aeon_root(), &shape, "act_descriptor", ACT_DESCRIPTOR_ASSERT_FILES)
             .unwrap_or_else(|e| panic!("native act_descriptor closure: {e}"));
 
     let map = sigil_link::load_map(&map_toml(debug)).expect("map must load");
