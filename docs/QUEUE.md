@@ -2567,3 +2567,20 @@ until its row is removed.
   An `[[align]]` row moves bytes only for a section head that is not anchored and not already aligned. Task 7's
   red-first used a planted exception instead (`DemoBox_Main` align 0x100 in games/demo/game.toml: demo and demo
   debug ROMs DIFFER).
+
+## TEST-TEMPDIR-PID-NANOS-COLLISION
+
+- state: **open** 2026-11-20 (found in G0b Task 8's strict landing)  size: `S`
+- The strict landing on ddea73f0 went red on `deny_todo_leaves_unreachable_alone`. Its stderr named
+  `/tmp/sigil_deny_todo_1127877_1795184328353958724/m.emp` holding a todo test's source
+  (`[todo.present] todo!: finish the brain`). The three tests run on parallel threads of one process and named
+  their directories `<pid>_<as_nanos()>` only, so two threads drew the same name and one overwrote the other's
+  `m.emp`. Forcing the stamp equal (`as_nanos() * 0`) makes the original code red 5 runs out of 5 and the fix
+  green 5 out of 5. **`crates/sigil-cli/tests/deny_todo.rs` is fixed** (a per-process `AtomicU64` in the name,
+  G0b Task 8).
+- **Still open:** the same `pid + as_nanos()` naming is used by other test files, unexamined for
+  parallel-thread sharing: `crates/sigil-cli/tests/{dac_bank_acceptance,end_to_end,pitcher_plant_script_acceptance,
+  pitcher_plant_acceptance,sigil_test_runner,tranche0_acceptance}.rs`,
+  `crates/sigil-frontend-as/tests/{as_interp_radix,as_warning_exitm,as_odd_address}.rs`,
+  `crates/sigil-harness/tests/{suite_paths_precedence,reference_tree_write_guard,reference_tree_named_write}.rs`.
+  A shared helper (pid + counter, or `tempfile`) would close the class.

@@ -6,10 +6,17 @@
 
 use std::process::Command;
 
+/// A directory no other test in this binary shares. The three tests run on parallel threads
+/// of one process, so the pid and a wall-clock stamp alone can collide: a landing run (G0b
+/// Task 8, 2026-11-20) measured `deny_todo_leaves_unreachable_alone` reading
+/// `/tmp/sigil_deny_todo_1127877_1795184328353958724/m.emp` that a todo test had overwritten
+/// (`[todo.present] todo!: finish the brain`). The per-process counter makes the name unique.
 fn unique_temp_dir() -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "sigil_deny_todo_{}_{}",
+        "sigil_deny_todo_{}_{}_{}",
         std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
