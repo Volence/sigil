@@ -185,10 +185,12 @@ const ENTRIES: &[Entry] = &[
             "       --stress-evict and --stress-art each fix an off-canonical development",
             "       shape and take no other shape selector.",
             "       sigil build --project <game dir|game.toml> --shape <name> -o <out.bin>",
+            "                   [--emit-lst <lst>] [--no-build-json]",
             "                   [--extra-entry <module|path.emp>]... [--anchor-overlay <anchors.toml>]",
             "note:  --project builds from the game's description (game.toml, the engine.toml it",
             "       names, map.toml) with the game-as-data driver; --shape names a [shapes.*] row.",
-            "       It writes the ROM only: no listing, no build.json, no contract gate yet",
+            "       It writes the ROM, the listing and the build.json as --aeon does; it runs no",
+            "       contract gate, --check or --report yet",
             "note:  --legacy marks the --aeon driver explicitly; it is accepted, not yet required",
             "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
         ],
@@ -3236,20 +3238,27 @@ struct ProjectOpts {
     project: String,
     shape: String,
     output: String,
+    /// `--emit-lst <lst>`: the listing, with its source digest, as the profile-driven
+    /// driver writes it.
+    emit_lst: Option<String>,
     extra_entries: Vec<String>,
     anchor_overlay: Option<String>,
+    /// `--no-build-json`: write the ROM but no `<stem>.build.json` beside it.
+    no_build_json: bool,
 }
 
 /// Parse `sigil build --project <p> --shape <name> -o <out>`. Every option of the
 /// profile-driven grammar that names a shape (`--aeon`, `--game`, `--debug`, `--config-*`,
 /// `--lean`, `--stress-*`) is refused by name: the description and `--shape` say it. So are
-/// the outputs this path does not write yet (`--emit-lst`, `--report`, `--check`).
+/// the modes this path does not run yet (`--report`, `--check`).
 fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
     let mut project = None;
     let mut shape = None;
     let mut output = None;
+    let mut emit_lst = None;
     let mut extra_entries = Vec::new();
     let mut anchor_overlay: Option<String> = None;
+    let mut no_build_json = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -3263,13 +3272,14 @@ fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
                 }
                 anchor_overlay = Some(next_value(args, &mut i, "--anchor-overlay")?);
             }
-            "--no-build-json" => {}
+            "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
+            "--no-build-json" => no_build_json = true,
             a @ ("--aeon" | "--legacy" | "--game" | "--debug" | "--config-a" | "--config-b" | "--lean"
             | "--stress-evict" | "--stress-art" | "--native") => {
                 return Err(format!("{a} selects the profile-driven driver; --project takes the shape from --shape"))
             }
-            a @ ("--emit-lst" | "--report" | "--check") => {
-                return Err(format!("{a} is not available with --project yet (the game-as-data driver writes the ROM only)"))
+            a @ ("--report" | "--check") => {
+                return Err(format!("{a} is not available with --project yet (the game-as-data driver builds; it does not report or check)"))
             }
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -3279,12 +3289,16 @@ fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
         project: project.ok_or("--project <dir|game.toml> is required")?,
         shape: shape.ok_or("--project needs --shape <name> (a [shapes.*] row of the game description)")?,
         output: output.ok_or("--project needs -o <out.bin>")?,
+        emit_lst,
         extra_entries,
         anchor_overlay,
+        no_build_json,
     })
 }
 
-/// Build one shape with the game-as-data driver and write the ROM.
+/// Build one shape with the game-as-data driver and write its artifacts: the ROM, the
+/// listing (`--emit-lst`) and the build export, through the same writer as the
+/// profile-driven driver ([`write_build_artifacts`]).
 fn run_project_build(opts: &ProjectOpts) {
     use sigil_build::driver;
     let env = |k: &str| std::env::var_os(k);
@@ -3307,25 +3321,63 @@ fn run_project_build(opts: &ProjectOpts) {
             }
         },
     };
+    let label = format!("{} {}", project.game.id, opts.shape);
+    // The build's generated root, owned here as `run_build_native` owns it: the digest and
+    // the export place the build's generated reads at their mount through it, after the
+    // directory itself is gone. `build_project` reuses the root entered for its checkout.
+    let build_dir = match sigil_build::build_dir::BuildDir::create() {
+        Ok(d) => d,
+        Err(err) => {
+            eprintln!("error: build ({label}): {err}");
+            std::process::exit(1);
+        }
+    };
+    let generated = match build_dir.root_for(&project.checkout) {
+        Ok(r) => r,
+        Err(err) => {
+            drop(build_dir);
+            eprintln!("error: build ({label}): {err}");
+            std::process::exit(1);
+        }
+    };
+    let generated_scope = sigil_frontend_emp::generated_root::enter(generated.clone());
+    let sidecar = !opts.no_build_json;
     let seams = sigil_harness::driver_seams::HarnessSeams;
     let bopts = driver::BuildOptions {
         extra_entries: opts.extra_entries.clone(),
         anchor_overlay,
-        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        layout_pass: if sidecar {
+            sigil_frontend_emp::export_side::LayoutPass::Owner
+        } else {
+            sigil_frontend_emp::export_side::LayoutPass::Off
+        },
         seams: &seams,
         env: &env,
     };
-    let out = match driver::build_project(&project, &opts.shape, &bopts) {
+    let built = driver::build_project(&project, &opts.shape, &bopts);
+    drop(generated_scope);
+    drop(build_dir);
+    let out = match built {
         Ok(o) => o,
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
     };
-    if let Err(e) = install_artifact(&opts.output, &out.rom) {
-        eprintln!("error: write {}: {e}", opts.output);
-        std::process::exit(1);
-    }
+    report_warnings(&out.warnings);
+    let identity = project_identity(&project, &opts.shape, opts, &out);
+    let artifacts = Artifacts { output: Some(&opts.output), emit_lst: opts.emit_lst.as_deref(), sidecar };
+    write_build_artifacts(
+        &project.checkout,
+        &label,
+        &identity,
+        &artifacts,
+        &out.rom,
+        out.assembled_len,
+        &out.listing,
+        &out.export_inputs,
+        &generated,
+    );
     println!(
         "Built {} ({} bytes, assembled {}, {} warning(s)) from {} shape `{}`",
         opts.output,
@@ -3335,6 +3387,24 @@ fn run_project_build(opts: &ProjectOpts) {
         project.game_path.display(),
         opts.shape
     );
+}
+
+/// The game-as-data driver's identity for one shape: every name comes from the game
+/// description (its `id` and the `[shapes.*]` row), never from Sigil's source.
+fn project_identity(
+    project: &sigil_build::driver::Project,
+    shape: &str,
+    opts: &ProjectOpts,
+    out: &sigil_build::driver::BuildOutput,
+) -> BuildIdentity {
+    BuildIdentity {
+        defines: out.defines.clone(),
+        target: shape.to_string(),
+        game: project.game.id.clone(),
+        shape: shape.to_string(),
+        debug: out.debug,
+        extra_entries: opts.extra_entries.clone(),
+    }
 }
 
 /// `profile` with the `--anchor-overlay` file read and attached, or `profile` itself
@@ -3680,14 +3750,88 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
         rom
     };
 
+    let identity = match legacy_identity(aeon, opts) {
+        Ok(i) => i,
+        Err(err) => {
+            eprintln!("error: native build ({label}): {err}");
+            process::exit(1);
+        }
+    };
+    let artifacts = Artifacts {
+        output: opts.output.as_deref(),
+        emit_lst: opts.emit_lst.as_deref(),
+        sidecar: writes_sidecar(opts),
+    };
+    write_build_artifacts(aeon, &label, &identity, &artifacts, &full, assembled_len, &listing, &export_inputs, &generated);
+    println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
+}
+
+/// Who a build says it is, wherever an artifact names it: the listing's source digest
+/// (`DIGEST-SHAPE`, `DIGEST-DEFINE`) and the build export's `shape` record. Both drivers
+/// fill one and hand it to [`write_build_artifacts`], so the two write their ROM, listing
+/// and export through one piece of code (G0b Task 7: the comparison job holds the two
+/// drivers to the same `.lst` and export).
+struct BuildIdentity {
+    /// The shape's merged comptime define set.
+    defines: Vec<(String, i128)>,
+    /// `DIGEST-SHAPE target=`: how the shape was selected.
+    target: String,
+    /// `DIGEST-SHAPE game=` and the export's `shape.game`.
+    game: String,
+    /// The export's `shape.shape`.
+    shape: String,
+    /// `DIGEST-SHAPE debug=`.
+    debug: bool,
+    /// `DIGEST-SHAPE extra-entries=`.
+    extra_entries: Vec<String>,
+}
+
+/// The profile-driven driver's identity for `opts.target`: the names
+/// [`export_shape_names`] and [`digest_target`] give it and the profile's define set.
+fn legacy_identity(aeon: &std::path::Path, opts: &BuildOpts) -> Result<BuildIdentity, String> {
+    let profile = opts.target.label_and_profile().1;
+    let defines = sigil_harness::native::shape_defines(&profile, aeon)?;
+    let (game, shape) = export_shape_names(&opts.target);
+    Ok(BuildIdentity {
+        defines,
+        target: digest_target(&opts.target).0.to_string(),
+        game,
+        shape,
+        debug: profile.debug,
+        extra_entries: opts.extra_entries.clone(),
+    })
+}
+
+/// Which artifacts a build writes: the ROM (`-o`), the listing (`--emit-lst`), and the
+/// build export beside the ROM (with `-o`, unless `--no-build-json`).
+struct Artifacts<'a> {
+    output: Option<&'a str>,
+    emit_lst: Option<&'a str>,
+    sidecar: bool,
+}
+
+/// Write a finished build's artifacts: the full ROM `full`, the listing with its source
+/// digest, and the build export, in the write order below. Every failure exits.
+#[allow(clippy::too_many_arguments)]
+fn write_build_artifacts(
+    aeon: &std::path::Path,
+    label: &str,
+    identity: &BuildIdentity,
+    arts: &Artifacts<'_>,
+    full: &[u8],
+    assembled_len: usize,
+    listing: &[sigil_link::ListingSymbol],
+    export_inputs: &sigil_link::export::ExportInputs,
+    generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
+) {
     // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested, opens with
     // the source digest, which names the FULL shipped file above, appendix included. So
     // the listing is written after the ROM is final. The appendix is built from the
     // in-memory `listing`, never from the `.lst` text, so the order moves no ROM byte.
     // The digest is rendered before either artifact is written, so a read set that
     // cannot be stated (a file that changed while the build read it) leaves neither.
-    let digest = match &opts.emit_lst {
-        Some(_) => match lst_source_digest(aeon, opts, &full, &generated) {
+    let digest = match arts.emit_lst {
+        Some(_) => match lst_source_digest(aeon, identity, arts.output, full, generated) {
             Ok(section) => Some(section),
             Err(err) => {
                 eprintln!("error: native build ({label}) source digest: {err}");
@@ -3703,14 +3847,14 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // export that cannot be stated fails the build here, while the previous ROM, listing
     // and sidecar are untouched and still agree (final review A-M1: the walk used to run
     // after the install, leaving a new ROM and `.lst` with no sidecar).
-    let export_text = match (&opts.output, writes_sidecar(opts)) {
+    let export_text = match (arts.output, arts.sidecar) {
         (Some(out_path), true) => {
             let rom_name = std::path::Path::new(out_path)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            match prepare_export(aeon, opts, &generated)
-                .and_then(|parts| render_export(parts, &export_inputs, rom_name, &full, assembled_len))
+            match prepare_export(aeon, identity, generated)
+                .and_then(|parts| render_export(parts, export_inputs, rom_name, full, assembled_len))
             {
                 Ok(text) => Some(text),
                 Err(err) => {
@@ -3729,7 +3873,7 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     //  3. write the sidecar atomically.
     // A failure after step 1 writes no sidecar. This runs even under `--no-build-json`:
     // the old sidecar would describe a ROM that is about to be replaced.
-    if let Some(out_path) = &opts.output {
+    if let Some(out_path) = arts.output {
         let stale = sidecar_path(std::path::Path::new(out_path));
         match std::fs::remove_file(&stale) {
             Ok(()) => {}
@@ -3739,19 +3883,19 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
                 process::exit(1);
             }
         }
-        if let Err(err) = install_artifact(out_path, &full) {
+        if let Err(err) = install_artifact(out_path, full) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
     }
-    if let (Some(lst_path), Some(section)) = (&opts.emit_lst, digest) {
-        let text = format!("{section}{}", sigil_link::emit_listing(&listing));
+    if let (Some(lst_path), Some(section)) = (arts.emit_lst, digest) {
+        let text = format!("{section}{}", sigil_link::emit_listing(listing));
         if let Err(err) = install_artifact(lst_path, text.as_bytes()) {
             eprintln!("error: cannot write {lst_path}: {err}");
             process::exit(1);
         }
     }
-    if let (Some(out_path), Some(text)) = (&opts.output, export_text) {
+    if let (Some(out_path), Some(text)) = (arts.output, export_text) {
         let out = std::path::Path::new(out_path);
         // Test-only failure injection between "install the ROM" and "write the sidecar":
         // the point where a crash must leave NO sidecar. Nothing sets it outside the test
@@ -3766,7 +3910,6 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             process::exit(1);
         }
     }
-    println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
 /// Whether this build writes a `<stem>.build.json`: with `-o`, unless `--no-build-json`.
@@ -3826,14 +3969,13 @@ fn export_shape_names(target: &BuildTarget) -> (String, String) {
 
 fn prepare_export(
     aeon: &std::path::Path,
-    opts: &BuildOpts,
+    identity: &BuildIdentity,
     generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
 ) -> Result<ExportParts, String> {
     use sigil_link::export::*;
-    let (_, profile) = opts.target.label_and_profile();
-    let defines_wide = sigil_harness::native::shape_defines(&profile, aeon)?;
+    let defines_wide = &identity.defines;
     let mut defines = Vec::with_capacity(defines_wide.len());
-    for (name, value) in &defines_wide {
+    for (name, value) in defines_wide {
         let narrow = i64::try_from(*value).map_err(|_| {
             format!("define {name} = {value} does not fit a 64-bit integer, so the build export cannot state it")
         })?;
@@ -3851,9 +3993,8 @@ fn prepare_export(
         revision: env!("SIGIL_REVISION").into(),
         tree: env!("SIGIL_TREE_STATE").into(),
     };
-    let (game, shape_name) = export_shape_names(&opts.target);
-    let shape = ShapeRecord { game, shape: shape_name, defines };
-    let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, &defines_wide, &rooted.inputs);
+    let shape = ShapeRecord { game: identity.game.clone(), shape: identity.shape.clone(), defines };
+    let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, defines_wide, &rooted.inputs);
     Ok(ExportParts { tool, shape, inputs_sha256, files, aeon_root, sigil_root })
 }
 
@@ -3914,16 +4055,13 @@ fn to_u32(n: usize, what: &str) -> Result<u32, String> {
 /// build configuration, and the identity of the ROM about to be written to `-o`.
 fn lst_source_digest(
     aeon: &std::path::Path,
-    opts: &BuildOpts,
+    identity: &BuildIdentity,
+    output: Option<&str>,
     full: &[u8],
     generated: &sigil_frontend_emp::generated_root::GeneratedRoot,
 ) -> Result<String, String> {
-    use sigil_harness::{native, source_digest};
+    use sigil_harness::source_digest;
 
-    let profile = opts.target.label_and_profile().1;
-    // Everything this reads happens before the snapshot below, so the digest names it.
-    let defines = native::shape_defines(&profile, aeon)?;
-    let (target, game) = digest_target(&opts.target);
     // The build's generated files are named at their mount path, as the source names them.
     let snapshot = sigil_harness::export_files::mount_generated(&sigil_span::read_set::snapshot(), generated)?;
     let digest = source_digest::source_digest(
@@ -3934,14 +4072,14 @@ fn lst_source_digest(
             tree_state: env!("SIGIL_TREE_STATE"),
         },
         &source_digest::DigestShape {
-            target,
-            game,
-            debug: profile.debug,
-            extra_entries: &opts.extra_entries,
+            target: &identity.target,
+            game: &identity.game,
+            debug: identity.debug,
+            extra_entries: &identity.extra_entries,
         },
-        defines,
+        identity.defines.clone(),
         full,
-        opts.output.as_deref().map(std::path::Path::new),
+        output.map(std::path::Path::new),
         &snapshot,
     )?;
     sigil_link::emit_source_digest(&digest)
@@ -4320,13 +4458,17 @@ mod help_gates {
                 project: "games/g".into(),
                 shape: "debug".into(),
                 output: "g.bin".into(),
+                emit_lst: None,
                 extra_entries: vec!["m".into()],
-                anchor_overlay: None
+                anchor_overlay: None,
+                no_build_json: false,
             }
         );
+        let lst = ok(&["--project", "g", "--shape", "s", "-o", "x", "--emit-lst", "l", "--no-build-json"]).unwrap();
+        assert_eq!((lst.emit_lst.as_deref(), lst.no_build_json), (Some("l"), true));
         assert!(ok(&["--project", "g", "-o", "x"]).unwrap_err().contains("--shape"));
         assert!(ok(&["--project", "g", "--shape", "s", "-o", "x", "--debug"]).unwrap_err().contains("--debug"));
-        assert!(ok(&["--project", "g", "--shape", "s", "-o", "x", "--emit-lst", "l"]).unwrap_err().contains("--emit-lst"));
+        assert!(ok(&["--project", "g", "--shape", "s", "-o", "x", "--check"]).unwrap_err().contains("--check"));
     }
 
     /// `sigil build`'s parser has an arm for every option the build row lists,

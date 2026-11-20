@@ -203,6 +203,11 @@ pub struct BuildOutput {
     pub registry: Vec<ModuleSpec>,
     /// The engine checkout the build read.
     pub checkout: PathBuf,
+    /// The shape's merged define environment ([`merged_defines`]), as the build used it:
+    /// what the listing's source digest and the build export state.
+    pub defines: Vec<(String, i128)>,
+    /// The shape's `debug` feature.
+    pub debug: bool,
 }
 
 /// A game description with the engine it names, located.
@@ -715,7 +720,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
         rom
     };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side, z80_windows };
-    Ok(BuildOutput { rom: full, assembled_len, listing, export_inputs, warnings, registry, checkout: p.checkout.clone() })
+    Ok(BuildOutput { rom: full, assembled_len, listing, export_inputs, warnings, registry, checkout: p.checkout.clone(), defines, debug })
 }
 
 /// Move the `relocate` rows (a fixture shape's growable sections) to just before the
