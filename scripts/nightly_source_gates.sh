@@ -119,6 +119,11 @@ SOURCE_GATES=(
     # transcribed from. Source only: it reads TOML and sigil's own Rust source, builds
     # nothing and compares no committed artifact (crates/sigil-build).
     game_descriptions
+    # G0b Task 9: a game's module scan is its two named roots (engine + its own game) and
+    # nothing else of the checkout (`engine_root_alone_does_not_pull_other_games`). Source
+    # only: it scans aeon `.emp` modules, builds nothing and compares no committed artifact
+    # (crates/sigil-build).
+    two_roots
     # G0b Task 3: the descriptions agree with the Rust profiles field by field (every
     # constructor's shape, the gating over the full module scan, defines, features,
     # entry modules, alignment, baselines, engine lists). Source only: it reads TOML,
