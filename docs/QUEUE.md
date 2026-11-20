@@ -2293,8 +2293,9 @@ until its row is removed.
      is its own game plus the engine (Task 9). Until then the agree-with-Rust check must union all three for demo.
      **Task 8:** the union is now the driver's own rule (`sigil_build::baseline::closure_baseline`: other scanned
      games contribute their rows that name a proc in their own sources), which the project gate uses and the
-     agree-with-Rust test compares; Task 9 deletes that rule with the two-root corpus. Narrowing the corpus is NOT
-     neutral today (an engine `comptime` condition names a sonic4 id; G0B-TASK5-NEW-PATH-GAPS).
+     agree-with-Rust test compares. Task 9 can delete that rule only AFTER aeon settles the engine/game contract for
+     `SFXID_REV_LOOP` (an engine-root `comptime` condition on a constant only sonic4 declares; aeon DEFERRED_WORK
+     G0B-ENGINE-NAMES-GAME-CONST, a Task 9 prerequisite the two-root corpus does not remove; G0B-TASK5-NEW-PATH-GAPS).
   4. **Facts left in Rust on purpose.** `harvest_engine_constants`' `VDP_Shadow_len` exclusion (`native.rs:940`) is a
      residual-AS collision rule, derivable as "a constant a struct twin also produces"; it is not a field. The
      `SIGIL_EMP_*` AS definedness defines (`native.rs:1228`) are port history. The `--game`/target names in
@@ -2385,8 +2386,17 @@ until its row is removed.
   sources). The gate states its pass on stderr (`contract closure gate: passed (`).
   - **Measured, why the corpus is NOT narrowed to the game yet:** on aeon 559b8910, demo release, analysing only
     `engine.*` + `games.demo.*` leaves `Sfx_BeginSound`'s comptime condition on `SFXID_REV_LOOP` (a sonic4 id)
-    unresolved, so the gate goes blind (`[comptime.unresolved]` 1). That is G0B-DESCRIBE-TASK2-RESIDUE item 3's
-    Task 9 work, and the reason `closure_baseline` carries the other-games rule until then.
+    unresolved, so the gate goes blind (`[comptime.unresolved]` 1). **Corrected in Task 8 fix round 1:** this is
+    NOT something Task 9's two-root corpus resolves. `engine/sound/sound_sfx.emp:874` is in the ENGINE root, and
+    its comment (`:872-873`) calls the constant "game-declared; -1 = feature off": the engine already treats it as
+    a constant every game must provide, demo simply does not declare it, and it resolves today only because
+    sonic4's sources are in the scan. An engine + demo corpus still analyses it. Settling that engine/game
+    contract (aeon DEFERRED_WORK G0B-ENGINE-NAMES-GAME-CONST: (i) every game declares it, or (ii) a declared
+    default / required-constant contract in engine.toml; controller to rule before Task 9) is a **prerequisite**
+    for deleting `closure_baseline`'s other-games rule. Measured (scratch, aeon 3557d081, nothing committed):
+    with demo declaring `SFXID_REV_LOOP = -1` and the corpus narrowed to `engine.*` + `games.demo.*` (79 of 207
+    modules) against the engine + demo rows only, the gate passes on demo release and demo debug, so it is the
+    only blind spot on demo; without it both shapes are blind.
   - **Proof:** `crates/sigil-cli/tests/project_contract_gate.rs` (8 tests, a two-game fixture whose baselines fit
     its corpus, so the exit code is the verdict: a planted clobber is refused with the same located line on
     `--project` and `--aeon`; a dropped other-game row is NEW; a stale game row is GONE; another game's row on an

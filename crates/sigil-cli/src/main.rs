@@ -2212,8 +2212,9 @@ fn corpus_closure_or_exit(
 
     // The corpus is every module the scan finds, both games and any fixture, for either
     // driver (`--report contracts`'s documented SCOPE below). Narrowing a game-as-data
-    // shape to its own game is Task 9's two-root corpus; it is not neutral today
-    // (`sigil_build::baseline`'s header).
+    // shape to its own game is not neutral today and Task 9's two-root corpus does not make
+    // it so by itself (an engine module names a game-declared constant demo lacks;
+    // `sigil_build::baseline`'s header).
     let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
     // The L1 interface env, bound against THIS shape's game (the game RAM module's
     // parent id names it) — so a comptime condition on an `Iface.MEMBER`

@@ -14,8 +14,10 @@
 //!
 //! The listing and the export are compared through the DECLARED DELTA (proxy ruling on QUEUE
 //! G0B-COMPARE-IDENTITY-NAMES, option a; see the script's header): the legacy artifacts are
-//! transformed into what the game-as-data driver must write (the `[shapes.*]` row name, the two
-//! description read rows, the recomputed aggregate) and compared byte for byte. Those columns
+//! transformed into what the game-as-data driver must write (the `[shapes.*]` row name, the
+//! description read rows: the game's `game.toml` and the engine's `engine.toml`, plus, since G0b
+//! Task 8, the contract gate's reads: the engine's and the game's `baseline.toml` and every other
+//! game's `game.toml` and `baseline.toml`; the recomputed aggregate) and compared byte for byte. Those columns
 //! pass only as `MATCH(declared-delta)`; the ROM is compared exactly.
 //!
 //! The three artifacts are held by separate tests so a red names the artifact that moved:

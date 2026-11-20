@@ -370,7 +370,7 @@ fn diff_multiset(got: Vec<String>, want: Vec<String>) -> BaselineDiff {
 /// Two suppliers, one diff. The profile-driven driver takes the constants above
 /// ([`ShapeBaseline::for_profile`]); the game-as-data driver (G0b) reads the
 /// `baseline.toml` files its engine and game descriptions name and unions them
-/// (sigil-cli `project_gate_subject`). Either way the gate calls the SAME diff
+/// (sigil-cli `project_subject`, via `sigil_build::baseline::closure_baseline`). Either way the gate calls the SAME diff
 /// methods below, so the two drivers cannot grow two meanings of "moved against the
 /// baseline".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
