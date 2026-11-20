@@ -12,6 +12,12 @@
 //! the job could not build is `DID NOT RUN`, which fails, as does a job that never printed its
 //! end marker.
 //!
+//! The listing and the export are compared through the DECLARED DELTA (proxy ruling on QUEUE
+//! G0B-COMPARE-IDENTITY-NAMES, option a; see the script's header): the legacy artifacts are
+//! transformed into what the game-as-data driver must write (the `[shapes.*]` row name, the two
+//! description read rows, the recomputed aggregate) and compared byte for byte. Those columns
+//! pass only as `MATCH(declared-delta)`; the ROM is compared exactly.
+//!
 //! The three artifacts are held by separate tests so a red names the artifact that moved:
 //! `rom_bytes_match_on_every_shape`, `listings_match_on_every_shape`,
 //! `exports_match_on_every_shape`.
@@ -61,7 +67,13 @@ fn parse_row(line: &str) -> Row {
         rom: get("rom"),
         lst: get("lst"),
         export: get("export"),
-        verdict: if did_not_run { "DID NOT RUN".into() } else { tokens.last().copied().unwrap_or("").to_string() },
+        verdict: if did_not_run {
+            "DID NOT RUN".into()
+        } else if line.ends_with(" MATCH (declared delta)") {
+            "MATCH (declared delta)".into()
+        } else {
+            tokens.last().copied().unwrap_or("").to_string()
+        },
     }
 }
 
@@ -137,14 +149,17 @@ fn complete() -> Option<&'static Run> {
         got.len(),
         r.stdout
     );
-    let matched = r.rows.iter().filter(|x| x.verdict == "MATCH").count();
+    let matched = r.rows.iter().filter(|x| x.verdict == "MATCH (declared delta)").count();
     assert_eq!(r.summary, Some((matched, r.rows.len())), "the SHAPES line disagrees with the rows\n{}", r.stdout);
     Some(r)
 }
 
-fn hold(column: &str, pick: fn(&Row) -> &str) {
+/// A column passes only with the value the ruling requires: `MATCH` for the ROM (exact), and
+/// `MATCH(declared-delta)` for the listing and the export, whose declared delta is REQUIRED (a
+/// bare `MATCH` there would mean the job compared without it).
+fn hold(column: &str, want: &str, pick: fn(&Row) -> &str) {
     let Some(r) = complete() else { return };
-    let bad: Vec<String> = r.rows.iter().filter(|x| pick(x) != "MATCH").map(|x| format!("{} ({}={})", x.name, column, pick(x))).collect();
+    let bad: Vec<String> = r.rows.iter().filter(|x| pick(x) != want).map(|x| format!("{} ({}={})", x.name, column, pick(x))).collect();
     assert!(bad.is_empty(), "{} of {} shape(s) differ in the {column}: {bad:?}\n{}", bad.len(), r.rows.len(), r.stdout);
     eprintln!("driver_comparison: {column} identical on {} shape(s)", r.rows.len());
 }
@@ -158,15 +173,15 @@ fn the_job_builds_every_described_shape_with_both_drivers() {
 
 #[test]
 fn rom_bytes_match_on_every_shape() {
-    hold("rom", |x| &x.rom);
+    hold("rom", "MATCH", |x| &x.rom);
 }
 
 #[test]
 fn listings_match_on_every_shape() {
-    hold("lst", |x| &x.lst);
+    hold("lst", "MATCH(declared-delta)", |x| &x.lst);
 }
 
 #[test]
 fn exports_match_on_every_shape() {
-    hold("export", |x| &x.export);
+    hold("export", "MATCH(declared-delta)", |x| &x.export);
 }

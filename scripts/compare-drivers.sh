@@ -15,22 +15,30 @@
 # write to the SAME absolute path (one after the other, then moved aside), because the
 # listing's source digest names the output path.
 #
-# Compared per shape: the ROM's SHA-256, the `.lst` bytes, and the G0a build export
+# Compared per shape: the ROM's SHA-256 (exact), the `.lst` bytes and the G0a build export
 # (`<stem>.build.json`) with `tool` and `inputsSha256` removed (spec: G0b 6, item 2).
-# Nothing else is removed. Output: one row per shape,
-#   SHAPE <name> game=<g> shape=<s> rom=<v> lst=<v> export=<v> sha=<legacy>/<project> <VERDICT>
-# with VERDICT MATCH, DIFFERS, or DID NOT RUN (a build failed or an artifact is missing),
-# then `SHAPES <n>/<total> MATCH` and `COMPARE_DRIVERS_END rc=<rc>`.
-# rc 0 = every shape MATCH; 1 = a shape DIFFERS; 2 = a shape DID NOT RUN or the job could
-# not run at all. DID NOT RUN is never a pass.
 #
-# A DIFFERS row is followed by its differences (the `.lst` diff, the differing export
-# fields), and by one `declared-delta` line saying whether the difference is exactly the
-# two the drivers differ in by construction today: the shape's NAME (the legacy driver
-# names it by its flag/profile label, the game-as-data driver by its `[shapes.*]` row) and
-# the description files the game-as-data driver reads (`game.toml`, `engine.toml`), which
-# are rows of its listing's read set. The line is diagnostic only: it never turns a
-# DIFFERS into a MATCH (QUEUE G0B-COMPARE-IDENTITY-NAMES holds the open ruling).
+# THE DECLARED DELTA (proxy ruling on QUEUE G0B-COMPARE-IDENTITY-NAMES, option a). The two
+# drivers differ by construction in two things, and only those may differ:
+#   * the shape's NAME: the game-as-data driver names a shape by its `[shapes.*]` row (the
+#     row is checked to exist in the copy's game.toml), the legacy one by its flag/label;
+#   * the description files the game-as-data driver reads: `games/<g>/game.toml` and
+#     `<engine.root>/engine.toml` are rows of its listing's read set.
+# The job transforms the LEGACY listing and export into the artifacts the new driver must
+# write (DIGEST-SHAPE `target=` -> the row name; exactly those two DIGEST-READ rows, crc and
+# size from the copy's own files, inserted in digest order; DIGEST-AGGREGATE recomputed;
+# export `shape.shape` -> the row name, everything else untouched) and compares those with
+# the new artifacts BYTE FOR BYTE. Nothing is removed from the new side, so an extra read,
+# a missing one, or a wrong name is a DIFFERS. A passing column prints
+# `MATCH(declared-delta)` and a passing row `MATCH (declared delta)`, never a bare MATCH.
+#
+# Output: one row per shape,
+#   SHAPE <name> game=<g> shape=<s> rom=<v> lst=<v> export=<v> sha=<legacy>/<project> <VERDICT>
+# with VERDICT `MATCH (declared delta)`, DIFFERS, or DID NOT RUN (a build failed or an
+# artifact is missing), then `SHAPES <n>/<total> MATCH` and `COMPARE_DRIVERS_END rc=<rc>`.
+# rc 0 = every shape matches; 1 = a shape DIFFERS; 2 = a shape DID NOT RUN or the job could
+# not run at all. DID NOT RUN is never a pass. A DIFFERS row is followed by its differences
+# (the diff of the expected listing against the new one, the differing export fields).
 #
 # The shape table below pairs each `[shapes.*]` row of aeon's game descriptions with the
 # legacy flags that select the same profile. `crates/sigil-cli/tests/driver_comparison.rs`
@@ -62,7 +70,8 @@ ROWS=(
   "config_b|sonic4|config-b|--config-b"
   "lean|sonic4|lean|--lean"
   # The legacy driver's config_a_keystones_flipped_profile() IS config_a_profile()
-  # (native.rs), so --config-a is the legacy spelling of this fixture.
+  # (native.rs), so --config-a is the legacy spelling of this fixture; its pairing row is
+  # its own name. Its ROM is config-a's on both drivers: no separate byte evidence.
   "config_a_keystones_flipped|sonic4|config-a-keystones-flipped|--config-a"
   "stress_evict|sonic4|stress-evict|--stress-evict"
   "stress_art|sonic4|stress-art|--stress-art"
@@ -115,9 +124,9 @@ for side in legacy project; do
 done
 mkdir -p "$WORK/out" "$WORK/res" "$WORK/logs"
 
-compare() { # name game shape -> prints the row; exit 0 MATCH, 1 DIFFERS
+compare() { # name game shape -> prints the row; exit 0 MATCH (declared delta), 1 DIFFERS
   python3 -I - "$WORK/res/$1" "$1" "$2" "$3" "$WORK/project" <<'PY'
-import hashlib, json, sys, zlib, os, difflib
+import hashlib, json, sys, zlib, os, difflib, tomllib
 res, name, game, shape, ptree = sys.argv[1:6]
 L = lambda f: open(os.path.join(res, "legacy", f), "rb").read()
 P = lambda f: open(os.path.join(res, "project", f), "rb").read()
@@ -127,59 +136,94 @@ exp_l, exp_p = json.loads(L(name + ".build.json")), json.loads(P(name + ".build.
 sha_l, sha_p = hashlib.sha256(rom_l).hexdigest(), hashlib.sha256(rom_p).hexdigest()
 for e in (exp_l, exp_p):
     e.pop("tool", None); e.pop("inputsSha256", None)
-v = lambda same: "MATCH" if same else "DIFFERS"
-rom_ok, lst_ok, exp_ok = sha_l == sha_p, lst_l == lst_p, exp_l == exp_p
-verdict = v(rom_ok and lst_ok and exp_ok)
-print(f"SHAPE {name} game={game} shape={shape} rom={v(rom_ok)} lst={v(lst_ok)} export={v(exp_ok)} "
-      f"sha={sha_l[:16]}/{sha_p[:16]} {verdict}")
-if verdict == "MATCH":
+problems = []
+
+# The pairing: the expected name is the `[shapes.*]` row of the game description in the
+# copy the new driver built from. A row name the description does not declare is refused.
+g = tomllib.load(open(os.path.join(ptree, "games", game, "game.toml"), "rb"))
+if shape not in g.get("shapes", {}):
+    problems.append(f"pairing: games/{game}/game.toml declares no [shapes.{shape}] row")
+descs = [f"games/{game}/game.toml", f"{g['engine']['root']}/engine.toml"]
+
+# THE DECLARED DELTA (proxy ruling, G0B-COMPARE-IDENTITY-NAMES option a). The OLD artifacts
+# are transformed into the artifacts the new driver must write, and those are compared to
+# the new ones byte for byte. Nothing is removed from the new side.
+def expected_listing(old: bytes) -> bytes:
+    lines = old.split(b"\n")
+    shp = [i for i, x in enumerate(lines) if x.startswith(b"DIGEST-SHAPE ")]
+    if len(shp) != 1:
+        raise ValueError(f"legacy listing has {len(shp)} DIGEST-SHAPE line(s)")
+    toks = lines[shp[0]].split(b" ")
+    tgt = [k for k, t in enumerate(toks) if t.startswith(b"target=")]
+    if len(tgt) != 1:
+        raise ValueError("legacy DIGEST-SHAPE has no single target= field")
+    toks[tgt[0]] = b"target=" + shape.encode()
+    lines[shp[0]] = b" ".join(toks)
+    reads = [i for i, x in enumerate(lines) if x.startswith(b"DIGEST-READ ")]
+    if not reads or reads != list(range(reads[0], reads[-1] + 1)):
+        raise ValueError("legacy listing's DIGEST-READ rows are not one block")
+    rows = [lines[i] for i in reads]
+    def key(row):  # (root, path): the --aeon root (no root= field) first, then by root name; path by bytes
+        fixed, path = row.split(b" path=", 1)
+        root = next((t[5:] for t in fixed.split(b" ") if t.startswith(b"root=")), None)
+        return (0, b"", path) if root is None else (1, root, path)
+    for rel in descs:
+        if any(r.split(b" path=", 1)[1] == rel.encode() and b" root=" not in r.split(b" path=", 1)[0] for r in rows):
+            raise ValueError(f"legacy listing already reads {rel}")
+        data = open(os.path.join(ptree, rel), "rb").read()
+        rows.append(f"DIGEST-READ crc={zlib.crc32(data) & 0xffffffff:08x} size={len(data)} origin=source path={rel}".encode())
+    rows.sort(key=key)
+    agg = [i for i, x in enumerate(lines) if x.startswith(b"DIGEST-AGGREGATE ")]
+    if agg != [reads[-1] + 1]:
+        raise ValueError("legacy listing's DIGEST-AGGREGATE does not follow its READ block")
+    crc = zlib.crc32(b"".join(r + b"\n" for r in rows)) & 0xffffffff
+    aggregate = f"DIGEST-AGGREGATE crc={crc:08x} reads={len(rows)}".encode()
+    return b"\n".join(lines[:reads[0]] + rows + [aggregate] + lines[agg[0] + 1:])
+
+def expected_export(old: dict) -> dict:
+    e = json.loads(json.dumps(old))
+    if not isinstance(e.get("shape"), dict) or "shape" not in e["shape"]:
+        raise ValueError("legacy export has no shape.shape")
+    e["shape"]["shape"] = shape
+    return e
+
+rom_ok = sha_l == sha_p
+try:
+    want_lst = expected_listing(lst_l)
+except ValueError as err:
+    want_lst = None; problems.append(f"lst: cannot apply the declared delta: {err}")
+try:
+    want_exp = expected_export(exp_l)
+except ValueError as err:
+    want_exp = None; problems.append(f"export: cannot apply the declared delta: {err}")
+lst_ok = want_lst is not None and want_lst == lst_p
+exp_ok = want_exp is not None and want_exp == exp_p
+ok = rom_ok and lst_ok and exp_ok and not problems
+D = "MATCH(declared-delta)"
+col = lambda good, tag: tag if good else "DIFFERS"
+print(f"SHAPE {name} game={game} shape={shape} rom={col(rom_ok, 'MATCH')} lst={col(lst_ok, D)} export={col(exp_ok, D)} "
+      f"sha={sha_l[:16]}/{sha_p[:16]} {'MATCH (declared delta)' if ok else 'DIFFERS'}")
+for pr in problems:
+    print("    " + pr)
+if ok:
     sys.exit(0)
 if not rom_ok:
     n = min(len(rom_l), len(rom_p))
     first = next((i for i in range(n) if rom_l[i] != rom_p[i]), n)
     diff = sum(1 for i in range(n) if rom_l[i] != rom_p[i]) + abs(len(rom_l) - len(rom_p))
     print(f"    rom: legacy {len(rom_l)} B, project {len(rom_p)} B, {diff} byte(s) differ, first at {first:#x}")
-ll, pl = lst_l.decode(errors="replace").splitlines(), lst_p.decode(errors="replace").splitlines()
-if not lst_ok:
-    d = [x for x in difflib.unified_diff(ll, pl, "legacy.lst", "project.lst", n=0, lineterm="") if not x.startswith("@@")]
+if want_lst is not None and not lst_ok:
+    d = [x for x in difflib.unified_diff(want_lst.decode(errors="replace").splitlines(), lst_p.decode(errors="replace").splitlines(),
+                                         "expected.lst (legacy + declared delta)", "project.lst", n=0, lineterm="") if not x.startswith("@@")]
     for x in d[:24]:
         print("    lst: " + x)
     if len(d) > 24:
         print(f"    lst: ... {len(d) - 24} more diff line(s)")
-keys = sorted(set(exp_l) | set(exp_p))
-bad = [k for k in keys if exp_l.get(k) != exp_p.get(k)]
-for k in bad:
-    a, b = json.dumps(exp_l.get(k))[:160], json.dumps(exp_p.get(k))[:160]
-    print(f"    export.{k}: legacy {a}")
-    print(f"    export.{k}: project {b}")
-# Diagnostic: is the difference exactly the declared one (shape name + description reads)?
-decl = []
-try:
-    import tomllib
-    g = tomllib.load(open(os.path.join(ptree, "games", game, "game.toml"), "rb"))
-    descs = [f"games/{game}/game.toml", f"{g['engine']['root']}/engine.toml"]
-    def row(rel):
-        d = open(os.path.join(ptree, rel), "rb").read()
-        return f"DIGEST-READ crc={zlib.crc32(d) & 0xffffffff:08x} size={len(d)} origin=source path={rel}"
-    want_rows = {row(r) for r in descs}
-    lo = [x for x in ll if not x.startswith(("DIGEST-SHAPE ", "DIGEST-AGGREGATE "))]
-    po = [x for x in pl if not x.startswith(("DIGEST-SHAPE ", "DIGEST-AGGREGATE ")) and x not in want_rows]
-    shp_l = [x for x in ll if x.startswith("DIGEST-SHAPE ")]
-    shp_p = [x for x in pl if x.startswith("DIGEST-SHAPE ")]
-    def strip_target(x):
-        return " ".join(t for t in x.split() if not t.startswith("target="))
-    reads_p = [x for x in pl if x.startswith("DIGEST-READ ")]
-    agg_p = [x for x in pl if x.startswith("DIGEST-AGGREGATE ")]
-    agg_ok = len(agg_p) == 1 and agg_p[0] == f"DIGEST-AGGREGATE crc={zlib.crc32(''.join(r + chr(10) for r in reads_p).encode()) & 0xffffffff:08x} reads={len(reads_p)}"
-    lst_decl = (lo == po and len(shp_l) == len(shp_p) == 1 and strip_target(shp_l[0]) == strip_target(shp_p[0])
-                and f"target={shape}" in shp_p[0].split() and want_rows <= set(pl) and agg_ok)
-    el, ep = dict(exp_l), dict(exp_p)
-    el["shape"] = dict(el.get("shape", {})); el["shape"]["shape"] = shape
-    exp_decl = el == ep
-    print(f"    declared-delta: lst={'yes' if lst_decl else 'NO'} export={'yes' if exp_decl else 'NO'} rom={'n/a' if rom_ok else 'NO'} "
-          f"(shape name + reads of {', '.join(descs)}; diagnostic only, the verdict stays DIFFERS)")
-except Exception as e:  # never a verdict, so a failure to classify is only printed
-    print(f"    declared-delta: could not classify: {e}")
+if want_exp is not None and not exp_ok:
+    for k in sorted(set(want_exp) | set(exp_p)):
+        if want_exp.get(k) != exp_p.get(k):
+            print(f"    export.{k}: expected {json.dumps(want_exp.get(k))[:160]}")
+            print(f"    export.{k}: project  {json.dumps(exp_p.get(k))[:160]}")
 sys.exit(1)
 PY
 }
