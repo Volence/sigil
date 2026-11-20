@@ -119,8 +119,8 @@ fn remove_pycache(dir: &Path) {
     }
 }
 
-/// Run `sigil <args>` with `AEON_DIR` removed, asserting exit 0.
-fn sigil(cwd: &Path, args: &[&str], what: &str) -> String {
+/// Run `sigil <args>` with `AEON_DIR` removed: its output, or the failure's text.
+fn sigil(cwd: &Path, args: &[&str], what: &str) -> Result<String, String> {
     let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
         .current_dir(cwd)
         .env_remove("AEON_DIR")
@@ -128,8 +128,11 @@ fn sigil(cwd: &Path, args: &[&str], what: &str) -> String {
         .output()
         .expect("run sigil");
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    assert!(out.status.success(), "{what} failed (exit {:?}):\n{text}", out.status.code());
-    text
+    if out.status.success() {
+        Ok(text)
+    } else {
+        Err(format!("{what} failed (exit {:?}):\n{text}", out.status.code()))
+    }
 }
 
 #[test]
@@ -179,7 +182,15 @@ fn check_build_writes_nothing_in_tree() {
     ];
     let mut failures = Vec::new();
     for (what, args, artifact) in &steps {
-        let text = sigil(&out, args, what);
+        // A failed build ends the run, after the tree states already gathered are reported:
+        // a later step failing must not hide what an earlier one wrote.
+        let text = match sigil(&out, args, what) {
+            Ok(text) => text,
+            Err(failure) => {
+                failures.push(failure);
+                break;
+            }
+        };
         if let Some(path) = artifact {
             let len = std::fs::metadata(path).unwrap_or_else(|e| panic!("{what} wrote no ROM at {}: {e}\n{text}", path.display())).len();
             assert!(len > 0, "{what} wrote an empty ROM");
@@ -200,5 +211,5 @@ fn check_build_writes_nothing_in_tree() {
             ));
         }
     }
-    assert!(failures.is_empty(), "a build wrote into the tree it built:\n{}", failures.join("\n"));
+    assert!(failures.is_empty(), "a build wrote into the tree it built, or failed:\n{}", failures.join("\n"));
 }
