@@ -310,7 +310,7 @@ for row in "${ROWS[@]}"; do
     done
   done
   if [ $lrc != 0 ] || [ $prc != 0 ] || [ -n "$missing" ]; then
-    echo "SHAPE $name game=$game shape=$shape legacy-rc=$lrc project-rc=$prc gate=$gate missing:${missing:- none} DID NOT RUN"
+    echo "SHAPE $name game=$game shape=$shape legacy-rc=$lrc project-rc=$prc gate=$gate report=$report check=$check missing:${missing:- none} DID NOT RUN"
     for side in legacy project; do
       tail -n 6 "$WORK/logs/$name.$side.log" | sed "s/^/    $side: /"
     done

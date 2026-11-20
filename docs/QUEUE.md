@@ -2291,6 +2291,10 @@ until its row is removed.
      Today's closure analyses the whole aeon corpus on every shape (`corpus_contracts.rs` `bind_corpus_interfaces`),
      so a demo shape fires the 18 sonic4 rows too; engine + game union equals today's gate only once a build's corpus
      is its own game plus the engine (Task 9). Until then the agree-with-Rust check must union all three for demo.
+     **Task 8:** the union is now the driver's own rule (`sigil_build::baseline::closure_baseline`: other scanned
+     games contribute their rows that name a proc in their own sources), which the project gate uses and the
+     agree-with-Rust test compares; Task 9 deletes that rule with the two-root corpus. Narrowing the corpus is NOT
+     neutral today (an engine `comptime` condition names a sonic4 id; G0B-TASK5-NEW-PATH-GAPS).
   4. **Facts left in Rust on purpose.** `harvest_engine_constants`' `VDP_Shadow_len` exclusion (`native.rs:940`) is a
      residual-AS collision rule, derivable as "a constant a struct twin also produces"; it is not a field. The
      `SIGIL_EMP_*` AS definedness defines (`native.rs:1228`) are port history. The `--game`/target names in
@@ -2368,13 +2372,35 @@ until its row is removed.
 
 ## G0B-TASK5-NEW-PATH-GAPS
 
-- state: **open** 2026-11-19 (found in G0b Task 5), PARTLY CLOSED 2026-11-20 by G0b Task 7  size: `M`
+- state: **closed** 2026-11-20 by G0b Task 8 step 0 (found in G0b Task 5; partly closed by Task 7)  size: `M`
   project: `G0B-GAME-AS-DATA`
+- **Closed by Task 8 step 0 (controller ruling: a prerequisite of the demo cutover).** `--project` runs the
+  CONTRACT GATE before it builds, and takes `--check` (`sigil_build::driver::check_project`, the build pipeline
+  cut after the guard census, the same cut as `native::check_chained`) and every `--report` kind (contracts,
+  indirect-cost, ram, name-env), with the legacy grammar's pairings and refusal words. The gate is one function
+  over a `ClosureSubject` (label, defines, game prefix, baseline) each driver builds: the profile path from the
+  Rust constants (`ShapeBaseline::for_profile`), the project path from the descriptions
+  (`sigil_build::baseline::closure_baseline`: engine/baseline.toml, the game's baseline.toml, and, because the
+  closure still analyses the whole scan, each OTHER scanned game's rows that name a proc in that game's own
+  sources). The gate states its pass on stderr (`contract closure gate: passed (`).
+  - **Measured, why the corpus is NOT narrowed to the game yet:** on aeon 559b8910, demo release, analysing only
+    `engine.*` + `games.demo.*` leaves `Sfx_BeginSound`'s comptime condition on `SFXID_REV_LOOP` (a sonic4 id)
+    unresolved, so the gate goes blind (`[comptime.unresolved]` 1). That is G0B-DESCRIBE-TASK2-RESIDUE item 3's
+    Task 9 work, and the reason `closure_baseline` carries the other-games rule until then.
+  - **Proof:** `crates/sigil-cli/tests/project_contract_gate.rs` (8 tests, a two-game fixture whose baselines fit
+    its corpus, so the exit code is the verdict: a planted clobber is refused with the same located line on
+    `--project` and `--aeon`; a dropped other-game row is NEW; a stale game row is GONE; another game's row on an
+    engine proc does not join). `descriptions_agree_with_rust` compares `closure_baseline`'s result with the Rust
+    tables on all 10 shapes (its hardcoded demo union is gone). The comparison job gains `gate=` (both logs carry
+    the pass line), `report=` (identical `--report contracts` censuses) and `check=` (identical `checked:`
+    counts) columns, held by `driver_comparison`; its declared delta now also lists the files the project gate
+    reads (the engine's and the game's baseline.toml, every other games/*/game.toml and its baseline.toml).
+  - The warn-tier view needed nothing more: `report_warnings` already ran on both paths.
 - **Closed by Task 7:** `--project` now writes the listing (`--emit-lst`, with its source digest) and the
   `<stem>.build.json` export (unless `--no-build-json`) through the SAME writer as `--aeon`
   (`write_build_artifacts`; each driver supplies a `BuildIdentity`). The `engine/debug/generated/` item below is
   handled by the comparison job, which produces the blobs in each clone with `tools/gen_compression_vectors.py`.
-- **Still open, ruled as Task 8's step 0 (not Task 7's):** the CONTRACT GATE (`run_contract_gate`) does not run on
+- **(History) Still open after Task 7, ruled as Task 8's step 0:** the CONTRACT GATE (`run_contract_gate`) does not run on
   `--project`. It is keyed to the legacy `BuildTarget`/`GameProfile` (`corpus_closure_or_exit`, `diff_d1c(profile)`,
   baselines from `contract_baseline.rs`), so a `build.sh` arm switched to `--project` would ship builds no closure gate
   checked. It does not affect the comparison (its reads were already in the old read set; the listings agree on every
@@ -2502,7 +2528,10 @@ until its row is removed.
 - Booked consumers (not implemented here):
   - **aeon `tools/gate_cut_shape.py`** treats `target == game` as "canonical build"; with `target=release` its rename
     guard would SILENTLY stop firing. Re-key it on (game, target), accepting both spellings until Task 10, in Task 8's
-    paired aeon change. (`tools/leg_provenance.py` records `target` but needs no code change.)
+    paired aeon change. (`tools/leg_provenance.py` records `target` but needs no code change.) **DONE in Task 8**
+    (aeon `feat/g0b-descriptions`, `canonical_build_ids`, red-first on 4 rename rows); dropping the old spelling at
+    Task 10 is booked in aeon DEFERRED_WORK G0B-DEMO-CUTOVER-RESIDUE item 2, beside the six aeon tools that still
+    build demo with `--game demo` (item 3).
   - **Oracle** re-pins `fixtures/g0a/s4.trim.build.json` and `crates/oracle-aether/tests/build_export_real.rs` at
     Task 10 (the export's `shape.shape` becomes the row name).
   - **Task 11** checks whether any golden pins a listing (the DIGEST-SHAPE `target=` and read rows change at cutover).
