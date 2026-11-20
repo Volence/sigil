@@ -136,6 +136,11 @@ SOURCE_GATES=(
     # header fields, anchors). Source only: real builds, no committed artifact, golden, ROM
     # or listing is read (crates/sigil-harness).
     game_as_data_driver
+    # G0b Task 7: the comparison job. Every described shape is built by both drivers
+    # (`--legacy --aeon` and `--project`) from two clones of the reference tree's HEAD, and
+    # the ROM, the `.lst` and the G0a export are compared between them. Source only: no
+    # committed artifact, golden, ROM or listing is read (crates/sigil-cli).
+    driver_comparison
     # G0b Task 6: a build writes nothing into the tree it builds. Clones the reference
     # tree's HEAD and runs `sigil build --check`, two full builds and two `--project`
     # builds over it, asserting `git status --ignored` and every file's length and mtime
