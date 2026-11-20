@@ -102,8 +102,12 @@ pub fn with_generated_root<T, E: From<String>>(checkout: &Path, f: impl FnOnce(&
         }
     }
     let dir = BuildDir::create().map_err(E::from)?;
-    let _root = generated_root::enter(dir.root_for(checkout).map_err(E::from)?);
-    f(dir.generated())
+    let root = dir.root_for(checkout).map_err(E::from)?;
+    // The directory handed to `f` is the one the root resolves embeds into, so the seams'
+    // writes and the lowering's reads cannot name two places.
+    let generated = root.dir.clone();
+    let _root = generated_root::enter(root);
+    f(&generated)
 }
 
 #[cfg(test)]
