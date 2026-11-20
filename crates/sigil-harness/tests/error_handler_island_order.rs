@@ -28,10 +28,11 @@
 
 use sigil_harness::native::{self, ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN};
 
-/// The appendix size floor these synthetic listings are measured with: sonic4's
-/// `game.toml` `appendix_floor` (0x2000). It is the probe's own parameter, not a fact
-/// read from a tree (the profile-driven driver's `SONIC4_APPENDIX_FLOOR` is deleted).
-const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
+/// The appendix size floor these synthetic listings are measured with. It is the probe's
+/// own parameter, not a fact read from a tree (a shipped game states its floor as
+/// `game.toml` `appendix_floor`; the profile-driven driver's per-game Rust constants are
+/// deleted, G0b Task 11).
+const APPENDIX_FLOOR: usize = 0x2000;
 use sigil_link::ListingSymbol;
 use std::path::Path;
 
@@ -68,7 +69,7 @@ fn appendix_starting_at(
         &rom,
         listing,
         false,
-        SONIC4_APPENDIX_FLOOR,
+        APPENDIX_FLOOR,
         expect_island,
     )
 }

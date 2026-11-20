@@ -739,7 +739,7 @@ fn missing_conditional_out_violates() {
 // site fires `[proc.clobber-undeclared]` on every engine contract written against
 // the narrowed answer, and each of those is a correction the flip has to pay for.
 // How many there are today is a measurement that grows with the engine, so read it
-// with `sigil build --aeon <tree> --report indirect-cost` rather than recording it
+// with `sigil build --project <game> --shape <row> --report indirect-cost` rather than recording it
 // here. So the policy is chosen per consumer, and these tests pin that both
 // readings exist and genuinely differ.
 

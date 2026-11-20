@@ -1068,7 +1068,7 @@ fn the_generated_entry_module_is_not_reported() {
 ///
 /// NOT VACUOUS, and nothing else covers this: every other gate here calls
 /// `build_emp` and reads `EmpProgram::warnings` directly, so all of them stay green
-/// if the `report_warnings` call in `run_build_native` is deleted. This drives the
+/// if the `report_warnings` call on the build path is deleted. This drives the
 /// real binary and reads its real stderr, which is the only thing that can tell the
 /// difference between a collected warn tier and a REPORTED one.
 ///

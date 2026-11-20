@@ -135,7 +135,7 @@ fn act_sec_supply_from(aeon: &std::path::Path) -> Result<Vec<(String, String)>, 
 ///
 /// `engine.structs` owns these layouts, and the real build injects them as the
 /// struct-offset harvest of the tree it builds
-/// ([`crate::native::harvest_engine_struct_offsets`]). This supply is that harvest
+/// ([`crate::shapes::engine_struct_offsets`]). This supply is that harvest
 /// over [`aeon_dir`], restricted to these four structs, so a standalone gate resolves
 /// each name to the value the build of the same tree would. A port gate reads its
 /// `.emp` sources and its reference ROM from that same tree, so the offsets supplied,
@@ -282,14 +282,13 @@ pub fn game_contract_env(
 // Everything below is DERIVED, nothing named twice:
 //
 //   * the interface is aeon's own `engine/system/game_contract.emp`;
-//   * the `implement` is the profile's own manifest, at the path
-//     [`GameProfile::game_root_rel`]'s directory + `config/game.emp` — the
-//     `map_path` / `reference_tree_for_profile` derivation, one file over;
+//   * the `implement` is the game's own manifest, at its game directory +
+//     `config/game.emp` (the shape's `game_dir`, one file over from its map);
 //   * the manifest's imports (`use games.<g>.constants.{…}`) are followed to
 //     their own files and supplied as the bind ambient, so a binding whose value
 //     is an imported const (`const ENTRY_ID = GS_OJZ_SCROLL_TEST`) folds;
-//   * the parsed manifest's module id is checked against the profile's declared
-//     [`GameProfile::manifest_module`], so a moved/renamed manifest is loud
+//   * the parsed manifest's module id is checked against the game's declared
+//     manifest module, so a moved/renamed manifest is loud
 //     rather than a quietly different file.
 //
 // SCOPE. This binds MEMBERS, not bodies: the bound procs/hooks live in the game's
@@ -1634,15 +1633,6 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
 ///
 /// Skip/panic semantics are [`reference_tree`]'s: skip green when a path is absent,
 /// panic naming it under `SIGIL_STRICT_GATE=1`.
-/// Transitional (G0b Task 11): the profile-driven form of [`reference_tree_for_shape`],
-/// deleted with the profiles.
-pub fn reference_tree_for_profile(profile: &crate::native::GameProfile) -> Option<PathBuf> {
-    let root = std::path::Path::new(profile.game_root_rel);
-    let map = root.parent().unwrap_or(std::path::Path::new("")).join("map.toml");
-    let map = map.to_str().expect("game_root_rel is UTF-8");
-    reference_tree(&[profile.game_root_rel, map])
-}
-
 pub fn reference_tree_for_shape(shape: &crate::shapes::Shape) -> Option<PathBuf> {
     let desc = format!("games/{}/game.toml", shape.game);
     reference_tree(&[desc.as_str()])

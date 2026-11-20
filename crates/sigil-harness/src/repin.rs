@@ -9,7 +9,7 @@
 //! 2026-07-10-tranche10-repin-design.md` (D-T10.1..D-T10.9).
 //!
 //! ADDRESS SOURCE (Stage-3 P4c, kill-list row 34): the addresses come from
-//! SIGIL'S OWN resolved layout (`native::sigil_native_symbol_listing` — the
+//! SIGIL'S OWN resolved layout (`symbol_listing_of` — the
 //! fully-resolved symbol table: labels + folded equates incl. `MDDBG__*`, `.emp`
 //! locals demangled, section-END markers synthesized), NOT an asl `.lst`. The
 //! `Listing` is now a plain `name → address` map built via
@@ -47,7 +47,7 @@ pub struct Listing {
     /// ends ([`Listing::pad_past_content`]). Empty unless attached via
     /// [`Listing::with_sections`].
     sections: Vec<SectionExtent>,
-    /// Which ROM section DEFINES each label (parcel R6, `native::section_label_owners`).
+    /// Which ROM section DEFINES each label (parcel R6, `section_label_owners_of`).
     /// The address cannot tell a region's own end from a successor's head label that
     /// happens to sit flush against it; ownership can. Empty unless attached via
     /// [`Listing::with_label_owners`], and an empty map means the check is skipped —
@@ -77,14 +77,14 @@ impl Listing {
         }
     }
 
-    /// Attach the placed section table (REPIN-END, `native::section_extents`). Enables
+    /// Attach the placed section table (REPIN-END, `section_extents_of`). Enables
     /// the `section:<name>` boundary spelling and the bare-label pad warning.
     pub fn with_sections(mut self, sections: Vec<SectionExtent>) -> Listing {
         self.sections = sections;
         self
     }
 
-    /// Attach the label→owning-section map (parcel R6, `native::section_label_owners`).
+    /// Attach the label→owning-section map (parcel R6, `section_label_owners_of`).
     /// Enables the flush-neighbour check in `judge_end`; without it that check is skipped
     /// and only the pad check runs (exactly the pre-R6 reach).
     pub fn with_label_owners(mut self, owners: HashMap<String, String>) -> Listing {
@@ -98,7 +98,7 @@ impl Listing {
         self.label_owners.get(name).map(String::as_str)
     }
 
-    /// Attach the phase-bank label LMA map (T4, `native::phase_bank_lmas`). A
+    /// Attach the phase-bank label LMA map (T4, `phase_bank_lmas_of`). A
     /// `phase_bank` region's base resolves against this map (the LMA) instead of the
     /// VMA `symbols` carries.
     pub fn with_phase_lma(mut self, phase_lma: HashMap<String, u32>) -> Listing {
@@ -580,9 +580,9 @@ pub fn upper_snake(name: &str) -> String {
 /// WHICH INSTRUMENT EACH HALF USES, stated because a gate that asks the same resolver
 /// the pin file asked cannot notice that resolver being wrong (R7's lesson):
 /// - the window `[lo, hi)` comes from the SYMBOL listing (`Listing::region_start` /
-///   `region_end` over `native::sigil_native_symbol_listing`);
+///   `region_end` over `symbol_listing_of`);
 /// - the content extent comes from the SECTION TABLE of the resolved layout the ROM is
-///   emitted from (`native::section_extents` → `resolve_canonical_sections`).
+///   emitted from (`section_extents_of` over the resolved layout).
 ///
 /// Those are two derivations, so a symbol address that disagrees with the section
 /// geometry is visible here. What NEITHER half can catch is a wrong resolve — both come
@@ -613,7 +613,7 @@ fn judge_end(
         // is the successor's placement and moves with it — the same contract as a padded
         // end, wearing better clothes. Refuse it undeclared, exactly as the padded case.
         // Skipped when no ownership map is attached (the pre-R6 reach) or when the name
-        // is ambiguously owned (`native::section_label_owners` drops those, so an
+        // is ambiguously owned (`section_label_owners_of` drops those, so an
         // unknown name is never read as a match).
         PadVerdict::Exact { section }
             if listing.label_owner(spec).is_some_and(|owner| owner != section) =>
@@ -1987,7 +1987,7 @@ per_shape = true
         // VMA — only the phase-bank label rebases.
         let base_syms = &[("SoundTablesZ80_Head", 0x8000u32), ("Foo", 0x1234u32)];
         // The phase-bank LMA map carries the LOAD address ($58000) for the phase label
-        // ONLY (native::phase_bank_lmas populates only vma!=lma bank sections).
+        // ONLY (phase_bank_lmas_of populates only vma!=lma bank sections).
         let phase: HashMap<String, u32> =
             [("SoundTablesZ80_Head".to_string(), 0x58000u32)].into_iter().collect();
         let plain = test_listing(base_syms, 0x60000).with_phase_lma(phase.clone());

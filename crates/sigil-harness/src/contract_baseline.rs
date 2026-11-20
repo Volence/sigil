@@ -1,11 +1,13 @@
-//! The FROZEN contract-closure baselines — one copy, read by both the CI gates
-//! and the build-integrated closure gate.
+//! The contract-closure baseline diff, one copy, run by both the build-integrated
+//! closure gate and the CI gates.
 //!
-//! **Why this module exists at all.** A frozen baseline that is written down
-//! twice forks: one copy is updated when a firing is adjudicated, the other is
-//! not, and from then on the two halves disagree about what the corpus is
-//! allowed to do. The build gate and the corpus tests therefore read the SAME
-//! constants from here — neither owns a copy.
+//! **Where the rows live.** In the descriptions: the `baseline.toml` files the engine and
+//! game descriptions name, unioned per shape by `sigil_build::baseline::closure_baseline`
+//! (G0b). The constant tables that used to sit here, and the profile reading that picked
+//! a shape's family rows out of them (`is_demo_family`, `for_profile`), were deleted with
+//! the profile-driven driver (G0b Task 11). This module keeps the half that is not a
+//! fact about any game: the [`ShapeBaseline`] the gate diffs against, the multiset diff,
+//! and the one adjudication wording.
 //!
 //! **What a baseline means.** These are not lists of bugs. They are the corpus's
 //! standing residue at freeze time, split by the ruling into two buckets that the
@@ -21,301 +23,6 @@
 //! sets, so a gained or lost duplicate at a second call site is visible.
 
 use std::collections::BTreeMap;
-
-/// `[proc.out-unverified]` for `(cpu: z80)` procs (§G4.5, the Z80 unit-domain
-/// twin): a Z80 proc declares `out(rN)` but the production dataflow cannot prove
-/// `rN` (a register UNIT) is written on every required return path.
-///
-/// EVERY ROW IS ONE CLASS — a CARRY-CONDITIONAL RESULT. Each firing names a
-/// register that is a valid result ONLY on the callee's carry-CLEAR (success)
-/// edge: produced there (`… / or a / ret`), and left unproduced on the carry-SET
-/// (failure) edge (`scf / ret`), which the caller does not read. The declaration
-/// pairs the register out with a `out(carry: NAME)` flag result that IS the
-/// register's validity signal — and the caller-side `[call.flag-result-unused]`
-/// gate proves every caller consumes that carry before touching the register.
-///
-/// The register is declared UNCONDITIONALLY (`out(iy)`, `out(de)`, …) rather than
-/// as the honest conditional form `out(rN if nc)`, because the Z80 conditional
-/// REGISTER out is represented-not-wired (unlike the 68k `out(rN if cc)`, which is
-/// modeled). So the production check — reading the declaration as written — cannot
-/// see the conditional edge and correctly reports the register unproduced on the
-/// failure path. These are verifier-model / contract-precision gaps, NOT dishonest
-/// declarations: none is a register never written on ANY path (each IS produced on
-/// its success edge), so there is no byte-neutral aeon fix that is not a narrowing
-/// of a true contract. KILL CONDITION: wiring the Z80 `out(rN if cc)` form (so the
-/// declaration can name the carry edge) closes every row here at once.
-///
-/// A SEPARATE array from [`OUT_UNVERIFIED_BASELINE`], never merged into it: the
-/// 68k residue is keyed by `dN`/`aN` and carries a width facet; the Z80 residue is
-/// keyed by the 8-bit/index UNITS (`h`/`l`/`a`/`ix`/…) an `out(hl)` expands to and
-/// has no width. One flat array, because a Z80 out is a DECLARATION (not
-/// comptime-gated), so its residue is the SAME set on every shipped shape — the
-/// closure gate walks all seven and the diff must hold for each. The non-vacuity
-/// census (`z80_out_claims`) proves the gate ranged over the real out declarations
-/// rather than passing because the walk saw nothing.
-pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
-    ("Sfx_MusicChanPtr", "iy"),
-    ("Sfx_ResolveBlob", "d"),
-    ("Sfx_ResolveBlob", "e"),
-    ("Sfx_SelectVoice", "d"),
-    ("Snd_DacLookup", "h"),
-    ("Snd_DacLookup", "l"),
-];
-
-/// `[proc.out-unverified]` (§G4.5): a proc declares `out(rN)` but the closure
-/// cannot prove `rN` is produced on every required return path.
-///
-/// SHAPE-INVARIANT, unlike [`D1C_BASELINE`] — measured on every one of the seven
-/// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
-/// copy; do not flatten a real per-family difference into one array.
-///
-/// EMPTY: every declared 68k register `out` in the corpus verifies — proven
-/// produced, at its declared width, on every required return path. The array is the
-/// live gate surface: a firing that appears here is a NEW violation and fails the
-/// closure gate, and an entry added with no corresponding corpus firing is a stale
-/// pin that also fails.
-///
-/// A row would land here only for a register a proc CLAIMS to produce (`out`) but
-/// does not produce on some return path. Three kinds of near-miss belong to OTHER
-/// mechanisms and are prevented from accumulating here, by construction, not by
-/// pinning:
-///
-/// - a register produced too NARROW is a `out(dN: T)` width claim, charged at the
-///   type's width — not a missing production;
-/// - a register a proc THREADS (provides at entry, hands back at exit) rather than
-///   produces is the `inout` facet, whose residue is [`INOUT_UNVERIFIED_BASELINE`];
-/// - a register produced through a local `bsr` to a shared helper is credited by the
-///   cross-proc credit model, so it is produced, not unproven.
-///
-/// Which of the four residues (`out`, `out(dN: T)` width, `inout`, and the Z80 unit
-/// domain) a firing belongs to is measured as a SET DIFF against its own baseline,
-/// never classified by eye. This array holding at EMPTY is the strongest form of
-/// that guard: any non-empty diff is a real regression.
-pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
-
-/// `[proc.inout-unverified]` — a proc declares `inout(rN)` but the body leaves rN
-/// BROKEN on some exit path: a write narrower than the declared width, a clobbering
-/// or conditional-out callee, or an unknown callee. Unlike `out`, PASS-THROUGH (no
-/// write) is contract-valid — the caller's entry value is a meaningful exit value —
-/// so an unwritten path never fires.
-///
-/// EMPTY. The array is the live gate surface with the same ratchet as
-/// [`OUT_UNVERIFIED_BASELINE`]: a new firing is a NEW violation, an unfounded entry
-/// a stale pin. A register whose exit value is not meaningful under the declared
-/// width — a sub-width write blending with the entry bytes — is the one thing that
-/// populates it.
-pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
-
-/// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a
-/// value in a register across a call whose callee destroys it.
-///
-/// D1c is shape-DEPENDENT and this constant is only half the pin. The debug
-/// family assembles debug-only code that the plain family never sees, so it
-/// carries [`D1C_DEBUG_EXTRA`] on top. This is the `warn_tier_corpus` shape
-/// exactly — a shape-invariant set plus a per-family addition — and it exists
-/// because one flat baseline is WRONG here, not merely coarse: measured, the
-/// plain family fires 20 and the debug family 25.
-///
-/// Two rows are DOCUMENTED false positives of one class — D1c's close is
-/// edge-blind, so a register read that is really a conditional callee's PRODUCED
-/// value on the success edge looks like a destroyed held value. They are
-/// `TileCache_FillRow @ TileCache_FindStagedBlock :: a1` and `Load_Object @
-/// AllocDynamic :: a1`; `calls.rs`'s `destroys_value` header carries the per-site
-/// reasoning. An edge-precise D1c would dissolve the class.
-///
-/// A SECOND documented FP class, six rows, all on the player sensors: the callee
-/// returns its result in `d0` (and `d1` for an angle) and declares NO `out(...)`,
-/// so the post-call read of that register is the callee's PRODUCT and D1c, reading
-/// the declaration, can only see a clobbered held value. `Player_SensorFloor`'s
-/// prose header states the convention (`Out: d0.w dist, d1.b angle, d2.b attr`
-/// against `clobbers(d0-d7/a1-a2)`) and `Player_SensorCeiling` says "same
-/// contract". The `Ground_Move_Cap @ Player_SensorWallDir :: d0`, `PState_Spindash
-/// @ Player_SensorFloor :: d0/d1` and `TestPlayer_Main @ Player_SensorFloor ::
-/// d0/d2` rows here are the same class, already frozen. KILL CONDITION: declaring
-/// the sensors' real `out(...)` surface in aeon dissolves all of them at once, and
-/// it is an aeon contract change, not a sigil one.
-pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
-    // Adjudicated (aeon character-dispatch C2, Tails' flight): these three rows
-    // were `PState_AirShared @ …` verbatim. The air body's angle-decay +
-    // collision-by-motion-class tail was factored into `Air_Collide` so
-    // PState_Fly could share it — the wall-probe call sites and the d1/d4 held
-    // values around them are UNCHANGED byte for byte, only the enclosing proc's
-    // name moved. Same edge-blind close as the other documented FPs: d4 is the
-    // probes' PRODUCED hit flag on the taken edge, not a destroyed held value.
-    ("Air_Collide", "Air_WallProbeLeft", "d4"),
-    ("Air_Collide", "Air_WallProbeRight", "d4"),
-    // MOVED, 2026-09-09, with the `falls_into` closure edge (parcel
-    // CLOSURE-MISSES-FALLS-INTO-EDGE). The row used to read
-    // `Air_Collide @ Air_WallProbeRight :: d1` and it is the same d1, the same
-    // definition and the same READ; only the call charged for it moved, to the
-    // LATER call on the one path that reaches the read. `Air_Collide`'s d1 is
-    // defined at `move.w d3, d1` (the |x_vel| compare input); in `.mostly_up` the
-    // only read of d1 after any `Air_WallProbeRight` call is `move.b d1, d3` (the
-    // ceiling angle), and the sole path to it runs through `jbsr
-    // Player_SensorCeiling`. That callee now carries d1 in its effective set (it
-    // falls into `Player_SensorSurface`, which writes d0-d5), so D1c's forward walk
-    // stops there: the value the read observes is the SENSOR's angle, produced two
-    // instructions earlier, not the wall probe's victim. `Air_Collide :: d1` is
-    // therefore one row before and one row after: the multiset count for that
-    // (proc, register) is unchanged, and the callee column is now the call that
-    // actually destroys and reproduces it.
-    ("Air_Collide", "Player_SensorCeiling", "d0"),
-    ("Air_Collide", "Player_SensorCeiling", "d1"),
-    // NEW, 2026-09-09, same parcel and same undeclared-out class as the sensor rows
-    // described above. `Air_WallProbe{Left,Right}` load the probe point into d0
-    // (`move.w x_pos(a0), d0` ± PUSH_RADIUS, an undeclared INPUT), call
-    // `Player_SensorWallAt`, then `tst.w d0` on the returned DISTANCE, which the
-    // proc's own header documents as `Out: d0.w dist`. The rows appear now because
-    // `Player_SensorWallAt`'s body is three instructions and a fall-through: until
-    // the edge was modelled its effective set read `{d2}`, so no caller could be
-    // charged anything it destroys. Its successor `Player_SensorWallDir` carries
-    // `a1/d0-d6`, which the declaration of BOTH halves already states.
-    ("Air_WallProbeLeft", "Player_SensorWallAt", "d0"),
-    ("Air_WallProbeRight", "Player_SensorWallAt", "d0"),
-    ("CreateChild_Complex", "AllocDynamic", "a1"),
-    ("CreateChild_FlipAware", "AllocDynamic", "a1"),
-    ("CreateChild_Linked", "AllocDynamic", "a1"),
-    ("CreateChild_Normal", "AllocDynamic", "a1"),
-    ("CreateEffect_Normal", "AllocEffect", "a1"),
-    ("CreateEffect_Simple", "AllocEffect", "a1"),
-    ("GameState_ObjectTestChurn_Init", "AllocDynamic", "a1"),
-    ("GameState_ObjectTest_Init", "AllocDynamic", "a1"),
-    ("Ground_Move_Cap", "Player_SensorWallDir", "d0"),
-    // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
-    ("Load_Object", "AllocDynamic", "a1"),
-    // DOCUMENTED FP (Knuckles C4 Task 11): PState_Climb calls Climb_WallDist at two
-    // sites (climbing up, climbing down), and at each the d0 the coarse walk sees
-    // "live" is DEAD — its last pre-call write is the latch-drift compare at the top,
-    // and the post-call `cmpi d0` reads Climb_WallDist's PRODUCED wall distance. Listed
-    // twice for the two call sites (the multiset count). Same close as PState_GlideFall.
-    ("PState_Climb", "Climb_WallDist", "d0"),
-    ("PState_Climb", "Climb_WallDist", "d0"),
-    // DOCUMENTED FP (Knuckles C4 Task 10): PState_GlideFall stores the capped
-    // gravity value to y_vel BEFORE calling Glide_Collide, so the d0 the coarse
-    // build-side walk sees "live" across the call is DEAD — the post-call `btst d0`
-    // reads Glide_Collide's PRODUCED flags byte (word-width stack pop), not the
-    // gravity value. Same edge-blind close as the Air_Collide/Air_WallProbe rows.
-    ("PState_GlideFall", "Glide_Collide", "d0"),
-    // NEW, 2026-09-09 (`falls_into` closure edge), and the SAME undeclared-out class
-    // as `PState_Spindash @ Player_SensorFloor :: d0` directly below: both jump
-    // gates read `cmpi.w #PHYS_JUMP_HEADROOM, d0` immediately after `jbsr
-    // Player_SensorCeiling`, so the d0 charged as a destroyed held value is the
-    // sensor's produced CLEARANCE. The ceiling twin was invisible while its
-    // effective set read `{d6,d7}`: its three-instruction body sets the class mask
-    // and quadrant and falls into `Player_SensorSurface`, which does the work. The
-    // FLOOR twin, spelling the identical transfer as `jbra Player_SensorSurface`,
-    // has fired all along: that asymmetry between two spellings of one transfer is
-    // what this parcel removed.
-    ("PState_Ground", "Player_SensorCeiling", "d0"),
-    ("PState_Roll", "Player_SensorCeiling", "d0"),
-    ("PState_Spindash", "Player_SensorFloor", "d0"),
-    ("PState_Spindash", "Player_SensorFloor", "d1"),
-    ("Parallax_Update", "Decode_Factor_A", "d2"),
-    // MOVED TO `D1C_DEMO_EXTRA` 2026-09-02, paired with aeon's band-drift ADOPTION
-    // (EFFECTS-W1 item 3, aeon branch `parcel/drift-on`). The `Decode_Factor_B` row
-    // stopped being shape-INVARIANT the moment one shipped game declared
-    // `CAP_BAND_DRIFT` and the other did not — see that constant for the whole
-    // adjudication. The `Decode_Factor_A` twin above stays here, and the asymmetry is
-    // real rather than an oversight: nothing was inserted after THAT call, so it fires
-    // on every shape.
-    ("TestPlayer_Main", "Player_SensorFloor", "d0"),
-    ("TestPlayer_Main", "Player_SensorFloor", "d2"),
-    // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
-    ("TileCache_FillRow", "TileCache_FindStagedBlock", "a1"),
-];
-
-/// The D1c rows that only the DEBUG family produces — debug-gated code the plain
-/// shapes do not assemble. `Input_Tick @ Replay_Hash :: d0` appears TWICE on
-/// purpose: `Replay_Hash` is called at two sites in `Input_Tick` (the checkpoint
-/// compare and the record path), and the multiset diff is what keeps the second
-/// one visible.
-pub const D1C_DEBUG_EXTRA: &[(&str, &str, &str)] = &[
-    ("Collected_UpdateCenter", "Collected_ParkSlot", "d2"),
-    ("EntityWindow_RescanY", "EntityWindow_RescanRings", "d5"),
-    ("EntityWindow_Scan", "EntityWindow_ScanRingsRight", "d5"),
-    ("Input_Tick", "Replay_Hash", "d0"),
-    ("Input_Tick", "Replay_Hash", "d0"),
-];
-
-/// The D1c rows that only the DEMO game produces — a SECOND family axis, added
-/// 2026-09-02 alongside aeon's band-drift adoption (EFFECTS-W1 item 3).
-///
-/// **Why a game axis exists at all, stated as the measurement rather than as a
-/// rule.** Both shipped games compile the same `engine/level/parallax.emp`, but
-/// `Parallax_Update` carries a body gated on `Game.SCANLINE_CAPS & CAP_BAND_DRIFT`.
-/// sonic4 declares that bit (`$00DE`) and demo does not (`0`), so the two games
-/// assemble DIFFERENT instruction streams for one proc — exactly the condition
-/// [`D1C_DEBUG_EXTRA`] exists for, one axis over.
-///
-/// **The row, adjudicated.** `Parallax_Update @ Decode_Factor_B :: d2`. With the
-/// capability declared, the first instruction after `jbsr Decode_Factor_B` is
-/// `add.w (a4), d2` — folding the band's drift accumulator into the scroll word —
-/// and d2 is that callee's declared OUTPUT, so the close reads it as the produced
-/// value and does not fire. With the capability clear that instruction is elided,
-/// the next d2 read is further down, and the coarse walk classifies d2 as a held
-/// value across the call and fires. Demo is therefore the shape that keeps the pin.
-///
-/// **What this is NOT.** It is not coverage lost on sonic4. There is no
-/// held-across-the-call value at that site under the capability, so the row's
-/// absence there is the analysis agreeing with the proc contract, not a narrowed
-/// close. GONE is normally the loud direction (the same closure feeds
-/// `find_dead_saves`), which is why the row was MOVED with a reason written at it
-/// rather than deleted or the test widened.
-///
-/// **Predicted before it was measured**, in aeon
-/// `docs/benchmarks/scanline-p4/BAND-DRIFT.md` §6 (2026-08-29, off a staged
-/// instrument build) — which named this file as the thing that must move with the
-/// adoption. What §6 did NOT foresee is that the answer is a SPLIT and not a
-/// deletion: it was measured on a sonic4-only instrument, so it never saw demo's
-/// arm. Deleting the row outright builds sonic4 green and fails both demo shapes
-/// with the same row as a NEW firing — which is how this axis was found.
-pub const D1C_DEMO_EXTRA: &[(&str, &str, &str)] = &[
-    ("Parallax_Update", "Decode_Factor_B", "d2"),
-];
-
-/// The D1c baseline for a shape: invariant rows, plus the per-family additions.
-///
-/// TWO family axes, and they are independent: the DEBUG family assembles
-/// debug-gated code the plain shapes never see, and the DEMO game assembles a
-/// capability-gated arm sonic4's shapes never see. A shape can be both.
-///
-/// `[proc.out-unverified]` needs no such split — measured shape by shape, it
-/// fires the SAME set on every one of the seven targets, so
-/// [`OUT_UNVERIFIED_BASELINE`] is flat. The count is not restated here: the array
-/// is the one authority, and a number written down twice is the fork this
-/// module's preamble exists to prevent.
-pub fn d1c_baseline(
-    debug_family: bool,
-    demo_family: bool,
-) -> Vec<(&'static str, &'static str, &'static str)> {
-    let mut rows: Vec<_> = D1C_BASELINE.to_vec();
-    if debug_family {
-        rows.extend_from_slice(D1C_DEBUG_EXTRA);
-    }
-    if demo_family {
-        rows.extend_from_slice(D1C_DEMO_EXTRA);
-    }
-    // Sorted, so the combined baseline stays comparable to the analysis's own
-    // sort order — appending the debug rows after the invariant ones would
-    // otherwise foreclose an order pin for the debug family.
-    rows.sort_unstable();
-    rows
-}
-
-/// Is this profile the DEMO game, for [`d1c_baseline`]'s second axis?
-///
-/// KEYED ON THE MANIFEST MODULE, NOT ON `name`. The axis is really "which game's
-/// `Game.SCANLINE_CAPS` does this shape compile against", and the manifest module
-/// is the thing that declares it. `name` would be wrong by construction: the
-/// `config_a` / `config_b` / `lean` / `stress_*` profiles carry their own names
-/// and sonic4's manifest, so a name test would have to enumerate them and would
-/// silently mis-classify the next one someone adds.
-///
-/// One key, in one place, called by both gates — the same anti-fork rule this
-/// module's preamble states for the baselines themselves.
-pub fn is_demo_family(profile: &crate::native::GameProfile) -> bool {
-    profile.manifest_module == "games.demo.game"
-}
 
 /// A baseline comparison result. Empty `added` and `removed` is the pass.
 #[derive(Debug, Default)]
@@ -365,14 +72,9 @@ fn diff_multiset(got: Vec<String>, want: Vec<String>) -> BaselineDiff {
     }
 }
 
-/// The frozen rows ONE shape's closure gate diffs against, whoever supplies them.
-///
-/// Two suppliers, one diff. The profile-driven driver takes the constants above
-/// ([`ShapeBaseline::for_profile`]); the game-as-data driver (G0b) reads the
-/// `baseline.toml` files its engine and game descriptions name and unions them
-/// (sigil-cli `project_subject`, via `sigil_build::baseline::closure_baseline`). Either way the gate calls the SAME diff
-/// methods below, so the two drivers cannot grow two meanings of "moved against the
-/// baseline".
+/// The frozen rows ONE shape's closure gate diffs against: the `baseline.toml` rows its
+/// engine and game descriptions name, unioned (sigil-cli `project_subject`, via
+/// `sigil_build::baseline::closure_baseline`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ShapeBaseline {
     /// `[proc.out-unverified]` for Z80 procs: `(proc, unit)`.
@@ -384,34 +86,12 @@ pub struct ShapeBaseline {
     /// `[call.live-clobbered]` for this shape, its family rows already added:
     /// `(caller, callee, register)`, a multiset.
     pub d1c: Vec<(String, String, String)>,
-    /// Where an adjudicated row is written, named by [`adjudication_message_in`]:
-    /// this file for the constants, the description files for a game-as-data shape.
+    /// Where an adjudicated row is written, named by [`adjudication_message_in`]: the
+    /// description files the rows came from.
     pub home: String,
 }
 
-fn owned2(rows: &[(&str, &str)]) -> Vec<(String, String)> {
-    rows.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
-}
-
 impl ShapeBaseline {
-    /// Where the constants live: the `home` of [`ShapeBaseline::for_profile`].
-    pub const CONSTANTS_HOME: &'static str = "crates/sigil-harness/src/contract_baseline.rs";
-
-    /// The constants' baseline for a profile-driven shape: both D1c family axes
-    /// derived from the profile ([`d1c_baseline`], [`is_demo_family`]).
-    pub fn for_profile(profile: &crate::native::GameProfile) -> ShapeBaseline {
-        ShapeBaseline {
-            z80_out_unverified: owned2(Z80_OUT_UNVERIFIED_BASELINE),
-            out_unverified: owned2(OUT_UNVERIFIED_BASELINE),
-            inout_unverified: owned2(INOUT_UNVERIFIED_BASELINE),
-            d1c: d1c_baseline(profile.debug, is_demo_family(profile))
-                .into_iter()
-                .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
-                .collect(),
-            home: Self::CONSTANTS_HOME.to_string(),
-        }
-    }
-
     /// Diff `[proc.out-unverified]` (68000) firings.
     pub fn diff_out_unverified(&self, got: &[(String, String)]) -> BaselineDiff {
         diff_pairs(got, &self.out_unverified, "out")
@@ -440,38 +120,9 @@ fn diff_pairs(got: &[(String, String)], want: &[(String, String)], facet: &str) 
     diff_multiset(got.iter().map(key).collect(), want.iter().map(key).collect())
 }
 
-/// Diff the corpus's `[proc.out-unverified]` firings against the frozen baseline.
-pub fn diff_out_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_pairs(got, &owned2(OUT_UNVERIFIED_BASELINE), "out")
-}
-
-/// Diff the corpus's Z80 `[proc.out-unverified]` firings against the frozen Z80
-/// baseline. Its OWN diff fn against its OWN array — never folded into
-/// [`diff_out_unverified`], so a Z80 row and a 68k row can never masquerade for
-/// each other in a multiset that spans both key spaces.
-pub fn diff_z80_out_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_pairs(got, &owned2(Z80_OUT_UNVERIFIED_BASELINE), "out")
-}
-
-/// Diff the corpus's `[proc.inout-unverified]` firings against the frozen baseline.
-pub fn diff_inout_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_pairs(got, &owned2(INOUT_UNVERIFIED_BASELINE), "inout")
-}
-
-/// Diff the corpus's `[call.live-clobbered]` firings against the frozen baseline
-/// for that shape's family.
-pub fn diff_d1c(got: &[(String, String, String)], profile: &crate::native::GameProfile) -> BaselineDiff {
-    ShapeBaseline::for_profile(profile).diff_d1c(got)
-}
-
-/// The adjudication instruction every gate prints on a mismatch. One wording, so
+/// The adjudication instruction every gate prints on a mismatch, naming `home` as where
+/// the baseline is updated (the descriptions' `baseline.toml` files). One wording, so
 /// the build gate and the CI gate cannot drift into telling different stories.
-pub fn adjudication_message(family: &str, d: &BaselineDiff) -> String {
-    adjudication_message_in(family, d, ShapeBaseline::CONSTANTS_HOME)
-}
-
-/// [`adjudication_message`], naming `home` as where the baseline is updated (a
-/// game-as-data shape's rows live in its descriptions' `baseline.toml` files).
 pub fn adjudication_message_in(family: &str, d: &BaselineDiff, home: &str) -> String {
     format!(
         "{family} moved against the frozen baseline.\n  \

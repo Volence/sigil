@@ -47,10 +47,12 @@ a type layer, and quoted asm templates. It is specified in
 `empyrean/docs/SIGIL_SPEC2_LANGUAGE.md`, and Aeon is being ported onto it module by
 module.
 
-`sigil build --aeon <dir>` is the shipped Aeon build: it lowers every `.emp` module
-natively, assembles the game's residual `.asm` root, chain-links, folds the
-checksum, emits the Sigil-canonical `.lst`, and appends the `convsym` deb2 symbol
-table — the complete shipped file, not just the ROM image.
+`sigil build --project <aeon>/games/<game> --shape <row> -o <out.bin>` is the shipped
+build: it reads the game's description (`game.toml`, the `engine.toml` it names, its
+`map.toml`), lowers every `.emp` module natively, assembles the game's residual `.asm`
+root, links, folds the checksum, emits the Sigil-canonical `.lst`, and appends the
+`convsym` deb2 symbol table — the complete shipped file, not just the ROM image. Sigil's
+source names no game: the description does (G0b).
 
 ## Workspace layout
 

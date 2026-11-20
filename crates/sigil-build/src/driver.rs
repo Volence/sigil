@@ -1,9 +1,10 @@
 //! The game-as-data build driver (G0b Task 5): a ROM from a game description
 //! (`games/<g>/game.toml`), a shape name, and the engine description it names
-//! (`engine/engine.toml`), written beside the old profile-driven driver (sigil-harness
-//! `native::build_rom_chained_with_listing`), which it replaces at the cutover.
+//! (`engine/engine.toml`). It replaced the profile-driven driver (sigil-harness
+//! `native::build_rom_chained_with_listing`), deleted at G0b Task 11; it is the only
+//! driver.
 //!
-//! What the descriptions decide, that the old driver hardcodes:
+//! What the descriptions decide, that the old driver hardcoded:
 //!
 //!   * which modules a shape places: the closed `[[gate]]` rules ([`crate::gating`],
 //!     [`crate::roots`]);
@@ -150,6 +151,7 @@ pub trait Seams {
         debug: bool,
     ) -> Result<Box<dyn Any>, String>;
     /// The post-link sound checks: the bank id constants and the sound fold.
+    #[allow(clippy::too_many_arguments)]
     fn validate_sound(
         &self,
         checkout: &Path,
@@ -951,8 +953,7 @@ pub struct CheckOutput {
 /// (the sound artifacts into the generated root for a sound-on shape, the residual AS,
 /// the `.emp` lowering, the walk, `resolve_layout`, the link-assert tally, the drift
 /// verdict, the inapplicable allowlist, the census) and nothing after it: no link, no
-/// listing, no appendix, no checksum, no ROM. The profile-driven driver's `--check`
-/// (sigil-harness `native::check_chained`) is the same cut of its own pipeline.
+/// listing, no appendix, no checksum, no ROM.
 pub fn check_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<CheckOutput, BuildError> {
     match with_generated(p, opts, |generated| build_project_in(p, shape_name, opts, generated, Run::Check))? {
         Outcome::Checked(out) => Ok(out),

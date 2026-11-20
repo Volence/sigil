@@ -3,10 +3,9 @@
 //! against the map (anchors, the driving `order`, holes), the `[[budget]]` rows, the
 //! per-artifact region check, and what a check-only run reports ([`CheckReport`]).
 //!
-//! Moved from sigil-harness (`native.rs`, `seam2.rs`) unchanged by G0b Task 4. The
-//! guards that read a game table stay there: `validate_resolved_alignment` (the frozen
-//! `section_align` table) and the sound fold (`validate_sound_fold` / `check_sound_fold`,
-//! seam-2's bank heads).
+//! Moved from sigil-harness (`native.rs`, `seam2.rs`) unchanged by G0b Task 4. The sound
+//! fold (`check_sound_fold`, seam-2's bank heads) stays in sigil-harness with the seams;
+//! the resolved-alignment check is [`crate::align::AlignTable::validate_resolved`].
 
 use sigil_ir::Section;
 
@@ -14,9 +13,9 @@ use crate::diag::{BuildWarning, ChainSources};
 use crate::place::{head_label, is_rom_section, ModuleSpec};
 
 /// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
-/// EXACTLY the caller-supplied allowlist — both directions (§t24). Each profile homes
-/// its own set ([`GameProfile::inapplicable_guards`]; demo/Config each home a different
-/// twin subset). `inapplicable` are the "not defined in this link" diagnostics;
+/// EXACTLY the caller-supplied allowlist — both directions (§t24). The caller homes the
+/// set (the game-as-data driver passes its own; each shape could home a different twin
+/// subset). `inapplicable` are the "not defined in this link" diagnostics;
 /// `link_asserts` supplies each guard's own message (its `.emp` site) via span match.
 /// The declared-chain verdict over `check_link_asserts`' output. A guard that
 /// folded and failed is REAL drift: every such guard is rendered at its own line

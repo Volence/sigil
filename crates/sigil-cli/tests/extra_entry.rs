@@ -182,7 +182,7 @@ const SONIC4: &[&str] = &["sonic4", "release"];
 /// `--extra-entry` arguments, discarding the ROM. Returns the process result and its
 /// combined output — the aeon lane reads `stdout + stderr` as one stream and counts
 /// `[Error]` over it, so this gate must too.
-fn build_target_with(aeon: &PathBuf, target: &[&str], extra: &[&str]) -> (Output, String) {
+fn build_target_with(aeon: &std::path::Path, target: &[&str], extra: &[&str]) -> (Output, String) {
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let out_bin = std::env::temp_dir().join(format!("sigil_extra_entry_{}.bin", std::process::id()));
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
@@ -202,7 +202,7 @@ fn build_target_with(aeon: &PathBuf, target: &[&str], extra: &[&str]) -> (Output
 }
 
 /// The canonical-target shorthand every case below the config-b one uses.
-fn build_with(aeon: &PathBuf, extra: &[&str]) -> (Output, String) {
+fn build_with(aeon: &std::path::Path, extra: &[&str]) -> (Output, String) {
     build_target_with(aeon, SONIC4, extra)
 }
 

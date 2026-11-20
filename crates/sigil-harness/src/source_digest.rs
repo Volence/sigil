@@ -25,8 +25,8 @@ use std::path::{Component, Path, PathBuf};
 /// root, where a recorded read under that checkout would be placed.
 ///
 /// No `sigil build` path reads there. The one build input that lived there, the
-/// off-canonical size tables, is compiled in (`native::FROZEN_TABLES`), and
-/// `installed_binary_needs_no_build_tree` runs the built binary with this directory
+/// off-canonical size tables, was compiled in (`native::FROZEN_TABLES`) and was deleted
+/// with the profile-driven driver (G0b Task 11); `installed_binary_needs_no_build_tree` runs the built binary with this directory
 /// hidden. The root stays in the grammar so a digest naming it still parses; this
 /// function only computes a path and never requires it to exist.
 pub fn sigil_source_root() -> PathBuf {

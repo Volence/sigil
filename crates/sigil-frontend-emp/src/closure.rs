@@ -247,7 +247,7 @@ fn resolve_key_in<'a, V>(map: &BTreeMap<String, V>, callee: &'a str) -> &'a str 
 /// dispatch loop, so read it rather than quoting it:
 ///
 /// ```text
-/// sigil build --aeon <aeon tree> --report indirect-cost
+/// sigil build --project <aeon tree>/games/<game> --shape <row> --report indirect-cost
 /// ```
 ///
 /// which enumerates the bounded dispatch sites for the selected shape and prints

@@ -3,8 +3,8 @@
 //! the appended file, and the presence controls.
 //!
 //! Moved from sigil-harness (`native.rs`) unchanged by G0b Task 4. Which shapes carry an
-//! appendix, and the per-game size floor, stay there (`declares_error_handler_island`,
-//! `SONIC4_APPENDIX_FLOOR` / `DEMO_APPENDIX_FLOOR`): they read the game profile.
+//! appendix, and the per-game size floor, come from the descriptions: the shape's
+//! features and the game's `appendix_floor` (`game.toml`).
 
 use std::path::Path;
 
@@ -45,8 +45,8 @@ pub const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 /// identity the positive control below already relies on).
 ///
 /// `expect_island` says whether this shape carries the island AT ALL, and it must come
-/// from somewhere upstream of `listing` — [`declares_error_handler_island`] for a
-/// profile-driven caller. It is what makes the check non-vacuous: a listing WITHOUT the
+/// from somewhere upstream of `listing` — the shape's described features for the
+/// game-as-data driver. It is what makes the check non-vacuous: a listing WITHOUT the
 /// blob label is a satisfied contract for the `lean` shape and a renamed label, a
 /// re-layout that dropped the island, or a harvest that lost the symbol for every other
 /// shape, and nothing in the listing distinguishes those. So both directions of the
@@ -143,8 +143,8 @@ pub fn check_error_handler_is_last_with(
 ///
 /// `expect_island` declares whether the shape this (rom, listing) pair came from
 /// carries the MD Debugger island, and is the expectation
-/// [`check_error_handler_is_last`] is judged against. A profile-driven caller derives
-/// it with [`declares_error_handler_island`]; a synthetic probe feeding a listing it
+/// [`check_error_handler_is_last`] is judged against. The game-as-data driver derives
+/// it from the shape's described features; a synthetic probe feeding a listing it
 /// built itself declares what that listing represents. It is a parameter rather than
 /// an assumption because a listing with no blob label is a satisfied contract for one
 /// shape and a silent runtime failure for every other, and this function cannot tell

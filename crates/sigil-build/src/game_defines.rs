@@ -11,8 +11,9 @@
 //! stay the concern of the region/placement readers (which tolerate them), so a
 //! typo'd placement key can never silently become a define.
 //!
-//! Consumption: sigil-harness `native::shape_defines` merges these rows with the
-//! profile's built-in `emp_defines` rows. The merge is CONFLICT-FREE by
+//! Consumption: the game-as-data driver merges these rows into the shape's define
+//! environment ([`crate::driver::merged_defines`]); [`merge_builtin_and_game`] merges them
+//! with a caller's built-in rows (the profile-driven driver's, deleted at G0b Task 11). The merge is CONFLICT-FREE by
 //! construction — a game row whose key matches a built-in row is a loud error in
 //! BOTH directions (neither source silently wins), because the built-ins carry
 //! shape semantics (`DEBUG`, `SOUND_DRIVER_ENABLED`, …) and a silent override
@@ -104,7 +105,7 @@ pub fn merge_builtin_and_game(
         if let Some((_, bv)) = builtin.iter().find(|(bk, _)| *bk == key) {
             return Err(format!(
                 "define `{key}` is declared twice: {origin} [defines] (= {gv}) and the \
-                 built-in profile row in crates/sigil-harness/src/native.rs (= {bv}), \
+                 caller's built-in define row (= {bv}), \
                  a game config must not shadow a built-in row (and a built-in must not \
                  silently override a game config); delete one of the two declarations"
             ));
@@ -119,7 +120,7 @@ pub fn merge_builtin_and_game(
 ///
 /// `tests/shipped_shapes.rs`'s both-polarities gate reads `profile.emp_defines`
 /// — the BUILT-IN rows only — so a game-declared row is outside that walk. This
-/// is the other half: it walks sigil-harness `native::shape_defines` output, subtracts
+/// is the other half: it walks the shapes' merged define envs, subtracts
 /// the built-in keys, and charges the remainder the property that makes a corpus
 /// walk mean anything — that no arm is unreachable by every shape.
 ///
@@ -264,7 +265,7 @@ fn duplicate_define_key_message(src: &str, origin: &str) -> Option<String> {
 /// against it.
 fn define_origin(key: &str, builtin: &[(&'static str, i128)], map_origin: &str) -> String {
     if builtin.iter().any(|(k, _)| *k == key) {
-        "the built-in profile row in crates/sigil-harness/src/native.rs".to_string()
+        "the caller's built-in define row".to_string()
     } else {
         format!("{map_origin} [defines]")
     }
@@ -286,7 +287,7 @@ fn published_origin(sym: &sigil_link::ListingSymbol) -> String {
 }
 
 /// The `.lst` EQUATE rows for a shape's command-line define env — the game→engine
-/// `-D` interface values (sigil-harness `native::shape_defines`) rendered so a
+/// `-D` interface values (the shape's merged defines) rendered so a
 /// `.lst`-reading tool can ask what `MAX_RING_BUFFER` is worth in THIS ROM instead of
 /// hardcoding a number that is wrong for the other game by construction (sonic4
 /// declares 128, demo declares 16).
@@ -532,7 +533,7 @@ at = 0x0
         .unwrap_err();
         assert!(err.contains("MAX_RING_BUFFER"), "error must name the key: {err}");
         assert!(err.contains("games/demo/map.toml"), "error must name the game source: {err}");
-        assert!(err.contains("native.rs"), "error must name the built-in source: {err}");
+        assert!(err.contains("built-in define row"), "error must name the built-in source: {err}");
         assert!(err.contains("= 16") && err.contains("= 128"), "error names both values: {err}");
     }
 
@@ -717,7 +718,7 @@ at = 0x0
         .unwrap_err();
         assert!(err.contains("MAX_RING_BUFFER"), "{err}");
         assert!(
-            err.contains("crates/sigil-harness/src/native.rs"),
+            err.contains("the caller's built-in define row"),
             "the DEFINE's origin is missing: {err}"
         );
         assert!(
@@ -740,7 +741,7 @@ at = 0x0
         .unwrap_err();
         assert!(err.contains("games/demo/map.toml [defines]"), "{err}");
         assert!(
-            !err.contains("crates/sigil-harness/src/native.rs"),
+            !err.contains("built-in define row"),
             "a game row must not be attributed to the built-in table: {err}"
         );
         assert!(err.contains("ADDRESS label") && err.contains("$00001234"), "{err}");

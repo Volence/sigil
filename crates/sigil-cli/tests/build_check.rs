@@ -250,7 +250,6 @@ fn an_unreachable_guard_is_reported_not_decided() {
 #[test]
 fn every_aeon_fixture_this_file_names_still_resolves() {
     let Some(aeon) = aeon_dir() else { return };
-    for path in [POISON_NESTED_PATH] {
-        assert!(aeon.join(path).is_file(), "`{path}` is named by this file but is not under {}", aeon.display());
-    }
+    let path = POISON_NESTED_PATH;
+    assert!(aeon.join(path).is_file(), "`{path}` is named by this file but is not under {}", aeon.display());
 }

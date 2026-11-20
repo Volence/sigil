@@ -274,10 +274,16 @@ fn getting_it_wrong_is_still_an_error() {
             "`sigil {command}` prints no usage line:\n{stderr}"
         );
     }
-    // `build` without its required directory: an error line, then usage.
+    // `build` without its required description: an error line, then usage.
     let (_, stderr, code) = run(&["build"]);
     assert_eq!(code, 2, "`sigil build` exited {code}");
-    assert!(stderr.contains("--aeon"), "`sigil build` does not name what is missing:\n{stderr}");
+    assert!(stderr.contains("--project"), "`sigil build` does not name what is missing:\n{stderr}");
+    // The deleted profile-driven grammar (G0b Task 11) is an unexpected argument, and the
+    // usage printed with the refusal names the grammar that replaced it.
+    let (_, stderr, code) = run(&["build", "--aeon", "x", "--game", "sonic4"]);
+    assert_eq!(code, 2, "`sigil build --aeon` exited {code}");
+    assert!(stderr.contains("unexpected argument '--aeon'"), "`--aeon` is not refused by name:\n{stderr}");
+    assert!(stderr.contains("--project"), "the refusal's usage does not name --project:\n{stderr}");
 
     // A named command that does not exist is a mistake, not a request.
     let (stdout, stderr, code) = run(&["help", "nosuchcommand"]);

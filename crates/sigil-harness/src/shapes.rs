@@ -16,7 +16,7 @@ use sigil_frontend_emp::export_side::LayoutPass;
 use sigil_ir::Section;
 
 use crate::driver_seams::HarnessSeams;
-use crate::module_roots::ModuleSpec;
+use sigil_build::place::ModuleSpec;
 
 /// One shape of one described game, and how to build it.
 #[derive(Debug, Clone)]

@@ -1,8 +1,9 @@
 //! Section base alignment for the new driver: the 68000 evenness default, raised only by
 //! a declared `[[align]]` row.
 //!
-//! Spec §2 ("facts that are not Aeon's at all"): of the 108 rows the old driver keeps in
-//! sigil-harness `section_align.rs`, 102 say only "a 68000 section base is even". That is
+//! Spec §2 ("facts that are not Aeon's at all"): of the 108 rows the old driver kept in
+//! sigil-harness `section_align.rs` (deleted with it, G0b Task 11), 102 said only "a 68000
+//! section base is even". That is
 //! an ISA fact, so it is the driver's default here, never a row in either description.
 //! The six real requirements are `[[align]]` rows: five in `games/sonic4/game.toml`
 //! (the Z80 bank windows and the sound fold's mod-8 chain) and `ObjCodeBase` in
@@ -11,7 +12,7 @@
 //! The default covers every section the walk places in the ROM image, whatever CPU its
 //! bytes target: each one is either 68000 code or data the 68000 reads by word or long
 //! (the inline Z80 idle program is copied into Z80 RAM by a 68000 word loop), so an odd
-//! base faults. The old table agrees: its `Z80_IdleProgram` row is 2.
+//! base faults. The old table agreed: its `Z80_IdleProgram` row was 2.
 
 use std::collections::BTreeMap;
 

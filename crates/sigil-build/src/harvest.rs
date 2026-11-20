@@ -4,9 +4,8 @@
 //! share, and the `--extra-entry` resolution and refusal.
 //!
 //! Moved from sigil-harness (`native.rs`) unchanged by G0b Task 4. The harvests proper
-//! stay there (`harvest_engine_constants`, `harvest_game_constants`,
-//! `harvest_engine_struct_offsets`, `harvest_engine_ram_addresses`, `assemble_as_side`):
-//! each reads the game profile or an engine table the descriptions now carry.
+//! are the game-as-data driver's (`crate::driver`), reading the descriptions; the
+//! profile-reading copies in sigil-harness were deleted with that driver (G0b Task 11).
 
 use std::path::Path;
 
@@ -358,10 +357,10 @@ pub struct EmpProgram {
 /// every reportable non-error diagnostic the lowering produced. The placement map
 /// bases are COSMETIC (the chainer recomputes every base from the frozen table), so a
 /// nominal one-region-per-section map suffices.
-/// The whole-program build's inputs, exactly as sigil-harness `native::build_emp` lowers them: the scanned
+/// The whole-program build's inputs, exactly as the driver's `build_emp` lowers them: the scanned
 /// manifest after the helper-import rewrite and with the synthetic entry minted, the
 /// shape's lowering options, and what the scan and the entry parse reported. Shared
-/// with sigil-harness `native::name_env_report` so a report reads the SAME program the build lowers.
+/// with the driver's `name_env_report` so a report reads the SAME program the build lowers.
 pub struct PreparedProgram {
     pub manifest: resolve::manifest::Manifest,
     pub mdiags: Vec<sigil_span::Diagnostic>,

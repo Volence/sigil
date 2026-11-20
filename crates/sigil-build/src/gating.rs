@@ -3,8 +3,8 @@
 //!
 //! Spec §5.1 ("Module gating ... Every placed module matches exactly one rule, `all`
 //! included; no match is an error") and plan Review Focus 1: the old driver's
-//! `SHAPE_GATES` lists only the modules SOME shapes drop, so a module added with no row
-//! silently ships in every shape. Here no row is a refusal ([`BuildError::Ungated`](crate::driver::BuildError::Ungated)), and
+//! `SHAPE_GATES` (deleted with it, G0b Task 11) listed only the modules SOME shapes drop,
+//! so a module added with no row silently shipped in every shape. Here no row is a refusal ([`BuildError::Ungated`](crate::driver::BuildError::Ungated)), and
 //! so is a module two rows match ([`BuildError::DoubleGated`](crate::driver::BuildError::DoubleGated)): two rules for one module
 //! is two answers to one question, and rule order is not an answer.
 //!

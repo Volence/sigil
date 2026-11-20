@@ -3,9 +3,10 @@
 //!
 //! Spec §5.1: "the frozen size tables do not move. They identify islands and seed
 //! measurement, and the map's `[[anchor]]` rows now declare the islands." The old walk
-//! (sigil-harness `native::packed_true_bases`) reads each section's provisional base out
-//! of a per-shape frozen table: an island is a section whose frozen base equals an anchor
-//! address, and the frozen bases are where round 0 measures. Here:
+//! (sigil-harness `native::packed_true_bases`, deleted with the profile-driven driver at
+//! G0b Task 11) read each section's provisional base out of a per-shape frozen table: an
+//! island was a section whose frozen base equals an anchor address, and the frozen bases
+//! were where round 0 measures. Here:
 //!
 //!   * an ISLAND is exactly a section an anchor in force HOLDS (`[[anchor]] holds = "<row>"`,
 //!     an `order` row: a head label or `section:<name>`). It is placed at the anchor's `at`.

@@ -3,6 +3,12 @@
 # sigil (master) and the NEW one (this branch) from the same aeon reference, then run
 # scripts/walk_inplace_proof.py on each pair. Every changed byte must be explained.
 #
+# HISTORICAL (G0b Task 11): this proof reads the profile-driven driver's source
+# (`native.rs`'s profiles and `FROZEN_TABLES`) and drives both binaries in the deleted
+# `--aeon`/`--game` grammar, so it reproduces only at the commit its evidence cites
+# (`docs/evidence/walk-measure-in-place/`, 38e671ca). From Task 11 on its setup checks
+# refuse (exit 2), never a pass.
+#
 #   scripts/walk_inplace_proof.sh --old <sigil> --new <sigil> --aeon-ref <dir> --out <dir> \
 #       [--fr1 <dir with exp_<shape>.bin>] [--keep]
 #

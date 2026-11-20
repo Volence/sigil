@@ -1,11 +1,12 @@
 //! The new driver's module roots: which modules a shape places, from the map's `order`
 //! and the closed `[[gate]]` rules, with no hardcoded gate list.
 //!
-//! The derivation is the old driver's (sigil-harness `module_roots::derive_module_roots`):
+//! The derivation is the old driver's (sigil-harness `module_roots::derive_module_roots`,
+//! deleted with it, G0b Task 11):
 //! every `order` row names the module(s) that define it (a label, a `section:` row, or the
 //! owner a compiler-minted label names); a row more than one placed module defines is
 //! settled by the `use` graph of everything else the build roots; the engine terminus is
-//! always rooted. What changes is where "placed" comes from. The old driver asks
+//! always rooted. What changed is where "placed" comes from. The old driver asked
 //! `SHAPE_GATES`, a list of only the modules SOME shape drops, so a new module with no
 //! row ships everywhere; here every candidate module goes through
 //! [`crate::gating::gate_modules`], which refuses a module no rule names.

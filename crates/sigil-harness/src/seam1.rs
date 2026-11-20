@@ -787,7 +787,7 @@ pub fn resident_module_bases(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
 /// equ values.
 ///
 /// Handed out because these files are NOT in the placement registry
-/// (`native::registry`): the resident driver is linked by seam 1, so a walk that
+/// (the module roots a shape places, `sigil_build::roots`): the resident driver is linked by seam 1, so a walk that
 /// enumerates the registry sees ZERO Z80 code in every sound-on shape. Any analysis
 /// that means to describe the shipped Z80 half must read these five.
 ///

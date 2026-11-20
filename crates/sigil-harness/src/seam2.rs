@@ -362,7 +362,7 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
 pub const SOUND_GAME_DESC_REL: &str = "games/sonic4/game.toml";
 
 /// The alignment table the packing walk builds for the sound game (G0b Task 11: the
-/// description rows replaced `section_align::DECLARED`), the engine's rows then the game's.
+/// description rows replaced the deleted `section_align::DECLARED` table), the engine's rows then the game's.
 pub fn sound_align_table(aeon: &Path) -> Result<sigil_build::align::AlignTable, String> {
     let engine_path = aeon.join("engine/engine.toml");
     let game_path = aeon.join(SOUND_GAME_DESC_REL);

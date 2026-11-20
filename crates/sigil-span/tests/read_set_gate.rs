@@ -295,9 +295,10 @@ fn no_build_reachable_read_bypasses_the_recorder() {
     }
 
     // The instrument, checked against what the source says it must have seen: the
-    // native build path is in main.rs's closure, and every file that calls the recorder
-    // was scanned rather than exempted.
-    for must in ["run_build_native", "run_contract_gate", "lst_source_digest"] {
+    // build path is in main.rs's closure, and every file that calls the recorder was
+    // scanned rather than exempted. (G0b Task 11: the build path is `run_project_build`;
+    // the profile-driven `run_build_native` it replaced is deleted.)
+    for must in ["run_project_build", "run_contract_gate", "lst_source_digest"] {
         assert!(closure.contains(must), "`{must}` is not reachable from run_build, the call graph is broken: {closure:?}");
     }
     assert!(calls_recorder.len() >= 6, "only {} files call the recorder, the scan found almost nothing: {calls_recorder:?}", calls_recorder.len());

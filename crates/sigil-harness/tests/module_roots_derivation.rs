@@ -372,7 +372,7 @@ fn choose_victim(aeon: &Path, s: &Shape, map_src: &str) -> Victim {
             && placed_everywhere(&pm.id)
             && rows_owned == 1
             && declared_sections(&pm.file).len() == 1
-            && !used.iter().any(|u| *u == pm.id)
+            && !used.contains(&pm.id)
         {
             let canon_aeon = std::fs::canonicalize(aeon).unwrap_or_else(|_| aeon.to_path_buf());
             let path = std::fs::canonicalize(&pm.path).unwrap_or_else(|_| pm.path.clone());

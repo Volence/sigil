@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 /// silently — a closure that stopped reaching one of these would make some file look like
 /// it reads nothing, which is the one direction in which being wrong is quiet.
 pub const GUARDS: [&str; 4] =
-    ["reference_tree(", "reference_tree_for_profile(", "aeon_dir(", "listing_path("];
+    ["reference_tree(", "reference_tree_for_shape(", "aeon_dir(", "listing_path("];
 
 /// The floor a positive control holds the derivation to.
 ///

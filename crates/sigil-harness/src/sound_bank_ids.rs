@@ -32,37 +32,6 @@ use sigil_ir::Section;
 use sigil_link::LinkedImage;
 use std::path::Path;
 
-// ── The profile-driven driver's sound literals, now read by nothing in the build: the
-// check reads `engine.toml [sound]`. Kept only for `descriptions_agree_with_rust`, the
-// agree-with-Rust test, and deleted with it and that driver in the G0b Task 11 deletion
-// commit. ──
-
-/// The resident blob's bank-id consts, each an 8-bit operand of a `SetBank` call.
-pub const BLOB_BANK_ID_CONSTS: &[&str] = &["SND_ENGINE_TABLE_BANK", "SFX_BLOB_BANK"];
-
-/// The placed labels whose bank each blob const must select.
-pub fn blob_const_bank_labels(name: &str) -> Option<&'static [&'static str]> {
-    match name {
-        "SND_ENGINE_TABLE_BANK" => Some(&["SoundTablesZ80_Head"]),
-        "SFX_BLOB_BANK" => Some(&["SfxBlobWinTab", "Sfx_33"]),
-        _ => None,
-    }
-}
-
-/// The resident blob's bracket labels in `engine/system/boot_data.emp`.
-#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
-const BLOB_START: &str = "Z80_Sound_Start";
-#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
-const BLOB_END: &str = "Z80_Sound_End";
-/// The DAC descriptor head's label in `games/sonic4/data/sound/soundbankhead.emp`.
-#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
-const DAC_HEAD: &str = "DacSampleTable";
-/// The two DAC bank heads in `games/sonic4/data/sound/dac_banks.emp`.
-#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
-const DAC_BLIP_BANK: &str = "Dac_Temp_Blip";
-#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
-const DAC_SHARED_BANK: &str = "Dac_SharedBank_Start";
-
 /// The resident blob's bank-id consts (`engine.toml [[sound.blob_bank_ids]]` `name`s),
 /// each an 8-bit operand of a `SetBank` call.
 pub fn blob_bank_id_consts(sound: &SoundDesc) -> Vec<String> {

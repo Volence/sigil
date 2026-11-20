@@ -3,8 +3,7 @@
 //! closure gate at all, so a `build.sh` arm switched to it would have shipped ROMs nothing
 //! contract-checked.
 //!
-//! The gate is the profile-driven driver's; what differs is the module set and where its
-//! frozen rows come from. On `--project` the closure analyses the engine root and the game's
+//! On `--project` the closure analyses the engine root and the game's
 //! own root only (G0b Task 9a, `Project::closure_roots`), and its rows are read from the
 //! descriptions: the `baseline.toml` the engine description names and the one the game
 //! description names (`sigil_build::baseline`). Another game's sources are not analysed and
@@ -92,6 +91,9 @@ const H_BASELINE: &str = "format = 1\nd1c = [[\"HCaller\", \"Callee\", \"d0\"], 
 const G_BASELINE: &str = "format = 1\n";
 /// `g`'s declaration of the constant the fixture engine requires.
 const G_EMP: &str = "module games.g.gconst\npub const REQ_CONST = -1\n";
+/// `h`'s declaration of it, written only by the tests that build `h` itself (G0b Task 11:
+/// the other game's own build is the contrast the deleted whole-checkout driver was).
+const H_CONST_EMP: &str = "module games.h.hconst\npub const REQ_CONST = -1\n";
 
 fn game_toml(id: &str) -> String {
     format!(
@@ -170,10 +172,11 @@ fn the_clean_tree_passes_the_project_gate() {
     assert!(!err.contains("games/h/"), "nothing of h is read, got:\n{err}");
 }
 
-/// A planted closure violation: `--project` refuses it, with the same located refusal line
-/// the profile-driven driver prints for the same file.
+/// A planted closure violation: `--project` refuses it, with a located refusal line. (G0b
+/// Task 11: renamed from `..._on_project_as_on_aeon`; its second half compared the line
+/// with the deleted profile-driven driver's.)
 #[test]
-fn a_planted_closure_violation_is_refused_on_project_as_on_aeon() {
+fn a_planted_closure_violation_is_refused_on_project() {
     let tmp = tempfile::tempdir().unwrap();
     tree(tmp.path(), |rel, t| if rel == "engine/eng.emp" { format!("{t}{VIOLATION}") } else { t });
     let (err, out) = project_build(tmp.path());
@@ -183,16 +186,8 @@ fn a_planted_closure_violation_is_refused_on_project_as_on_aeon() {
     let line = err
         .lines()
         .find(|l| l.contains("[proc.clobber-undeclared] `Bad` destroys `d2`"))
-        .unwrap_or_else(|| panic!("no located refusal for `Bad`, got:\n{err}"))
-        .to_string();
-    // The profile-driven driver over the same tree (it reads `games/sonic4/map.toml`).
-    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
-    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
-    let abs = tmp.path().canonicalize().unwrap();
-    let legacy = sigil(tmp.path(), &["--aeon", abs.to_str().unwrap(), "--game", "sonic4", "-o", "s4.bin"], false);
-    let lerr = String::from_utf8_lossy(&legacy.stderr);
-    assert!(lerr.contains(FAILED), "got:\n{lerr}");
-    assert!(lerr.lines().any(|l| l == line), "--aeon must print the same refusal line\n{line}\ngot:\n{lerr}");
+        .unwrap_or_else(|| panic!("no located refusal for `Bad`, got:\n{err}"));
+    assert!(line.contains("eng.emp:"), "the refusal is located in the planted file, got:\n{line}");
 }
 
 /// Baseline drift in the game's own file: add a row for a proc that does not fire and it is
@@ -211,7 +206,9 @@ fn a_drifted_row_in_the_games_file_is_refused() {
 
 /// The other game is not this build (G0b Task 9a): a closure violation planted in `h`'s
 /// sources, with `h`'s baseline file deleted, does not reach `g`'s gate, which passes;
-/// the profile-driven driver, whose gate analyses the whole scan, refuses the same tree.
+/// `h`'s own build over the same tree (its baseline restored) refuses it, so the violation
+/// is real. (G0b Task 11: the contrast was the deleted profile-driven driver's whole-scan
+/// gate.)
 #[test]
 fn another_games_sources_and_files_are_not_this_games_gate() {
     let tmp = tempfile::tempdir().unwrap();
@@ -220,12 +217,12 @@ fn another_games_sources_and_files_are_not_this_games_gate() {
     let (err, _) = project_build(tmp.path());
     assert!(err.contains(PASSED), "g's gate must not see h, got:\n{err}");
     assert!(!err.contains("`Bad`"), "got:\n{err}");
-    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
-    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
-    let abs = tmp.path().canonicalize().unwrap();
-    let legacy = sigil(tmp.path(), &["--aeon", abs.to_str().unwrap(), "--game", "sonic4", "-o", "s4.bin"], false);
-    let lerr = String::from_utf8_lossy(&legacy.stderr);
-    assert!(lerr.contains("[proc.clobber-undeclared] `Bad` destroys `d2`"), "the whole-scan gate sees h's violation, got:\n{lerr}");
+    std::fs::write(tmp.path().join("games/h/baseline.toml"), H_BASELINE).unwrap();
+    std::fs::write(tmp.path().join("games/h/hconst.emp"), H_CONST_EMP).unwrap();
+    let h = sigil(tmp.path(), &["--project", "games/h", "--shape", "release", "-o", "h.bin"], false);
+    let herr = String::from_utf8_lossy(&h.stderr);
+    assert_eq!(h.status.code(), Some(1), "got:\n{herr}");
+    assert!(herr.contains("[proc.clobber-undeclared] `Bad` destroys `d2`"), "h's own gate sees h's violation, got:\n{herr}");
 }
 
 /// A game that does not declare a constant the engine requires is refused BY NAME, naming
@@ -280,8 +277,9 @@ fn an_engine_default_for_a_required_constant_is_refused() {
 
 /// The other game is not even parsed (G0b Task 9, closes G0a A-I2): a module in `h`'s
 /// sources that would break any scan of the whole checkout (it redeclares the engine's
-/// module id) does not reach `g`'s build, whose gate passes; the profile-driven driver,
-/// which walks the checkout, stops on it.
+/// module id) does not reach `g`'s build, whose gate passes; `h`'s own build, which scans
+/// `h`, stops on it. (G0b Task 11: the contrast was the deleted profile-driven driver's
+/// whole-checkout walk.)
 #[test]
 fn another_games_broken_module_is_not_scanned() {
     let tmp = tempfile::tempdir().unwrap();
@@ -290,13 +288,12 @@ fn another_games_broken_module_is_not_scanned() {
     let (err, _) = project_build(tmp.path());
     assert!(err.contains(PASSED), "g's build must not scan h, got:\n{err}");
     assert!(!err.contains("declared"), "got:\n{err}");
-    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
-    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
-    let abs = tmp.path().canonicalize().unwrap();
-    let legacy = sigil(tmp.path(), &["--aeon", abs.to_str().unwrap(), "--game", "sonic4", "-o", "s4.bin"], false);
-    let lerr = String::from_utf8_lossy(&legacy.stderr);
-    assert_eq!(legacy.status.code(), Some(1), "the whole-checkout scan must stop on h's module, got:\n{lerr}");
-    assert!(lerr.contains("engine.eng"), "the whole-checkout scan names the redeclared id, got:\n{lerr}");
+    std::fs::write(tmp.path().join("games/h/hconst.emp"), H_CONST_EMP).unwrap();
+    let h = sigil(tmp.path(), &["--project", "games/h", "--shape", "release", "-o", "h.bin"], false);
+    let herr = String::from_utf8_lossy(&h.stderr);
+    assert_eq!(h.status.code(), Some(1), "h's scan must stop on h's module, got:\n{herr}");
+    assert!(herr.contains("engine.eng"), "h's scan names the redeclared id, got:\n{herr}");
+    assert!(!herr.contains("contract closure gate: passed"), "got:\n{herr}");
 }
 
 /// A stale row in the game's own file is GONE, refused.
@@ -345,7 +342,7 @@ fn the_project_contract_report_prints_the_census() {
     assert!(report.contains("-- [call.live-clobbered] firings (D1c, 1): --"), "got:\n{report}");
 }
 
-/// The mode pairings refuse with the profile-driven grammar's words.
+/// The mode pairings refuse with these words.
 #[test]
 fn project_report_and_check_refuse_what_the_legacy_grammar_refuses() {
     let tmp = tempfile::tempdir().unwrap();

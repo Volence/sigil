@@ -13,8 +13,9 @@
 #            (the profile-driven driver, deleted by G0b Task 11; old binaries only)
 #   project  sigil build --project <tree>/games/<game> --shape <row>
 #            (the game-as-data driver; the tree must carry the G0b descriptions)
-# `--aeon-ref <dir>` sets both trees; each side's grammar defaults to `aeon` (the pre-Task-11
-# spelling of this command, which a current candidate refuses: a build failure is exit 2).
+# `--aeon-ref <dir>` sets both trees; each side's grammar defaults to `project`, the only
+# grammar a sigil from G0b Task 11 on speaks (an old binary needs `--*-grammar aeon`; a
+# side built in the wrong grammar fails its build, which is exit 2, never a pass).
 # A side's tree is that side's whole input: the two trees may differ (the base's reference
 # tree predates the descriptions), and the comparison is still bytes against bytes.
 #
@@ -35,7 +36,7 @@
 # side whose tree lacks a row is refused before anything is built.
 set -uo pipefail
 
-BASE="" CAND="" REF="" BREF="" CREF="" BGRAM="aeon" CGRAM="aeon"
+BASE="" CAND="" REF="" BREF="" CREF="" BGRAM="project" CGRAM="project"
 usage() {
   echo "usage: $0 --base <sigil> --cand <sigil> (--aeon-ref <dir> | --base-ref <dir> --cand-ref <dir>)" >&2
   echo "          [--base-grammar aeon|project] [--cand-grammar aeon|project]" >&2

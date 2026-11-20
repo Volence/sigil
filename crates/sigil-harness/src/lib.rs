@@ -34,8 +34,9 @@ pub mod harness_root;
 /// bin and the `repin_pins` staleness test.
 pub mod repin;
 
-/// The FROZEN contract-closure baselines — the single copy the CI gates and the
-/// build-integrated closure gate both read, so a pin cannot fork.
+/// The contract-closure baseline diff: one shape's frozen rows (read from its
+/// descriptions' `baseline.toml` files) and the multiset diff the build gate and the CI
+/// gates both run, so the two cannot grow two meanings of "moved against the baseline".
 pub mod contract_baseline;
 
 /// GENERATED layout pins (regions/symbols/offsets in both build shapes) —
@@ -80,9 +81,9 @@ pub mod freeze_journal;
 /// orphaned. Driven by `refreeze --reachability` and the `rev_reachability` gate test.
 pub mod rev_reachability;
 
-/// Flip Stage 1 · S1.1 — the all-gates-ON native whole-ROM driver (the registry
-/// + `build_native_rom`), the seam-2 whole-ROM template generalized to all 53
-/// gates. Consumed by the `native_rom` gate.
+/// What is left of the profile-driven driver after G0b Task 11: the sound-artifact
+/// emitters a build's seam and the standalone port gates call, the fold check, and the
+/// `native::` re-exports of the game-independent driver code `sigil-build` holds.
 pub mod native;
 
 /// Parcel-K1 placement map reader (`games/<g>/map.toml`) — the declared anchors /
@@ -91,25 +92,13 @@ pub mod native;
 pub use sigil_build::map_placement;
 
 /// Per-game `[defines]` table reader (`games/<g>/map.toml`) — the game-declared
-/// comptime define rows `native::shape_defines` merges with the profile's
-/// built-in `emp_defines` rows (conflict = loud error, neither source wins).
+/// comptime define rows the game-as-data driver merges with the shape's description
+/// rows (conflict = loud error, neither source wins).
 pub use sigil_build::game_defines;
-
-/// The per-section DECLARED alignment requirement, with the source each requirement
-/// comes from — the explicit rule that replaces inferring a section's quantum from
-/// where it happens to sit in a frozen address table. Read by
-/// `native::validate_declared_alignment` (against each section's frozen provisional
-/// base) and `native::validate_resolved_alignment` (against the resolved layout).
-pub mod section_align;
-
-/// The build's module roots, DERIVED from the game's placement map (`order` rows name
-/// the modules a shape places) plus the shape-gate residue the map cannot say yet.
-/// Read by `native::build_emp` (the synthetic entry's `use` roots).
-pub mod module_roots;
 
 /// `[sound.bank-id-vs-placement]`: the sound bank ids the emit bakes into the resident
 /// Z80 blob and the DAC descriptor head, checked against the banks as placed. Run by
-/// every full chained build (`native::build_rom_chained_with_listing`).
+/// every build's sound seam (`driver_seams::HarnessSeams::validate_sound`).
 pub mod sound_bank_ids;
 
 /// Installing a file by rename rather than by truncation, so a consumer reading an

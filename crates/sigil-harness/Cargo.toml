@@ -21,10 +21,9 @@ sigil-isa = { path = "../sigil-isa" }
 # sigil-link's map loader established — no new dependency class.
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
-# G0b Task 4: the game-independent driver code lives in sigil-build, and the old
-# driver here calls it (re-exported at its old paths). The edge runs ONE way:
-# sigil-build must never depend on sigil-harness. Task 3's description-loader
-# tests (tests/descriptions_agree_with_rust.rs) use this same dependency.
+# G0b Task 4: the game-independent driver code lives in sigil-build; the harness
+# re-exports it at its old `native::` paths and supplies the driver's seams. The edge
+# runs ONE way: sigil-build must never depend on sigil-harness.
 sigil-build = { path = "../sigil-build" }
 
 [dev-dependencies]

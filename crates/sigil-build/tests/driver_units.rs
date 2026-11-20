@@ -3,15 +3,17 @@
 //! a `sigil_build` function the game-as-data driver runs (the guard census and the
 //! inapplicable allowlist, the overshoot trim, placement validation and the hole
 //! interior, the error-handler-last check, helper imports, `--extra-entry`, the warn tier,
-//! the provisional-drift and width-flip reports, the listing's phase markers, the chained
+//! the width-flip report, the listing's phase markers, the chained
 //! source locator, the region budgets). They moved verbatim; only their imports changed
 //! (the module bodies' `use super::{..}` resolve against the re-exports below, which are
 //! the ones `native.rs` carried).
 //!
 //! The native-local placement walk (`packed_true_bases` / `true_bases_by_index`), its
-//! section_align-table alignment validator and its synthetic-entry writer were deleted
-//! with that driver, and the gates whose subject they were went with them (the Task 11
-//! report accounts for each by name).
+//! section_align-table alignment validator, its synthetic-entry writer and its
+//! provisional-drift warning were deleted with that driver. The gates whose subject held
+//! for the game-as-data driver moved onto its units (`align.rs`, `walk.rs`, `driver.rs`
+//! unit tests); the rest went with that driver (the Task 11 report accounts for each by
+//! name).
 
 #![allow(clippy::too_many_lines)]
 
@@ -1122,7 +1124,6 @@ mod derived_layout_tests {
     //! CHECK on the last refreeze, never a build input that can refuse content growth.
     //! Every expectation below is DERIVED from the synthetic sections' sizes and the
     //! declared anchor set — no address is copied from a pin.
-    use super::provisional_drift_warning;
     use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
     use sigil_span::Span;
 
@@ -1148,45 +1149,16 @@ mod derived_layout_tests {
         }
     }
 
-    /// Three contiguous data sections as the frozen table last saw them: `Head` at
-    /// 0x1000, `Grown` right after it with a 0x10 allotment, `Tail` after that. The
-    /// provisional bases ARE the frozen layout (prov[i] == that layout's base).
+    /// The fixtures' run head.
     const HEAD: u32 = 0x1000;
-    const HEAD_LEN: usize = 0x10;
-    const GROWN_ALLOTMENT: usize = 0x10;
-    const TAIL_LEN: usize = 0x10;
-    const GROWN_PROV: u32 = HEAD + HEAD_LEN as u32;
-    const TAIL_PROV: u32 = GROWN_PROV + GROWN_ALLOTMENT as u32;
 
 
     // The fixtures' head labels were rows of the deleted `section_align::DECLARED` table
     // (the deleted walk refused a head label without one). The constants keep each
     // section's ROLE in the fixture readable.
-    const L_TAIL: &str = "EntryPoint";
     const L_CODE: &str = "EntryPoint";
     const L_T: &str = "BootData";
 
-
-    /// The warning TEXT names the section, its head label, both bases and the delta —
-    /// what a landing needs to refreeze without a diff hunt.
-    #[test]
-    fn drift_warning_names_section_and_delta() {
-        let sec = data(L_TAIL, TAIL_PROV, TAIL_LEN);
-        let packed = TAIL_PROV as i64 + 0x2000;
-        let w = provisional_drift_warning(&sec, packed, TAIL_PROV as i64);
-        for needle in [
-            "[layout.provisional-drift]",
-            &format!("`sec_{L_TAIL}`"),
-            &format!("`{L_TAIL}`"),
-            &format!("{packed:#x}"),
-            &format!("{:#x}", TAIL_PROV),
-            "delta +0x2000",
-        ] {
-            assert!(w.message.contains(needle), "missing {needle:?} in {:?}", w.message);
-        }
-        // The Display form (what `sigil build` prints) carries the same message.
-        assert!(w.to_string().contains("delta +0x2000"), "{w}");
-    }
 
 
     // ── measure-at-packed-base (2026-08-26): a section whose LENGTH DEPENDS ON ITS
@@ -1222,13 +1194,6 @@ mod derived_layout_tests {
             equ_syms: Vec::new(),
         }
     }
-
-    /// The layout that straddles the $8000 boundary: `Wide` fills up to $7FE0, then a
-    /// growable data allotment, then the code, then the data section the code's
-    /// operand targets. At the frozen sizes everything sits below $8000 (abs.w); a
-    /// grown allotment pushes the target past $8000 and the code's own length grows
-    /// from 4 to 6 while it moves.
-
 
     /// The width-flip report (the non-convergence diagnostic's payload) names the
     /// section, both lengths, the base, and each flipping site as `file:line` with

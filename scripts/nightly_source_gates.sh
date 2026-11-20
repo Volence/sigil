@@ -115,26 +115,14 @@ SOURCE_GATES=(
     # leave the promise it stands for unmeasured until an aeon build broke.
     emp_cpu_attr_spelling
     # the G0b descriptions (games/<id>/game.toml, engine/engine.toml and their
-    # baseline.toml) load from the aeon tree and agree with the Rust tables they were
-    # transcribed from. Source only: it reads TOML and sigil's own Rust source, builds
-    # nothing and compares no committed artifact (crates/sigil-build).
+    # baseline.toml) load from the aeon tree and hold their own invariants. Source only:
+    # it reads TOML, builds nothing and compares no committed artifact (crates/sigil-build).
     game_descriptions
     # G0b Task 9: a game's module scan is its two named roots (engine + its own game) and
     # nothing else of the checkout (`engine_root_alone_does_not_pull_other_games`). Source
     # only: it scans aeon `.emp` modules, builds nothing and compares no committed artifact
     # (crates/sigil-build).
     two_roots
-    # G0b Task 3: the descriptions agree with the Rust profiles field by field (every
-    # constructor's shape, the gating over the full module scan, defines, features,
-    # entry modules, alignment, baselines, engine lists). Source only: it reads TOML,
-    # scans aeon `.emp` modules and sigil's own Rust source, builds nothing and compares
-    # no committed artifact (crates/sigil-harness).
-    descriptions_agree_with_rust
-    # G0b Task 5: the new driver's alignment rule (the 68000 evenness default plus the
-    # engine and game [[align]] rows) reproduces every row of section_align.rs's table,
-    # 102 of them by the default. Source only: it reads the TOML descriptions and links
-    # the Rust table, builds nothing and compares no committed artifact (crates/sigil-harness).
-    evenness_default
     # G0b Task 5 fix round 1: the game-as-data driver builds every shipped (non-fixture)
     # shape of every game in-process from the descriptions, and each ROM is held to what the
     # descriptions and the build's own listing say (EndOfRom, island and deb2 appendix,
@@ -142,8 +130,7 @@ SOURCE_GATES=(
     # or listing is read (crates/sigil-harness).
     game_as_data_driver
     # G0b Task 6: a build writes nothing into the tree it builds. Clones the reference
-    # tree's HEAD and runs `sigil build --check`, two full builds and two `--project`
-    # builds over it, asserting `git status --ignored` and every file's length and mtime
+    # tree's HEAD and runs `sigil build --project` builds and checks over it, asserting `git status --ignored` and every file's length and mtime
     # unchanged after each. Source only: real builds, no committed artifact, golden, ROM or
     # listing is read (crates/sigil-cli).
     build_hermetic

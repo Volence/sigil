@@ -6,10 +6,11 @@
 //! list written into this note would be a copy nothing executes, so this note
 //! names the table rather than restating it.
 //!
-//! `sigil build --aeon <dir>` is THE Aeon ROM build: it assembles the game's
-//! residual root `.asm` (`games/<game>/game_root.asm`) with every `.emp` module
-//! lowered natively, chained-links, folds the checksum, emits the sigil-canonical
-//! `.lst`, and appends the `convsym` deb2 symbol table: the full shipped ROM.
+//! `sigil build --project <game> --shape <row>` is THE ROM build: it reads the game's
+//! description (game.toml, the engine.toml it names, map.toml), assembles the residual
+//! root `.asm` with every `.emp` module lowered natively, links, folds the checksum,
+//! emits the sigil-canonical `.lst`, and appends the `convsym` deb2 symbol table: the
+//! full shipped ROM. No game is named in this source: the description says it.
 //!
 //! `sigil --version` reports the source revision this executable was built from,
 //! which is the only way to tell a current assembler from a stale one: byte
@@ -163,13 +164,18 @@ const ENTRIES: &[Entry] = &[
     Entry {
         words: &["build"],
         label: "build",
-        summary: "build the Aeon ROM from a game tree",
+        summary: "build a game's ROM from its description",
         usage: &[
-            "usage: sigil build --aeon <dir> [--legacy] [-o <out.bin>] [--emit-lst <lst>]",
-            "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
-            "                   [--report ram|contracts|indirect-cost|name-env [--closure-scope corpus|game]]",
-            "                   [--extra-entry <module|path.emp>]... [--check]",
-            "                   [--anchor-overlay <anchors.toml>] [--no-build-json]",
+            "usage: sigil build --project <game dir|game.toml> --shape <name> -o <out.bin>",
+            "                   [--emit-lst <lst>] [--no-build-json]",
+            "                   [--extra-entry <module|path.emp>]... [--anchor-overlay <anchors.toml>]",
+            "       sigil build --project <game dir|game.toml> --shape <name> --check",
+            "       sigil build --project <game dir|game.toml> --shape <name>",
+            "                   --report ram|contracts|indirect-cost|name-env",
+            "note:  --project names the game's description (game.toml, the engine.toml it",
+            "       names, map.toml); --shape names one of its [shapes.*] rows. The contract",
+            "       closure gate runs first, its frozen rows from the descriptions'",
+            "       baseline.toml files",
             "note:  -o also writes <out stem>.build.json beside the ROM (the build-data export,",
             "       bound to the ROM by its SHA-256); --no-build-json writes none",
             "note:  --anchor-overlay replaces the `at` of the map.toml anchors its [[anchor]]",
@@ -181,46 +187,18 @@ const ENTRIES: &[Entry] = &[
             "       post-relaxation placement and writes no ROM; a green check proves nothing",
             "       about region budget or overlap, image bounds, the checksum or the closure",
             "       gate, and is not a statement that the game builds",
-            "note:  --closure-scope game runs --report contracts|indirect-cost over the engine",
-            "       and the selected game's own modules, the corpus a --project shape's gate",
-            "       analyses (the G0b comparison job's census); corpus, the default, is every",
-            "       scanned module",
-            "dev:   --native is an accepted no-op (a native build is the only build).",
-            "       --stress-evict and --stress-art each fix an off-canonical development",
-            "       shape and take no other shape selector.",
-            "       sigil build --project <game dir|game.toml> --shape <name> -o <out.bin>",
-            "                   [--emit-lst <lst>] [--no-build-json]",
-            "                   [--extra-entry <module|path.emp>]... [--anchor-overlay <anchors.toml>]",
-            "       sigil build --project <game dir|game.toml> --shape <name> --check | --report <kind>",
-            "note:  --project builds from the game's description (game.toml, the engine.toml it",
-            "       names, map.toml) with the game-as-data driver; --shape names a [shapes.*] row.",
-            "       It writes the ROM, the listing and the build.json as --aeon does, runs the",
-            "       contract closure gate first (its frozen rows from the descriptions'",
-            "       baseline.toml files), and takes --check and --report as --aeon does",
-            "note:  --legacy marks the --aeon driver explicitly; it is accepted, not yet required",
             "env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)",
         ],
         options: &[
-            valued("--aeon"),
-            flag("--legacy"),
             valued("--project"),
             valued("--shape"),
             valued("-o"),
             valued("--emit-lst"),
-            valued("--game"),
-            flag("--native"),
-            flag("--debug"),
-            flag("--config-a"),
-            flag("--config-b"),
-            flag("--lean"),
-            flag("--stress-evict"),
-            flag("--stress-art"),
             valued("--extra-entry"),
             flag("--check"),
             valued("--anchor-overlay"),
             flag("--no-build-json"),
             valued("--report"),
-            valued("--closure-scope"),
         ],
         run: run_build,
     },
@@ -1881,80 +1859,21 @@ fn render_indexed_diags(
     }
 }
 
-/// `sigil build --aeon <dir> [-o <output.bin>] [--emit-lst <lst>]` — THE Aeon ROM
-/// build (post-flip: the ONLY build).
-///
-/// Drives the SAME code path the native gates bank — assemble (all `.emp` modules
-/// lowered + AS residual) → declared-order chained link → `emit_rom` (checksum
-/// folded) → sigil-canonical `.lst` → `convsym` deb2 appendix → `fixheader` — and
-/// writes the full ROM+appendix. Target selected by `--game <sonic4|demo>` +
-/// `--debug` (or `--config-a`/`--config-b`/`--lean` for the off-canonical proof shapes).
-/// This is what `build.sh` invokes. The legacy no-appendix all-AS `assemble_full_rom`
-/// mode retired with the flip (the AS-reassembly harness is gone); `--native` is
-/// accepted as a no-op for build.sh compatibility.
+/// `sigil build --project <game> --shape <row> (-o <out.bin> | --check | --report <kind>)`:
+/// THE ROM build, through the game-as-data driver (`sigil_build::driver`), the only
+/// driver since G0b Task 11 deleted the profile-driven one and its `--aeon`/`--game`
+/// grammar. This is what `build.sh` invokes. An option of the deleted grammar is not a
+/// listed option of this row, so `main` refuses it as an unexpected argument and prints
+/// this usage, which names `--project`.
 fn run_build(entry: &Entry, args: &[String]) {
-    if args.iter().any(|a| a == "--project") {
-        let opts = match parse_project_args(args) {
-            Ok(o) => o,
-            Err(msg) => {
-                eprintln!("error: {msg}");
-                usage_error(entry);
-            }
-        };
-        run_project(&opts);
-        return;
-    }
-    let opts = match parse_build_args(args) {
+    let opts = match parse_project_args(args) {
         Ok(o) => o,
         Err(msg) => {
             eprintln!("error: {msg}");
             usage_error(entry);
         }
     };
-    let aeon_path = std::path::Path::new(&opts.aeon);
-
-    // No `AEON_DIR` is published from `--aeon`. It used to be, because the sound seams
-    // wrote INTO this tree and that write asks for a named tree
-    // (`seam2::require_named_reference_tree`). A build now writes its generated files into
-    // its own build directory outside the tree (`sigil_build::build_dir`, G0b Task 6), so
-    // the tree is only read, and the seams' precondition asks for a name only of a write
-    // that lands inside the tree (`seam2::require_reference_tree_for`). The build reads
-    // the tree through `--aeon` alone (`build_hermetic` runs every build with the
-    // variable removed).
-
-    match opts.report {
-        Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
-        Some(ReportKind::Contracts) => {
-            run_contract_report(aeon_path, &target_subject(aeon_path, &opts.target).scoped(aeon_path, opts.closure_scope))
-        }
-        Some(ReportKind::IndirectCost) => {
-            run_indirect_cost_report(aeon_path, &target_subject(aeon_path, &opts.target).scoped(aeon_path, opts.closure_scope))
-        }
-        Some(ReportKind::NameEnv) => run_name_env_report(aeon_path, &opts.target),
-        None if opts.check => run_check_native(aeon_path, &opts),
-        None => run_build_native(aeon_path, &opts),
-    }
-}
-
-/// `--report ram` (T1): print the RAM map for the selected target — one row per
-/// `region`, with its base/end address, allocated size, alignment/pad padding, budget
-/// limit, and headroom. The numbers come from the SAME region resolver the build runs
-/// (`resolve::build_ram_report` over the frontend's region layout), against the
-/// target's shipping `-D` define set (so the DEBUG shape's `game_ram` +4 shows).
-///
-/// The RAM modules are not `use`-reachable (their `pub vars` are cross-seam link
-/// labels no module imports), so the region-module set is passed EXPLICITLY: the
-/// engine RAM plus the selected game's RAM module (from the native profile). The
-/// [`RamRegionRow`](sigil_frontend_emp::lower::RamRegionRow) data shape is deliberately
-/// render-free so a future Spec-3 editor inlay-hint surface can reuse it directly.
-fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
-    // The target's shipping profile supplies the game RAM module + the exact `-D`
-    // define set the `.emp` RAM modules read (SYSTEM_STACK, DEBUG, the game sizing
-    // consts engine.ram consumes: MAX_RING_BUFFER / COLLECTED_WINDOW_SLOTS / …).
-    let (label, profile) = target.label_and_profile();
-    let defines = shape_defines_or_exit(&profile, aeon);
-    // Engine RAM + the game's RAM module (the two region-owning modules for this game).
-    run_ram_report_over(aeon, &label, &defines, &["engine.ram", profile.game_ram_module]);
+    run_project(&opts);
 }
 
 /// The RAM map of `region_ids` under `defines`: [`run_ram_report`]'s body, shared by both
@@ -2014,19 +1933,6 @@ fn scanned_or_exit(
     manifest
 }
 
-/// The shape's merged comptime define set: the profile's built-in rows + the
-/// game's own `map.toml [defines]` rows. A malformed table, a duplicated key, or
-/// a game row shadowing a built-in is a config error that stops the run here.
-fn shape_defines_or_exit(
-    profile: &sigil_harness::native::GameProfile,
-    aeon: &std::path::Path,
-) -> Vec<(String, i128)> {
-    sigil_harness::native::shape_defines(profile, aeon).unwrap_or_else(|e| {
-        eprintln!("error: {e}");
-        process::exit(1);
-    })
-}
-
 /// The header every report shares: what it is, which target it describes, and the
 /// define set the target's sources were read under. The defines belong on BOTH
 /// reports — `MAX_RING_BUFFER` sizes the RAM regions as surely as it gates the
@@ -2071,20 +1977,15 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 ///
 /// The report is a VIEW, not a second analysis: every number below is a field of the
 /// one `ContractReport` the frontend builds. What the report surface adds over a
-/// hand-driven walk is the DEFINES — they come from the target's shipping profile, so
+/// hand-driven walk is the DEFINES — they come from the shape's description, so
 /// a shape's real `-D` set (DEBUG, CRASH_REPORT, the game sizing consts) is what the
 /// closure sees. A census run against the wrong define set silently analyzes arms the
 /// shipped ROM never assembles.
 ///
-/// SCOPE, precisely: the DEFINES are target-accurate; the MODULE SET follows the subject.
-/// The profile-driven walk takes every `.emp` the manifest scan finds, so both games'
-/// modules enter one closure under one game's defines. That is the census shape every
-/// corpus gate already walks, and narrowing it to `profile.registry` would make this
-/// surface disagree with all of them — recorded in the gap ledger rather than changed
-/// here. A `--project` shape analyses its engine root and its own game root (G0b Task 9a),
-/// and `--closure-scope game` runs the profile-driven report over that same set.
-fn run_contract_report(aeon: &std::path::Path, subject: &ClosureSubject) {
-    let (report, _manifest, _) = corpus_closure_or_exit(aeon, subject);
+/// SCOPE, precisely: the DEFINES are shape-accurate; the MODULE SET is the shape's engine
+/// root and its own game root (G0b Task 9a), the set its build gate analyses.
+fn run_contract_report(subject: &ClosureSubject) {
+    let (report, _manifest, _) = corpus_closure_or_exit(subject);
     print_report_header("contract closure", &subject.label, &subject.defines);
     print_contract_report(&report);
 }
@@ -2103,8 +2004,8 @@ fn run_contract_report(aeon: &std::path::Path, subject: &ClosureSubject) {
 /// The two firing lists come from the SAME analysis the build gate runs, one under
 /// each [`IndirectPolicy`](sigil_frontend_emp::closure::IndirectPolicy), so the
 /// report can never describe a different closure than the one that ships.
-fn run_indirect_cost_report(aeon: &std::path::Path, subject: &ClosureSubject) {
-    let (report, _manifest, _) = corpus_closure_or_exit(aeon, subject);
+fn run_indirect_cost_report(subject: &ClosureSubject) {
+    let (report, _manifest, _) = corpus_closure_or_exit(subject);
     print_report_header("indirect-bound cost", &subject.label, &subject.defines);
 
     let sites = &report.bounded_indirect_sites;
@@ -2144,31 +2045,6 @@ fn run_indirect_cost_report(aeon: &std::path::Path, subject: &ClosureSubject) {
         "\n-- COST OF THE FLIP: {} engine contract(s) would have to be corrected --",
         forced.saturating_sub(trusting)
     );
-}
-
-/// `--report name-env` (A4): one row per (importing module, injected comptime item,
-/// free name) of the program the build lowers for the selected target, with the
-/// name's binding at the item's definition and in the importer, then the totals
-/// line `-- name-env: {n} differ, {u} unbound-at-definition --`.
-///
-/// `differs`: the definition binds the name to a comptime item and the importer
-/// binds it to something else, so the injected item used to MEAN the importer's
-/// binding. `unbound`: bound nowhere at the definition, bound to a comptime item by
-/// the importer, so the item only ever worked through the importer's imports.
-/// A row is listed only when the definition binds the name to a comptime item, or
-/// binds it nowhere while the importer binds it to one; the `rows` count says how
-/// many that was, so an empty table is a measured zero rather than a silent one.
-fn run_name_env_report(aeon: &std::path::Path, target: &BuildTarget) {
-    let (label, profile) = target.label_and_profile();
-    let defines = shape_defines_or_exit(&profile, aeon);
-    let (rows, diags) = match sigil_harness::native::name_env_report(aeon, &profile) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {e}");
-            process::exit(1);
-        }
-    };
-    print_name_env_report(&label, &defines, &rows, &diags);
 }
 
 /// Render the name-env rows (or the errors that stopped them): both drivers' printer.
@@ -2220,7 +2096,6 @@ fn print_name_env_report(
 /// a scan or interface-bind failure — a half-bound env silently poisons every
 /// condition it missed, so it is as fatal here as it is for the report.
 fn corpus_closure_or_exit(
-    aeon: &std::path::Path,
     subject: &ClosureSubject,
 ) -> (
     sigil_frontend_emp::corpus_contracts::ContractReport,
@@ -2230,21 +2105,17 @@ fn corpus_closure_or_exit(
     use sigil_frontend_emp::corpus_contracts;
 
     let defines = &subject.defines;
-    // A `--project` shape scans its two named roots and nothing else (G0b Task 9): another
-    // game's sources are not even parsed. The profile-driven driver walks the checkout.
-    let manifest = match &subject.scan {
-        Some(roots) => scanned_or_exit(sigil_frontend_emp::resolve::manifest::Manifest::scan_roots(roots)),
-        None => scan_or_exit(aeon),
-    };
+    // A shape scans its two named roots and nothing else (G0b Task 9): another game's
+    // sources are not even parsed.
+    let manifest = scanned_or_exit(sigil_frontend_emp::resolve::manifest::Manifest::scan_roots(&subject.scan));
 
-    // The corpus: for the profile-driven driver, every module the scan finds, both games
-    // and any fixture (`--report contracts`'s documented SCOPE above); for a game-as-data
-    // shape, the modules under its two roots, the engine's and the game's own (G0b Task 9a,
-    // `ClosureSubject::roots`). The manifest itself stays whole: it only locates firings.
+    // The corpus: the modules under the shape's two roots, the engine's and the game's own
+    // (G0b Task 9a, `ClosureSubject::roots`). The manifest itself stays whole: it only
+    // locates firings.
     let files: Vec<_> = manifest
         .modules
         .iter()
-        .filter(|m| subject.roots.as_ref().is_none_or(|r| sigil_build::driver::under_roots(&m.path, r)))
+        .filter(|m| sigil_build::driver::under_roots(&m.path, &subject.roots))
         .map(|m| m.file.clone())
         .collect();
     // The L1 interface env, bound against THIS shape's game (the game RAM module's
@@ -2273,10 +2144,9 @@ fn corpus_closure_or_exit(
 }
 
 /// What the contract closure gate and the closure reports run over: one shape's define
-/// set, the game whose interfaces bind, and the frozen baseline. Each
-/// driver builds its own ([`target_subject`], [`project_subject`]); the closure, the
-/// gate and the reports read only this, so neither driver can gate on a different
-/// analysis than the other would print for the same inputs.
+/// set, the game whose interfaces bind, and the frozen baseline ([`project_subject`]).
+/// The closure, the gate and the reports read only this, so the gate cannot run a
+/// different analysis than the report would print for the same inputs.
 struct ClosureSubject {
     /// The shape as report headers and the gate's verdict line name it.
     label: String,
@@ -2284,58 +2154,13 @@ struct ClosureSubject {
     defines: Vec<(String, i128)>,
     /// The game module prefix the L1 interface env binds against (`games.sonic4`).
     game_prefix: String,
-    /// The roots whose modules the closure analyses, or `None` for every scanned module.
-    /// A game-as-data shape analyses its engine root and its own game root
-    /// ([`sigil_build::driver::Project::closure_roots`], G0b Task 9a); the profile-driven
-    /// driver analyses the whole scan.
-    roots: Option<Vec<std::path::PathBuf>>,
-    /// The named roots a `--project` shape scans ([`sigil_build::driver::Project::scan_roots`],
-    /// G0b Task 9), or `None` to walk the whole checkout (the profile-driven driver).
-    scan: Option<Vec<(sigil_span::roots::RootName, std::path::PathBuf)>>,
-    /// The game's own source directory (`--closure-scope game` takes it as the game root).
-    game_root: std::path::PathBuf,
+    /// The roots whose modules the closure analyses: the shape's engine root and its own
+    /// game root ([`sigil_build::driver::Project::closure_roots`], G0b Task 9a).
+    roots: Vec<std::path::PathBuf>,
+    /// The named roots the shape scans ([`sigil_build::driver::Project::scan_roots`],
+    /// G0b Task 9).
+    scan: Vec<(sigil_span::roots::RootName, std::path::PathBuf)>,
     baseline: sigil_harness::contract_baseline::ShapeBaseline,
-}
-
-/// Which modules a profile-driven `--report contracts|indirect-cost` analyses
-/// (`--closure-scope`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum ClosureScope {
-    /// Every scanned module, both games and any fixture: the profile-driven gate's corpus.
-    #[default]
-    Corpus,
-    /// The engine root and the selected game's root: the corpus a `--project` shape's gate
-    /// analyses (G0b Task 9a), so the comparison job can compare the two drivers' censuses
-    /// over one module set.
-    Game,
-}
-
-impl ClosureSubject {
-    /// This profile-driven subject with `scope` applied. `Game` takes the engine root
-    /// (`<aeon>/engine`) and the directory of the profile's game root file.
-    fn scoped(mut self, aeon: &std::path::Path, scope: ClosureScope) -> ClosureSubject {
-        if scope == ClosureScope::Game {
-            let canon = |p: std::path::PathBuf| std::fs::canonicalize(&p).unwrap_or(p);
-            self.roots = Some(vec![canon(aeon.join("engine")), canon(self.game_root.clone())]);
-        }
-        self
-    }
-}
-
-/// The profile-driven driver's closure subject for `target`: the profile's defines and
-/// game, and the baseline constants.
-fn target_subject(aeon: &std::path::Path, target: &BuildTarget) -> ClosureSubject {
-    let (label, profile) = target.label_and_profile();
-    let game_root_file = aeon.join(profile.game_root_rel);
-    ClosureSubject {
-        game_root: game_root_file.parent().map(std::path::Path::to_path_buf).unwrap_or_default(),
-        defines: shape_defines_or_exit(&profile, aeon),
-        game_prefix: profile.game_module_prefix().to_string(),
-        roots: None,
-        scan: None,
-        baseline: sigil_harness::contract_baseline::ShapeBaseline::for_profile(&profile),
-        label,
-    }
 }
 
 /// The game-as-data driver's closure subject for `shape` of `project`, every fact from
@@ -2353,9 +2178,8 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
         label: format!("{} {shape}", project.game.id),
         defines,
         game_prefix: project.game_prefix().to_string(),
-        roots: Some(project.closure_roots()),
-        scan: Some(project.scan_roots()),
-        game_root: project.sources_root(),
+        roots: project.closure_roots(),
+        scan: project.scan_roots(),
         baseline: sigil_harness::contract_baseline::ShapeBaseline {
             z80_out_unverified: b.z80_out_unverified,
             out_unverified: b.out_unverified,
@@ -2388,7 +2212,7 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
 ///
 /// `SIGIL_CONTRACTS=0` is the emergency opt-out (aeon's `build.sh` maps
 /// `CONTRACTS=0` onto it). It is loud: a skipped gate prints why.
-fn run_contract_gate(aeon: &std::path::Path, subject: impl FnOnce() -> ClosureSubject) {
+fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) {
     use sigil_harness::contract_baseline as bl;
 
     if std::env::var("SIGIL_CONTRACTS").is_ok_and(|v| v == "0") {
@@ -2400,7 +2224,7 @@ fn run_contract_gate(aeon: &std::path::Path, subject: impl FnOnce() -> ClosureSu
     }
 
     let subject = subject();
-    let (report, manifest, analysed) = corpus_closure_or_exit(aeon, &subject);
+    let (report, manifest, analysed) = corpus_closure_or_exit(&subject);
     let base = &subject.baseline;
     let src_index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
     let mut failed = false;
@@ -2622,8 +2446,8 @@ fn run_contract_gate(aeon: &std::path::Path, subject: impl FnOnce() -> ClosureSu
     // D1c is shape-dependent: the debug family assembles code the plain family
     // never sees, so the pin is per-family (measured 20 plain / 25 debug).
     // The subject's baseline already carries both family axes (debug, and which
-    // game's `Game.SCANLINE_CAPS` this shape compiles against): the profile's
-    // `ShapeBaseline::for_profile`, or the descriptions' `d1c`/`d1c_debug` rows.
+    // game's `Game.SCANLINE_CAPS` this shape compiles against): the descriptions'
+    // `d1c`/`d1c_debug` rows.
     let d = base.diff_d1c(&d1c_got);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message_in("[call.live-clobbered] (D1c)", &d, &base.home));
@@ -3146,263 +2970,6 @@ impl ReportKind {
     }
 }
 
-/// Which native target `sigil build --native` produces.
-enum BuildTarget {
-    /// Canonical sonic4 (the pinned driver — the `native_full_rom` gate path).
-    Sonic4 { debug: bool },
-    /// Off-canonical (the chained driver — the `native_offcanonical_full` gate path).
-    Demo { debug: bool },
-    ConfigA,
-    ConfigB,
-    /// The 7th (crash-report-OFF) profile: the sonic4 release shape with no MD
-    /// Debugger island and no deb2 symbol appendix — every fault vector routes at
-    /// `ReleaseFault`. Owner-ruled 2026-08-04; `build.sh` refuses `CRASH_REPORT=0`
-    /// and points here.
-    Lean,
-    /// Off-canonical DEV shape (Art-streaming P2b Task 7): sonic4 DEBUG + STRESS_EVICT.
-    /// UNFROZEN — no golden blob, not a `refreeze` target; a forced-eviction soak
-    /// fixture built on demand. Reuses the DEBUG frozen size table (the STRESS_EVICT
-    /// clamp is an immediate, not a size change), so the chainer resolves it directly.
-    StressEvict,
-    /// Off-canonical DEV shape (Art-streaming P2c Task 11): sonic4 DEBUG built against a
-    /// UNIQUIFIED act art pool (41 pages). UNFROZEN — no golden, not a `refreeze` target.
-    /// Unlike `StressEvict`, the pool inflation CHANGES section sizes past the packed-
-    /// placement spread step, so its profile sets `fixture_placement` (greedy pack from
-    /// measured sizes; org anchors still held). Built on demand for the acceptance soak.
-    StressArt,
-}
-
-impl BuildTarget {
-    /// The target's display label and its shipping
-    /// [`GameProfile`](sigil_harness::native::GameProfile).
-    ///
-    /// Every report reads its inputs from the profile — the game's own modules, the
-    /// comptime `-D` defines the `.emp` sources see — so the mapping lives once here
-    /// rather than per report. A report keyed off a different profile than the build
-    /// describes a ROM that was never produced.
-    fn label_and_profile(&self) -> (String, sigil_harness::native::GameProfile) {
-        use sigil_harness::native;
-        match self {
-            BuildTarget::Sonic4 { debug } => (
-                if *debug { "sonic4 debug".to_string() } else { "sonic4 plain".to_string() },
-                native::sonic4_profile(*debug),
-            ),
-            BuildTarget::Demo { debug } => (
-                if *debug { "demo debug".to_string() } else { "demo plain".to_string() },
-                native::demo_profile(*debug),
-            ),
-            BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
-            BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
-            BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
-            BuildTarget::StressEvict => {
-                ("stress_evict".to_string(), native::stress_evict_profile())
-            }
-            BuildTarget::StressArt => {
-                ("stress_art".to_string(), native::stress_art_profile())
-            }
-        }
-    }
-}
-
-struct BuildOpts {
-    aeon: String,
-    output: Option<String>,
-    emit_lst: Option<String>,
-    target: BuildTarget,
-    /// `--report <kind>`: print a report over the selected target and exit, without
-    /// building the ROM. `None` builds.
-    report: Option<ReportKind>,
-    /// `--extra-entry <module>` (repeatable): modules to EVALUATE inside this build's
-    /// profile although nothing `use`s them. Each is a dotted module id or a path to
-    /// an `.emp` file under the scan root. Only the NAMED module is checked for
-    /// byte-neutrality; what its own imports pull in is not.
-    extra_entries: Vec<String>,
-    /// `--check`: decide every guard against the final placement and stop before
-    /// the link. No ROM, no listing, no appendix. `false` builds.
-    check: bool,
-    /// `--anchor-overlay <path>`: an anchor overlay file whose `[[anchor]]` rows replace
-    /// the `at` of the map anchors of the same names for this build (the clip builds'
-    /// own sound-bank positions). Resolved against the working directory. `None` builds
-    /// from the map as written.
-    anchor_overlay: Option<String>,
-    /// `--no-build-json`: with `-o`, write the ROM but no `<stem>.build.json` beside it.
-    no_build_json: bool,
-    /// `--closure-scope corpus|game`: which modules `--report contracts|indirect-cost`
-    /// analyses ([`ClosureScope`]). Refused without one of those reports.
-    closure_scope: ClosureScope,
-}
-
-/// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
-/// `--emit-lst <path>`, `--game <name>`, `--debug`, `--config-a`, `--config-b`,
-/// `--lean` are optional. `--config-a`/`--config-b`/`--lean` fix the whole shape
-/// (sonic4 game), so they conflict with `--game`/`--debug`. `--native` is accepted as a no-op (post-flip
-/// the native build is the only build).
-///
-/// `--report <kind>` replaces the build with a report over the same target. The
-/// kinds share ONE flag rather than one flag per kind: a report is a view of the
-/// build's own data, the set of views grows, and a closed vocabulary behind one flag
-/// is the surface that stays legible as it does.
-///
-/// `--extra-entry <module-id-or-path>` is REPEATABLE: each names a module the build
-/// must evaluate although nothing `use`s it, so its module-level `ensure`s run inside
-/// the real profile and a false one fails the build with its own message. A NAMED
-/// module that would emit is refused by name; the refusal does not reach through that
-/// module's own imports, so byte-neutrality is a property of the argument, not of its
-/// whole import closure.
-///
-/// `--anchor-overlay <path>` names an anchor overlay file (resolved against the working
-/// directory) whose rows replace the `at` of the map anchors of the same names for this
-/// build. It rides the `--game`/`--debug` shapes and is refused with the fixed shapes
-/// (`--config-*`, `--lean`, `--stress-*`) and with `--report`.
-///
-/// `--check` runs the build's resolve over the same target (so `--game`, `--debug`,
-/// the `--config-*` shapes and `--extra-entry` all apply) and stops once every guard
-/// is decided. It writes nothing, so a ROM or listing destination beside it is
-/// refused like it is beside `--report`, and the two non-building modes refuse each
-/// other rather than picking one silently.
-fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
-    let mut aeon: Option<String> = None;
-    let mut output: Option<String> = None;
-    let mut emit_lst: Option<String> = None;
-    let mut game: Option<String> = None;
-    let mut debug = false;
-    let mut config: Option<char> = None;
-    let mut stress_evict = false;
-    let mut stress_art = false;
-    let mut report: Option<ReportKind> = None;
-    let mut extra_entries: Vec<String> = Vec::new();
-    let mut check = false;
-    let mut anchor_overlay: Option<String> = None;
-    let mut no_build_json = false;
-    let mut closure_scope: Option<ClosureScope> = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--aeon" => aeon = Some(next_value(args, &mut i, "--aeon")?),
-            "--closure-scope" => {
-                closure_scope = Some(match next_value(args, &mut i, "--closure-scope")?.as_str() {
-                    "corpus" => ClosureScope::Corpus,
-                    "game" => ClosureScope::Game,
-                    other => return Err(format!("unknown --closure-scope '{other}' (want corpus or game)")),
-                })
-            }
-            "-o" => output = Some(next_value(args, &mut i, "-o")?),
-            "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
-            "--game" => game = Some(next_value(args, &mut i, "--game")?),
-            "--native" => {} // accepted as a no-op — native is the only build post-flip
-            // G0b Task 5: marks the profile-driven driver explicitly, beside `--project`.
-            // Accepted, not yet required (the cutover makes it so).
-            "--legacy" => {}
-            // `run_build` routes any argument list holding `--project` to
-            // `parse_project_args`, so reaching these arms means the two grammars
-            // were mixed in a way that routing did not see (or a direct caller).
-            a @ ("--project" | "--shape") => {
-                let _ = next_value(args, &mut i, a)?;
-                return Err(format!("{a} selects the game-as-data driver (sigil build --project <dir> --shape <name>); it does not combine with --aeon"));
-            }
-            "--debug" => debug = true,
-            "--config-a" => config = Some('a'),
-            "--config-b" => config = Some('b'),
-            "--lean" => config = Some('l'),
-            // Off-canonical DEV shape (Art-streaming P2b Task 7): sonic4 DEBUG with the
-            // STRESS_EVICT comptime define = 1 (clamps the residency cache below the pool
-            // size, forcing continuous eviction). UNFROZEN — no golden, not a refreeze
-            // target; built on demand for the controller's forced-eviction soak.
-            "--stress-evict" => stress_evict = true,
-            // Off-canonical DEV shape (Art-streaming P2c Task 11): sonic4 DEBUG against a
-            // UNIQUIFIED act art pool (41 pages, +tens of KB in the ojz_act_pool section).
-            // UNFROZEN — no golden, not a refreeze target. Selects fixture placement (the
-            // profile sets `fixture_placement`), plumbed ONLY from build.sh's STRESS_ART
-            // path. Fixes the whole shape, so it refuses any shipped-shape selector below.
-            "--stress-art" => stress_art = true,
-            // Repeatable, order-preserving: one module evaluated per occurrence.
-            "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
-            "--check" => check = true,
-            "--no-build-json" => no_build_json = true,
-            "--anchor-overlay" => {
-                if anchor_overlay.is_some() {
-                    return Err("--anchor-overlay takes one file; naming two applies only the last".into());
-                }
-                anchor_overlay = Some(next_value(args, &mut i, "--anchor-overlay")?);
-            }
-            "--report" => {
-                let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
-                if report.is_some_and(|prev| prev != kind) {
-                    return Err("--report takes one kind; naming two prints only the last".into());
-                }
-                report = Some(kind);
-            }
-            other => return Err(format!("unexpected argument '{other}'")),
-        }
-        i += 1;
-    }
-
-    let aeon = aeon.ok_or("--aeon <dir> is required")?;
-
-    if stress_evict && (config.is_some() || game.is_some() || debug) {
-        return Err("--stress-evict fixes the shape (sonic4 debug + STRESS_EVICT); do not combine with --game/--debug/--config-*".into());
-    }
-    if stress_art && (config.is_some() || game.is_some() || debug || stress_evict) {
-        return Err("--stress-art fixes the shape (sonic4 debug + uniquified pool + fixture placement); do not combine with --game/--debug/--config-*/--stress-evict".into());
-    }
-    let target = match config {
-        Some(c) => {
-            if game.is_some() || debug {
-                return Err("--config-a/--config-b/--lean fix the shape; do not combine with --game/--debug".into());
-            }
-            match c {
-                'a' => BuildTarget::ConfigA,
-                'b' => BuildTarget::ConfigB,
-                _ => BuildTarget::Lean,
-            }
-        }
-        None if stress_evict => BuildTarget::StressEvict,
-        None if stress_art => BuildTarget::StressArt,
-        None => match game.as_deref() {
-            None | Some("sonic4") => BuildTarget::Sonic4 { debug },
-            Some("demo") => BuildTarget::Demo { debug },
-            Some(g) => return Err(format!("unknown --game '{g}' (want sonic4 or demo)")),
-        },
-    };
-    // A report prints and exits, so a ROM destination given alongside one would be
-    // silently ignored — the caller asked for two different things and gets one.
-    if report.is_some() && (output.is_some() || emit_lst.is_some()) {
-        return Err("--report prints instead of building; drop -o / --emit-lst".into());
-    }
-    // An extra entry is evaluated by the BUILD, so pairing it with a report asks for
-    // a guard run and gets a print — same reason `-o` is refused above.
-    if report.is_some() && !extra_entries.is_empty() {
-        return Err("--report prints instead of building; --extra-entry needs a build".into());
-    }
-    // A check writes no ROM and no listing, so a destination beside it names an
-    // artifact that will not exist; and it is not a report, so the two refuse each
-    // other instead of one silently winning.
-    if check && (output.is_some() || emit_lst.is_some()) {
-        return Err("--check decides guards without writing a ROM; drop -o / --emit-lst".into());
-    }
-    if check && report.is_some() {
-        return Err("--check and --report are different runs; pick one".into());
-    }
-    // An overlay moves the anchors of the shape `--game`/`--debug` selects. The fixed
-    // shapes carry their own placement, and a report builds nothing to place.
-    if anchor_overlay.is_some() {
-        if !matches!(target, BuildTarget::Sonic4 { .. } | BuildTarget::Demo { .. }) {
-            return Err("--anchor-overlay applies to the --game/--debug shapes; do not combine with --config-*/--lean/--stress-*".into());
-        }
-        if report.is_some() {
-            return Err("--report prints instead of building; --anchor-overlay needs a build".into());
-        }
-    }
-    // The scope picks the module set of a closure REPORT; a build's gate keeps the whole
-    // corpus, so the scope beside anything else would be silently ignored.
-    if closure_scope.is_some() && !matches!(report, Some(ReportKind::Contracts | ReportKind::IndirectCost)) {
-        return Err("--closure-scope applies to --report contracts|indirect-cost".into());
-    }
-    let closure_scope = closure_scope.unwrap_or_default();
-    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay, no_build_json, closure_scope })
-}
-
 /// `sigil build --project`'s options (G0b Task 5).
 #[derive(Debug, PartialEq, Eq)]
 struct ProjectOpts {
@@ -3410,8 +2977,7 @@ struct ProjectOpts {
     shape: String,
     /// `-o <out.bin>`: required for a build; refused beside `--report`/`--check`.
     output: Option<String>,
-    /// `--emit-lst <lst>`: the listing, with its source digest, as the profile-driven
-    /// driver writes it.
+    /// `--emit-lst <lst>`: the listing, with its source digest.
     emit_lst: Option<String>,
     extra_entries: Vec<String>,
     anchor_overlay: Option<String>,
@@ -3424,10 +2990,9 @@ struct ProjectOpts {
 }
 
 /// Parse `sigil build --project <p> --shape <name> -o <out>` (or `--report <kind>` /
-/// `--check` in place of `-o`). Every option of the profile-driven grammar that names a
-/// shape (`--aeon`, `--game`, `--debug`, `--config-*`, `--lean`, `--stress-*`) is refused
-/// by name: the description and `--shape` say it. The mode pairings are the
-/// profile-driven grammar's, refused with the same words.
+/// `--check` in place of `-o`). The description and `--shape` say the shape; an option of
+/// the deleted profile-driven grammar (`--aeon`, `--game`, `--debug`, ...) is not listed
+/// for this row, so `main` refuses it before this parser runs.
 fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
     let mut project = None;
     let mut shape = None;
@@ -3461,24 +3026,13 @@ fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
             }
             "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
             "--no-build-json" => no_build_json = true,
-            a @ ("--aeon" | "--legacy" | "--game" | "--debug" | "--config-a" | "--config-b" | "--lean"
-            | "--stress-evict" | "--stress-art" | "--native") => {
-                return Err(format!("{a} selects the profile-driven driver; --project takes the shape from --shape"))
-            }
-            // A `--project` closure always analyses the engine and its own game (G0b Task 9a);
-            // the scope is the profile-driven report's knob for matching that.
-            "--closure-scope" => {
-                return Err("--closure-scope is a profile-driven (--aeon) report option; a --project closure \
-                            always analyses the engine and its own game"
-                    .into())
-            }
             other => return Err(format!("unexpected argument '{other}'")),
         }
         i += 1;
     }
     let project = project.ok_or("--project <dir|game.toml> is required")?;
     let shape = shape.ok_or("--project needs --shape <name> (a [shapes.*] row of the game description)")?;
-    // The same pairings, and the same words, as the profile-driven grammar.
+    // The mode pairings: a report and a check write nothing, and neither is a build.
     if report.is_some() && (output.is_some() || emit_lst.is_some()) {
         return Err("--report prints instead of building; drop -o / --emit-lst".into());
     }
@@ -3517,8 +3071,8 @@ fn run_project(opts: &ProjectOpts) {
         })
     };
     match opts.report {
-        Some(ReportKind::Contracts) => run_contract_report(&project.checkout, &subject()),
-        Some(ReportKind::IndirectCost) => run_indirect_cost_report(&project.checkout, &subject()),
+        Some(ReportKind::Contracts) => run_contract_report(&subject()),
+        Some(ReportKind::IndirectCost) => run_indirect_cost_report(&subject()),
         Some(ReportKind::Ram) => {
             let s = subject();
             let ram = project.engine.entry_seeds.get(1).cloned().unwrap_or_else(|| {
@@ -3544,9 +3098,9 @@ fn run_project(opts: &ProjectOpts) {
         }
         None if opts.check => run_project_check(&project, opts),
         None => {
-            // The closure gate runs BEFORE the build, as on the profile-driven path: a
-            // contract failure costs a second, not a link, and leaves no fresh artifact.
-            run_contract_gate(&project.checkout, subject);
+            // The closure gate runs BEFORE the build: a contract failure costs a second,
+            // not a link, and leaves no fresh artifact.
+            run_contract_gate(subject);
             run_project_build(&project, opts);
         }
     }
@@ -3560,18 +3114,25 @@ fn project_build_options<'a>(
     seams: &'a sigil_harness::driver_seams::HarnessSeams,
     env: &'a dyn Fn(&str) -> Option<std::ffi::OsString>,
 ) -> sigil_build::driver::BuildOptions<'a> {
-    let sidecar = !opts.no_build_json && opts.report.is_none() && !opts.check;
     sigil_build::driver::BuildOptions {
         extra_entries: opts.extra_entries.clone(),
         anchor_overlay,
-        layout_pass: if sidecar {
-            sigil_frontend_emp::export_side::LayoutPass::Owner
-        } else {
-            sigil_frontend_emp::export_side::LayoutPass::Off
-        },
+        layout_pass: project_layout_pass(opts),
         seams,
         env,
         generated: None,
+    }
+}
+
+/// How much of the export's layout registry the build computes: the owner-view export
+/// when a sidecar is written (a build with `-o` and no `--no-build-json`), nothing at all
+/// otherwise.
+fn project_layout_pass(opts: &ProjectOpts) -> sigil_frontend_emp::export_side::LayoutPass {
+    use sigil_frontend_emp::export_side::LayoutPass;
+    if opts.output.is_some() && !opts.no_build_json && opts.report.is_none() && !opts.check {
+        LayoutPass::Owner
+    } else {
+        LayoutPass::Off
     }
 }
 
@@ -3585,9 +3146,9 @@ fn project_anchor_overlay(opts: &ProjectOpts) -> Option<sigil_harness::map_place
     })
 }
 
-/// `sigil build --project ... --check`: [`run_check_native`]'s contract over the
-/// game-as-data driver ([`sigil_build::driver::check_project`]), with the same banner and
-/// the same `checked:` line. The contract closure gate is not run here either.
+/// `sigil build --project ... --check`: decide every guard against final placement with
+/// the game-as-data driver ([`sigil_build::driver::check_project`]), print the banner and
+/// the `checked:` line, and stop. The contract closure gate is not run here.
 fn run_project_check(project: &sigil_build::driver::Project, opts: &ProjectOpts) {
     let label = format!("{} {}", project.game.id, opts.shape);
     let sound = match sigil_build::describe::resolve_shape(&project.game, &opts.shape) {
@@ -3630,8 +3191,7 @@ fn run_project_check(project: &sigil_build::driver::Project, opts: &ProjectOpts)
 }
 
 /// Build one shape with the game-as-data driver and write its artifacts: the ROM, the
-/// listing (`--emit-lst`) and the build export, through the same writer as the
-/// profile-driven driver ([`write_build_artifacts`]).
+/// listing (`--emit-lst`) and the build export ([`write_build_artifacts`]).
 fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts) {
     use sigil_build::driver;
     let env = |k: &str| std::env::var_os(k);
@@ -3640,7 +3200,7 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
     let anchor_overlay = project_anchor_overlay(opts);
     let output = opts.output.as_deref().expect("parse_project_args requires -o for a build");
     let label = format!("{} {}", project.game.id, opts.shape);
-    // The build's generated root, owned here as `run_build_native` owns it: the digest and
+    // The build's generated root, owned here: the digest and
     // the export place the build's generated reads at their mount through it, after the
     // directory itself is gone. `build_project` reuses the root entered for its checkout.
     let build_dir = match sigil_build::build_dir::BuildDir::create() {
@@ -3712,21 +3272,6 @@ fn project_identity(
         shape: shape.to_string(),
         debug: out.debug,
         extra_entries: opts.extra_entries.clone(),
-    }
-}
-
-/// `profile` with the `--anchor-overlay` file read and attached, or `profile` itself
-/// when the flag is absent. The file is read through the build read set, so it is a
-/// row of the listing's source digest.
-fn with_anchor_overlay(
-    profile: sigil_harness::native::GameProfile,
-    opts: &BuildOpts,
-) -> Result<sigil_harness::native::GameProfile, String> {
-    match &opts.anchor_overlay {
-        None => Ok(profile),
-        Some(path) => Ok(profile.with_anchor_overlay(sigil_harness::map_placement::load_anchor_overlay(
-            std::path::Path::new(path),
-        )?)),
     }
 }
 
@@ -3843,237 +3388,6 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
     }
 }
 
-/// `sigil build --check`: decide every `ensure` and every `LinkAssert` of the
-/// target against the final post-relaxation placement, then stop. Runs exactly the
-/// resolve the full build runs (`native::check_chained`: sound artifacts for a
-/// sound-on shape, the AS residual, the `.emp` lowering, the declared chain,
-/// `resolve_layout`, `check_link_asserts`, the drift verdict and the inapplicable
-/// allowlist) and none of what follows it: no link, no listing, no appendix, no
-/// checksum, no ROM. Exit 0 when every decided guard holds; exit 1 with the same
-/// rendered guard lines the full build prints when any fails.
-///
-/// The contract closure gate is NOT run here, and the banner says so: a green
-/// check is a statement about guards against placement, not that the game builds.
-fn run_check_native(aeon: &std::path::Path, opts: &BuildOpts) {
-    use sigil_harness::native;
-
-    let (label, profile) = opts.target.label_and_profile();
-    let profile = profile.with_extra_entries(opts.extra_entries.iter().cloned());
-    let profile = match with_anchor_overlay(profile, opts) {
-        Ok(p) => p,
-        Err(err) => {
-            eprintln!("error: native check ({label}): {err}");
-            process::exit(1);
-        }
-    };
-    eprintln!(
-        "check: {label}: deciding every ensure and LinkAssert against final post-relaxation \
-         placement, then stopping before the link: a green check proves nothing about region \
-         budget or overlap, image bounds, the checksum or the contract closure gate, and is not \
-         a statement that the game builds"
-    );
-    if profile.sound_on {
-        eprintln!(
-            "check: {label}: the sound artifacts (a precondition of the .emp build) are written \
-             into a private build directory outside {}, which this run reads and never writes",
-            aeon.display()
-        );
-    }
-    let native::CheckReport { guards, warnings } = match native::check_chained(aeon, &profile) {
-        Ok(report) => report,
-        Err(err) => {
-            eprintln!("error: native check ({label}): {err}");
-            process::exit(1);
-        }
-    };
-    report_warnings(&warnings);
-    println!(
-        "checked: {label}: {} ensure verdict(s) at comptime, {} LinkAssert(s) decided at link, \
-         {} LinkAssert(s) inapplicable (extern not defined in this link, allowlisted)",
-        guards.comptime_guards, guards.link_asserts_decided, guards.link_asserts_inapplicable
-    );
-}
-
-/// The `--native` build. Reproduces the exact steps the native gates bank: get the
-/// assembled ROM + sigil-canonical listing from the target's driver (pinned for
-/// canonical sonic4, the declared-order chainer for the off-canonical shapes), then
-/// the `convsym`+`fixheader` deb2 appendix over that same (rom, listing) — so the
-/// full file is byte-identical to `build_native_full_file`/`build_full_file_chained`
-/// and a green gate vouches for the bytes `build.sh` ships. `--emit-lst` drops the
-/// sigil-canonical `.lst` (the `.lst`-consumer drop-in). Prints `crc=<crc32>
-/// len=<bytes>` for the build log / provenance check.
-///
-/// SHAPE SPLIT (the crash-report axis, owner-ruled 2026-08-04 — SUPERSEDES the
-/// review-item-29 release strip): the appendix follows the MD Debugger island, so it
-/// runs whenever `debug || crash_report` — i.e. in every shape except the opt-in
-/// `--lean`, which writes the assembled ROM verbatim. `build_native_full_file` /
-/// `build_full_file_chained` model the same rule off `GameProfile::crash_report`.
-fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
-    use sigil_harness::native;
-
-    // The closure gate runs BEFORE the build: a contract failure should cost a
-    // second, not a full link, and it must not leave a fresh artifact on disk
-    // that looks like it passed.
-    run_contract_gate(aeon, || target_subject(aeon, &opts.target));
-
-    // The build's generated root (G0b Task 6): the sound seams write into this private
-    // directory outside the tree, the `.emp` lowering embeds from it, and the digest and
-    // the export place its reads at their mount path. The directory is removed as soon as
-    // the build has run, before any exit below: what follows reads only the recorded
-    // read set, and `generated` names the root by path alone.
-    let build_dir = match sigil_build::build_dir::BuildDir::create() {
-        Ok(d) => d,
-        Err(err) => {
-            eprintln!("error: native build: {err}");
-            process::exit(1);
-        }
-    };
-    let generated = match sigil_harness::export_files::GeneratedRoot::new(build_dir.generated(), &aeon.join("engine")) {
-        Ok(r) => r,
-        Err(err) => {
-            drop(build_dir);
-            eprintln!("error: native build: {err}");
-            process::exit(1);
-        }
-    };
-    let gen_dir = build_dir.generated().to_path_buf();
-
-    // The LABEL comes from the same place the reports read it, so a build and a
-    // report over one target can never name it differently.
-    let label = opts.target.label_and_profile().0;
-    // `--extra-entry` rides the PROFILE, so every target honours it through one
-    // spelling. Canonical sonic4 keeps its own driver entry point when the list is
-    // empty — the shipped path stays the byte bar's path, untouched — and routes
-    // through the chainer (which is what that driver delegates to for a `Frozen`
-    // size source anyway) when an extra entry has to reach `build_emp`.
-    let extra = &opts.extra_entries;
-    // The export's layout registry is computed only for a build that will write a sidecar.
-    let pass = layout_pass_for(opts);
-    let with_extra = |p: native::GameProfile| {
-        p.with_extra_entries(extra.iter().cloned()).with_layout_pass(pass).with_generated(gen_dir.clone())
-    };
-    // `--anchor-overlay` also rides the profile. Parse-time refusals keep it to the
-    // `--game` shapes, the only arms that apply it; with it, canonical sonic4 leaves
-    // its own entry point for the chainer, as with an extra entry.
-    let overlaid = |p: native::GameProfile| -> Result<native::GameProfile, String> {
-        with_anchor_overlay(with_extra(p), opts)
-    };
-    // (rom, listing) from the target's driver + the target's appendix floor + shape.
-    let (debug, floor, built) = match &opts.target {
-        // Canonical sonic4 → the PINNED driver (the `native_full_rom` gate path).
-        BuildTarget::Sonic4 { debug } if extra.is_empty() && opts.anchor_overlay.is_none() => (
-            *debug,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_native_rom_with_listing_in(aeon, *debug, pass, Some(&gen_dir)),
-        ),
-        BuildTarget::Sonic4 { debug } => (
-            *debug,
-            native::SONIC4_APPENDIX_FLOOR,
-            overlaid(native::sonic4_profile(*debug))
-                .and_then(|p| native::build_rom_chained_with_listing(aeon, &p)),
-        ),
-        // Off-canonical → the declared-order CHAINER (the `native_offcanonical_full` path).
-        BuildTarget::Demo { debug } => (
-            *debug,
-            native::DEMO_APPENDIX_FLOOR,
-            overlaid(native::demo_profile(*debug))
-                .and_then(|p| native::build_rom_chained_with_listing(aeon, &p)),
-        ),
-        BuildTarget::ConfigA => (
-            true,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &with_extra(native::config_a_profile())),
-        ),
-        BuildTarget::ConfigB => (
-            false,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &with_extra(native::config_b_profile())),
-        ),
-        BuildTarget::Lean => (
-            false,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &with_extra(native::lean_profile())),
-        ),
-        // Off-canonical DEV soak shape — the declared-order CHAINER, debug appendix.
-        BuildTarget::StressEvict => (
-            true,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(
-                aeon,
-                &with_extra(native::stress_evict_profile()),
-            ),
-        ),
-        // Off-canonical DEV fixture (uniquified pool) — CHAINER with fixture placement.
-        BuildTarget::StressArt => (
-            true,
-            native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
-        ),
-    };
-    drop(build_dir);
-    let native::RomBuild { rom, listing, warnings, registry, export_inputs } = match built {
-        Ok(build) => build,
-        Err(err) => {
-            eprintln!("error: native build ({label}): {err}");
-            process::exit(1);
-        }
-    };
-    report_warnings(&warnings);
-
-    // The deb2 symbol appendix over the SAME (rom, listing) — byte-identical to the
-    // full-file gate function (which folds the checksum in `emit_rom` then appends).
-    //
-    // THE CRASH-REPORT AXIS (owner-ruled 2026-08-04): the appendix is the MD
-    // Debugger's symbol table, and the debugger is a DIAGNOSTIC — a player's crash
-    // has to name the code it died in. So it ships in DEBUG and in RELEASE; the
-    // ~29.7 KB is 7.2% of a ROM that is itself 9% of a 4 MB cart. Only the opt-in
-    // LEAN shape (no island, faults route at ReleaseFault) writes the assembled ROM
-    // verbatim — same length, same header (`emit_rom` already folded the checksum
-    // over exactly these bytes, so no re-fix is needed).
-    //
-    // THE SHAPE ANSWER IS DERIVED, NOT NAMED HERE. Spelling it as a target match
-    // (`!matches!(opts.target, Lean)`) made this a THIRD hand-maintained copy of one
-    // fact, and a copy that a new no-island target would silently fall out of.
-    // `declares_error_handler_island` reconciles the profile's crash-report axis with
-    // the module list its build is handed and refuses when they disagree, so this
-    // site and `append_deb2_appendix`'s blob-label check read the same answer.
-    let island = match native::declares_error_handler_island(&opts.target.label_and_profile().1, &registry) {
-        Ok(v) => v,
-        Err(err) => {
-            eprintln!("error: native build ({label}) fault-handler shape: {err}");
-            process::exit(1);
-        }
-    };
-    // The assembled image's length, before any appendix: where the deb2 appendix starts.
-    let assembled_len = rom.len();
-    let full = if island {
-        match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor, island) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                eprintln!("error: native build ({label}) appendix: {err}");
-                process::exit(1);
-            }
-        }
-    } else {
-        rom
-    };
-
-    let identity = match legacy_identity(aeon, opts) {
-        Ok(i) => i,
-        Err(err) => {
-            eprintln!("error: native build ({label}): {err}");
-            process::exit(1);
-        }
-    };
-    let artifacts = Artifacts {
-        output: opts.output.as_deref(),
-        emit_lst: opts.emit_lst.as_deref(),
-        sidecar: writes_sidecar(opts),
-    };
-    write_build_artifacts(aeon, &label, &identity, &artifacts, &full, assembled_len, &listing, &export_inputs, &generated, &[]);
-    println!("built: {label} native ROM, crc={:08x} len={}", native::crc32(&full), full.len());
-}
-
 /// Who a build says it is, wherever an artifact names it: the listing's source digest
 /// (`DIGEST-SHAPE`, `DIGEST-DEFINE`) and the build export's `shape` record. Both drivers
 /// fill one and hand it to [`write_build_artifacts`], so the two write their ROM, listing
@@ -4092,22 +3406,6 @@ struct BuildIdentity {
     debug: bool,
     /// `DIGEST-SHAPE extra-entries=`.
     extra_entries: Vec<String>,
-}
-
-/// The profile-driven driver's identity for `opts.target`: the names
-/// [`export_shape_names`] and [`digest_target`] give it and the profile's define set.
-fn legacy_identity(aeon: &std::path::Path, opts: &BuildOpts) -> Result<BuildIdentity, String> {
-    let profile = opts.target.label_and_profile().1;
-    let defines = sigil_harness::native::shape_defines(&profile, aeon)?;
-    let (game, shape) = export_shape_names(&opts.target);
-    Ok(BuildIdentity {
-        defines,
-        target: digest_target(&opts.target).0.to_string(),
-        game,
-        shape,
-        debug: profile.debug,
-        extra_entries: opts.extra_entries.clone(),
-    })
 }
 
 /// Which artifacts a build writes: the ROM (`-o`), the listing (`--emit-lst`), and the
@@ -4221,22 +3519,6 @@ fn write_build_artifacts(
     }
 }
 
-/// Whether this build writes a `<stem>.build.json`: with `-o`, unless `--no-build-json`.
-fn writes_sidecar(opts: &BuildOpts) -> bool {
-    opts.output.is_some() && !opts.no_build_json
-}
-
-/// How much of the export's layout registry the build computes: the owner-view export
-/// when a sidecar is written, nothing at all otherwise.
-fn layout_pass_for(opts: &BuildOpts) -> sigil_frontend_emp::export_side::LayoutPass {
-    use sigil_frontend_emp::export_side::LayoutPass;
-    if writes_sidecar(opts) {
-        LayoutPass::Owner
-    } else {
-        LayoutPass::Off
-    }
-}
-
 /// Where the build-data export for the ROM written to `rom_out` lives: the ROM's
 /// final extension replaced by `build.json`, so `s4.bin` is described by `s4.build.json`
 /// and `s4.debug.bin` by `s4.debug.build.json`. A ROM with no extension gains one
@@ -4260,20 +3542,6 @@ struct ExportParts {
     /// line table maps each located source file to its row through the same roots.
     aeon_root: std::path::PathBuf,
     sigil_root: std::path::PathBuf,
-}
-
-/// The names the export gives the shape.
-///
-///  * `shape.game` is the GAME, the `--game` value: `sonic4` or `demo`. The fixed
-///    off-canonical shapes (`--config-a`, `--config-b`, `--lean`, `--stress-*`) are
-///    sonic4 builds, as [`digest_target`] already says.
-///  * `shape.shape` is the target's display label from
-///    [`BuildTarget::label_and_profile`], the very string every other subcommand names
-///    the target by (`sonic4 plain`, `sonic4 debug`, `demo plain`, `demo debug`,
-///    `config_a`, `config_b`, `lean`, `stress_evict`, `stress_art`), so a report and an
-///    export over one target can never name it differently.
-fn export_shape_names(target: &BuildTarget) -> (String, String) {
-    (digest_target(target).1.to_string(), target.label_and_profile().0)
 }
 
 fn prepare_export(
@@ -4394,20 +3662,6 @@ fn lst_source_digest(
         &snapshot,
     )?;
     sigil_link::emit_source_digest(&digest)
-}
-
-/// The digest's `target=` and `game=` for a build target: the flag that selects it
-/// and the game it builds. Exhaustive, so a new target has to name both.
-fn digest_target(target: &BuildTarget) -> (&'static str, &'static str) {
-    match target {
-        BuildTarget::Sonic4 { .. } => ("sonic4", "sonic4"),
-        BuildTarget::Demo { .. } => ("demo", "demo"),
-        BuildTarget::ConfigA => ("config-a", "sonic4"),
-        BuildTarget::ConfigB => ("config-b", "sonic4"),
-        BuildTarget::Lean => ("lean", "sonic4"),
-        BuildTarget::StressEvict => ("stress-evict", "sonic4"),
-        BuildTarget::StressArt => ("stress-art", "sonic4"),
-    }
 }
 
 #[cfg(test)]
@@ -4793,15 +4047,16 @@ mod help_gates {
     /// `sigil build`'s parser has an arm for every option the build row lists,
     /// and asks for a value for exactly the options the row says take one. That
     /// parser returns rather than exits, so it is the one argument loop the
-    /// table can be held to directly.
+    /// table can be held to directly. (G0b Task 11: the build parser is
+    /// `parse_project_args`, the only one left.)
     #[test]
     fn the_build_parser_reads_every_listed_option_as_listed() {
         let build = super::entry_for("build").expect("the build row");
         assert!(!build.options.is_empty(), "the build row lists no options");
         for o in build.options {
             // The option last, so a value-taking one finds nothing after it.
-            let args: Vec<String> = ["--aeon", "x", o.name].iter().map(|a| a.to_string()).collect();
-            let result = super::parse_build_args(&args);
+            let args: Vec<String> = ["--project", "p", "--shape", "s", o.name].iter().map(|a| a.to_string()).collect();
+            let result = super::parse_project_args(&args);
             let err = result.as_ref().err().map(String::as_str).unwrap_or("");
             assert!(
                 !err.contains("unexpected argument"),
@@ -5013,185 +4268,69 @@ mod tests {
         assert_eq!(crate::parse_define_int("0"), Some(0));
     }
 
-    /// `sigil build`'s native flag grammar: `--aeon` required; the target derives
-    /// from `--game`/`--debug`/`--config-*`; `--config-*` conflicts with
-    /// `--game`/`--debug`; unknown games are refused. Locks the flip build's CLI.
+    /// `--check` rides `--extra-entry` and `--anchor-overlay`, and refuses the destinations
+    /// it would never write and the report it is not. (Moved from the profile-driven
+    /// grammar's `parse_build_args_check_grammar`, G0b Task 11.)
     #[test]
-    fn parse_build_args_native_target_selection() {
-        use crate::BuildTarget;
-        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-
-        // Default (no --game) → canonical sonic4 plain. `--native` is an accepted no-op.
-        let o = crate::parse_build_args(&s(&["--aeon", "x", "--native"])).unwrap();
-        assert!(matches!(o.target, BuildTarget::Sonic4 { debug: false }));
-
-        // --game sonic4 --debug → sonic4 debug.
-        let o = crate::parse_build_args(&s(&["--aeon", "x", "--native", "--game", "sonic4", "--debug"]))
-            .unwrap();
-        assert!(matches!(o.target, BuildTarget::Sonic4 { debug: true }));
-
-        // --game demo --debug → demo debug, with -o / --emit-lst captured.
-        let o = crate::parse_build_args(&s(&[
-            "--aeon", "x", "--native", "--game", "demo", "--debug", "-o", "r.bin", "--emit-lst", "r.lst",
-        ]))
-        .unwrap();
-        assert!(matches!(o.target, BuildTarget::Demo { debug: true }));
-        assert_eq!(o.output.as_deref(), Some("r.bin"));
-        assert_eq!(o.emit_lst.as_deref(), Some("r.lst"));
-
-        // --config-a / --config-b / --lean select those shapes.
-        assert!(matches!(
-            crate::parse_build_args(&s(&["--aeon", "x", "--native", "--config-a"])).unwrap().target,
-            BuildTarget::ConfigA
-        ));
-        assert!(matches!(
-            crate::parse_build_args(&s(&["--aeon", "x", "--native", "--config-b"])).unwrap().target,
-            BuildTarget::ConfigB
-        ));
-        assert!(matches!(
-            crate::parse_build_args(&s(&["--aeon", "x", "--native", "--lean"])).unwrap().target,
-            BuildTarget::Lean
-        ));
-
-        // Refusals: missing --aeon, config+game conflict, config+debug conflict, unknown game.
-        // `--lean` fixes the whole shape exactly as --config-a/-b do, so it conflicts the same way.
-        assert!(crate::parse_build_args(&s(&["--native"])).is_err());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--config-a", "--game", "demo"])).is_err());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--config-b", "--debug"])).is_err());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--debug"])).is_err());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--game", "demo"])).is_err());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--game", "genesis"])).is_err());
-    }
-
-    /// `--closure-scope` (G0b Task 9a) picks the module set of a closure REPORT only:
-    /// `corpus` is the default, `game` narrows, and beside a build, `--check` or another
-    /// report it is refused rather than silently ignored.
-    #[test]
-    fn parse_build_args_closure_scope_grammar() {
-        use crate::ClosureScope;
+    fn project_args_check_grammar() {
         let s = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let scope = |v: &[&str]| crate::parse_build_args(&s(v)).map(|o| o.closure_scope);
-        assert_eq!(scope(&["--aeon", "x", "--report", "contracts"]), Ok(ClosureScope::Corpus));
-        assert_eq!(scope(&["--aeon", "x", "--report", "contracts", "--closure-scope", "game"]), Ok(ClosureScope::Game));
-        assert_eq!(scope(&["--aeon", "x", "--report", "indirect-cost", "--closure-scope", "corpus"]), Ok(ClosureScope::Corpus));
-        for bad in [
-            &["--aeon", "x", "--closure-scope", "game", "-o", "r.bin"][..],
-            &["--aeon", "x", "--closure-scope", "game", "--check"][..],
-            &["--aeon", "x", "--closure-scope", "game", "--report", "ram"][..],
-        ] {
-            let err = scope(bad).expect_err("refused");
-            assert!(err.contains("--closure-scope applies to --report contracts|indirect-cost"), "{bad:?}: {err}");
-        }
-        assert!(scope(&["--aeon", "x", "--report", "contracts", "--closure-scope", "all"]).unwrap_err().contains("unknown --closure-scope 'all'"));
-        let p = crate::parse_project_args(&s(&["--project", "g", "--shape", "s", "--report", "contracts", "--closure-scope", "game"]));
-        assert!(p.unwrap_err().contains("--closure-scope is a profile-driven (--aeon) report option"));
-    }
-
-    /// `--check` rides every target selector and `--extra-entry`, and refuses the
-    /// destinations it would never write and the report it is not.
-    #[test]
-    fn parse_build_args_check_grammar() {
-        use crate::BuildTarget;
-        let s = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let o = crate::parse_build_args(&s(&["--aeon", "x", "--check"])).unwrap();
+        let base = ["--project", "g", "--shape", "s"];
+        let parse = |extra: &[&str]| crate::parse_project_args(&s(&[&base[..], extra].concat()));
+        let o = parse(&["--check"]).unwrap();
         assert!(o.check);
-        assert!(matches!(o.target, BuildTarget::Sonic4 { debug: false }));
-        let o = crate::parse_build_args(&s(&["--aeon", "x", "--game", "demo", "--check"])).unwrap();
+        let o = parse(&["--check", "--extra-entry", "games.demo.constants"]).unwrap();
         assert!(o.check);
-        assert!(matches!(o.target, BuildTarget::Demo { debug: false }));
-        let o = crate::parse_build_args(&s(&[
-            "--aeon", "x", "--check", "--game", "demo", "--debug", "--extra-entry", "games.demo.constants",
-        ]))
-        .unwrap();
-        assert!(o.check);
-        assert!(matches!(o.target, BuildTarget::Demo { debug: true }));
         assert_eq!(o.extra_entries, vec!["games.demo.constants".to_string()]);
-        let o = crate::parse_build_args(&s(&["--aeon", "x", "--config-b", "--check"])).unwrap();
-        assert!(o.check);
-        assert!(matches!(o.target, BuildTarget::ConfigB));
-        assert!(!crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().check);
+        assert!(!parse(&["-o", "r.bin"]).unwrap().check);
 
-        let refused = |args: &[&str], flag: &str| {
-            let err = match crate::parse_build_args(&s(args)) {
+        let refused = |extra: &[&str], flag: &str| {
+            let err = match parse(extra) {
                 Err(e) => e,
-                Ok(_) => panic!("{args:?} must be refused"),
+                Ok(_) => panic!("{extra:?} must be refused"),
             };
-            assert!(err.contains("--check") && err.contains(flag), "{args:?}: {err}");
+            assert!(err.contains("--check") && err.contains(flag), "{extra:?}: {err}");
         };
-        refused(&["--aeon", "x", "--check", "-o", "r.bin"], "-o");
-        refused(&["--aeon", "x", "--check", "--emit-lst", "r.lst"], "--emit-lst");
-        refused(&["--aeon", "x", "--check", "--report", "ram"], "--report");
+        refused(&["--check", "-o", "r.bin"], "-o");
+        refused(&["--check", "--emit-lst", "r.lst"], "--emit-lst");
+        refused(&["--check", "--report", "ram"], "--report");
     }
 
-    /// `--anchor-overlay` takes one value, rides the `--game`/`--debug` shapes and the
-    /// build modes, and is refused with the fixed shapes and with `--report`.
+    /// `--anchor-overlay` takes one value, rides the build modes, and is refused with
+    /// `--report`. (Moved from `parse_build_args_anchor_overlay_grammar`, G0b Task 11; the
+    /// fixed-shape refusals it also held went with the profile-driven grammar, where
+    /// `--config-*`/`--lean`/`--stress-*` named shapes the overlay could not ride.)
     #[test]
-    fn parse_build_args_anchor_overlay_grammar() {
+    fn project_args_anchor_overlay_grammar() {
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let ov = |extra: &[&str]| {
-            let mut a = vec!["--aeon", "x", "--anchor-overlay", "clips/c/anchors.toml"];
+            let mut a = vec!["--project", "g", "--shape", "s", "--anchor-overlay", "clips/c/anchors.toml"];
             a.extend_from_slice(extra);
-            crate::parse_build_args(&s(&a))
+            crate::parse_project_args(&s(&a))
         };
-        // Accepted with the --game/--debug shapes, --check, --extra-entry, -o, --emit-lst.
-        for extra in [
-            &[][..],
-            &["--game", "sonic4", "--debug"],
-            &["--game", "demo"],
-            &["--check"],
-            &["--extra-entry", "games.a.one"],
-            &["-o", "r.bin", "--emit-lst", "r.lst"],
-        ] {
+        for extra in [&["--check"][..], &["--extra-entry", "games.a.one", "-o", "r.bin"], &["-o", "r.bin", "--emit-lst", "r.lst"]] {
             let o = ov(extra).unwrap_or_else(|e| panic!("{extra:?}: {e}"));
             assert_eq!(o.anchor_overlay.as_deref(), Some("clips/c/anchors.toml"), "{extra:?}");
         }
-        assert!(crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().anchor_overlay.is_none());
-        // Refused with the fixed shapes and with a report.
-        for extra in [
-            &["--config-a"][..],
-            &["--config-b"],
-            &["--lean"],
-            &["--stress-evict"],
-            &["--stress-art"],
-            &["--report", "ram"],
-        ] {
-            let e = ov(extra).err().unwrap_or_else(|| panic!("{extra:?} accepted"));
-            assert!(e.contains("--anchor-overlay"), "{extra:?}: {e}");
-        }
-        // Given twice, or with no value.
-        let e = ov(&["--anchor-overlay", "b.toml"]).err().expect("a second --anchor-overlay is refused");
+        assert!(crate::parse_project_args(&s(&["--project", "g", "--shape", "s", "-o", "r"])).unwrap().anchor_overlay.is_none());
+        let e = ov(&["--report", "ram"]).expect_err("--anchor-overlay beside --report is refused");
+        assert!(e.contains("--anchor-overlay"), "{e}");
+        let e = ov(&["--anchor-overlay", "b.toml", "-o", "r"]).expect_err("a second --anchor-overlay is refused");
         assert!(e.contains("one file"), "{e}");
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--anchor-overlay"])).is_err());
+        assert!(crate::parse_project_args(&s(&["--project", "g", "--shape", "s", "--anchor-overlay"])).is_err());
     }
 
     /// `--extra-entry` is REPEATABLE and order-preserving (one module evaluated per
-    /// occurrence), takes a value, and is refused alongside `--report` — which does
-    /// not build, so it could only ignore the modules it was asked to evaluate.
+    /// occurrence), takes a value, and is refused alongside `--report`, which does not
+    /// build. (Moved from `parse_build_args_collects_repeated_extra_entries`, G0b Task 11.)
     #[test]
-    fn parse_build_args_collects_repeated_extra_entries() {
+    fn project_args_collect_repeated_extra_entries() {
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let o = crate::parse_build_args(&s(&[
-            "--aeon",
-            "x",
-            "--extra-entry",
-            "games.a.one",
-            "--extra-entry",
-            "b/two.emp",
-        ]))
-        .unwrap();
+        let parse = |extra: &[&str]| crate::parse_project_args(&s(&[&["--project", "g", "--shape", "s"][..], extra].concat()));
+        let o = parse(&["-o", "r", "--extra-entry", "games.a.one", "--extra-entry", "b/two.emp"]).unwrap();
         assert_eq!(o.extra_entries, vec!["games.a.one".to_string(), "b/two.emp".to_string()]);
-
-        assert!(crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().extra_entries.is_empty());
-        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--extra-entry"])).is_err());
-        assert!(crate::parse_build_args(&s(&[
-            "--aeon",
-            "x",
-            "--report",
-            "ram",
-            "--extra-entry",
-            "games.a.one"
-        ]))
-        .is_err());
+        assert!(parse(&["-o", "r"]).unwrap().extra_entries.is_empty());
+        assert!(parse(&["-o", "r", "--extra-entry"]).is_err());
+        assert!(parse(&["--report", "ram", "--extra-entry", "games.a.one"]).is_err());
     }
 
     #[test]
@@ -5324,20 +4463,23 @@ mod tests {
 #[cfg(test)]
 mod layout_pass_gates {
     //! The export's layout registry is computed only for a build that writes a sidecar.
-    use super::{layout_pass_for, parse_build_args};
+    //! (G0b Task 11: moved from the profile-driven grammar onto `parse_project_args` and
+    //! the layout pass `project_build_options` hands the driver.)
+    use super::{parse_project_args, project_layout_pass};
     use sigil_frontend_emp::export_side::LayoutPass;
 
     fn pass(args: &[&str]) -> LayoutPass {
-        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        let opts = parse_build_args(&args).unwrap_or_else(|e| panic!("{e}"));
-        layout_pass_for(&opts)
+        let args: Vec<String> = ["--project", "g", "--shape", "s"].iter().chain(args).map(|s| s.to_string()).collect();
+        let opts = parse_project_args(&args).unwrap_or_else(|e| panic!("{e}"));
+        project_layout_pass(&opts)
     }
 
     #[test]
     fn only_a_build_that_writes_a_sidecar_computes_the_layout_registry() {
-        assert_eq!(pass(&["--aeon", "a", "-o", "r.bin"]), LayoutPass::Owner);
-        assert_eq!(pass(&["--aeon", "a", "-o", "r.bin", "--no-build-json"]), LayoutPass::Off);
-        assert_eq!(pass(&["--aeon", "a"]), LayoutPass::Off);
-        assert_eq!(pass(&["--aeon", "a", "--emit-lst", "r.lst"]), LayoutPass::Off);
+        assert_eq!(pass(&["-o", "r.bin"]), LayoutPass::Owner);
+        assert_eq!(pass(&["-o", "r.bin", "--no-build-json"]), LayoutPass::Off);
+        assert_eq!(pass(&["-o", "r.bin", "--emit-lst", "r.lst", "--no-build-json"]), LayoutPass::Off);
+        assert_eq!(pass(&["--check"]), LayoutPass::Off);
+        assert_eq!(pass(&["--report", "contracts"]), LayoutPass::Off);
     }
 }

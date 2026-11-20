@@ -5,15 +5,14 @@
 //! pass shares.
 //!
 //! Moved from sigil-harness (`native.rs`, `seam2.rs`, `module_roots.rs`) unchanged by
-//! G0b Task 4. The walk's alignment rule (`packed_chained_base`, which reads the frozen
-//! `section_align` table) and the walk itself (`packed_true_bases`, which calls it) stay
-//! in sigil-harness: they read a game table, which Task 5 replaces.
+//! G0b Task 4. The old walk and its alignment rule, which read the frozen `section_align`
+//! table, were deleted with the profile-driven driver (G0b Task 11); the walk is
+//! [`crate::walk`] and the alignment rule [`crate::align`].
 
 use std::collections::HashMap;
 
 use sigil_ir::{Fragment, Section, SectionPlacement, SymbolTable};
 
-use crate::diag::BuildWarning;
 
 /// The FROZEN-source emp placement map: one nominal region per DISTINCT section name
 /// present in the lowered set. Bases are COSMETIC (base 0, huge size) — the frozen
@@ -299,32 +298,6 @@ pub fn width_flip_report(
         String::new()
     } else {
         format!("Sections whose length depends on their base: {}", lines.join(" | "))
-    }
-}
-
-/// The `[layout.provisional-drift]` warning: `sec` packed at `packed`, a delta past
-/// its frozen provisional base `prov` wider than the walk's drift tolerance. Names
-/// the section (and its head label, the name an author sees in `map.toml`), both
-/// addresses and the delta, so the refreeze the landing owes is a sentence, not a
-/// diff hunt. Carries no source span: the drift is a property of the layout, not of
-/// a line.
-pub fn provisional_drift_warning(sec: &Section, packed: i64, prov: i64) -> BuildWarning {
-    let head = sec
-        .labels
-        .iter()
-        .min_by_key(|l| l.offset)
-        .map(|l| format!(" (`{}`)", l.name))
-        .unwrap_or_default();
-    let delta = packed - prov;
-    BuildWarning {
-        level: sigil_span::Level::Warning,
-        id: "layout.provisional-drift".to_string(),
-        location: None,
-        message: format!(
-            "[layout.provisional-drift] section `{}`{head} packed at {packed:#x}, frozen provisional {prov:#x} (delta {delta:+#x}); the frozen placement tables are stale against this content, refreeze at landing",
-            sec.name
-        ),
-        primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
     }
 }
 

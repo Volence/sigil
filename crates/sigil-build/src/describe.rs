@@ -3,8 +3,8 @@
 //!
 //! Spec: `empyrean/docs/v2/specs/2026-11-17-G0b-game-as-data-driver-design.md` §2 (what Sigil
 //! knows about Aeon today), §5.1 (what the descriptions contain), §5.4 (the sound seams stay
-//! out). Each field holds a fact the Rust driver in `sigil-harness` holds today; the committed
-//! files cite the Rust line each value was transcribed from.
+//! out). Each field holds a fact the Rust driver in `sigil-harness` held until G0b Task 11
+//! deleted it; the committed files once cited the Rust line each value was transcribed from.
 //!
 //! ── CLOSED INPUTS ──
 //!
@@ -55,8 +55,8 @@ pub struct GameDesc {
     /// Enforce exactly one non-empty `text` section (the objdefs). Added by Task 2: the Rust
     /// profile field `require_one_text` (sonic4 true, demo false) had no home in the brief.
     pub require_one_text: bool,
-    /// The deb2 symbol appendix's presence floor, in bytes. Added by Task 2: the Rust
-    /// `SONIC4_APPENDIX_FLOOR` / `DEMO_APPENDIX_FLOOR` constants, chosen per game by the CLI.
+    /// The deb2 symbol appendix's presence floor, in bytes. Added by Task 2: it replaced
+    /// the per-game Rust floor constants the CLI chose between (deleted, G0b Task 11).
     pub appendix_floor: u32,
     pub shapes: BTreeMap<String, ShapeDesc>,
     #[serde(default)]
