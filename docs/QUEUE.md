@@ -2645,6 +2645,20 @@ until its row is removed.
   optional reference like `ORACLE_DIR`), so the next drift is red the day it happens. Decide at the G0b final
   landing (oracle's pins also need sigil's merged revision then).
 
+## G0B-HELPER-CLOSURE-LOCATOR
+
+- state: open 2026-11-20 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
+- aeon `tools/emp_helper_closure.py::default_native_rs` finds "the sigil checkout paired with this aeon checkout" only
+  for the `<root>/aeon/.worktrees/NAME` layout; for any other aeon tree (every G0b proof copy, which sits at
+  `/home/volence/sonic_hacks/.g0b-*`, and `.aeon-g0b` itself) it falls through to `<parent>/sigil`, the MAIN sigil
+  checkout. So the pytest lane's `test_emp_helper_closure` (and the gate's no-argument form) read master's
+  `COMPTIME_HELPERS`, not the branch's, on every G0b aeon build: the lane passes against the wrong sigil without
+  saying so. At Task 10 the two lists are identical (14 helpers), and the closure was re-run explicitly against this
+  branch (`python3 tools/emp_helper_closure.py . <.sigil-g0b>/crates/sigil-harness/src/native.rs`: OK, 634 names
+  across 14 helpers; the 22 tests with `SIGIL_NATIVE` set to the branch's `native.rs`: OK). Fix on aeon's side: take
+  the native.rs from the `SIGIL_BUILD` binary's reported source dir (build.sh already reads it as `SIGIL_SRC`), and
+  refuse rather than fall through when no paired checkout is found.
+
 ## G0B-COMPARE-IDENTITY-NAMES
 
 - state: **closed** 2026-11-20, G0b Task 7 round 2 (found in Task 7)  size: `S`  project: `G0B-GAME-AS-DATA`
