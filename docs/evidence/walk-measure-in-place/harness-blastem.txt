@@ -1,0 +1,33 @@
+Behavioural evidence, old (sigil 4104e5df, master closure) vs new (ccf36c43), aeon 99cb963d.
+ROMs: each side's four shapes built with aeon ./build.sh (NO_LINT=1) in its own clone on a named branch
+(leg provenance needs aeon.branch); all 8 equal the proof's ROMs byte for byte.
+Harness: tools/leg_run.py (spawns the pinned oracle-aether dd09acb9 itself; no MCP), phase 0, default caps.
+BlastEm: tools/blastem_witness.py (open-loop replay of each run leg) and blastem_boot.py (300 Input_Tick hits).
+
+== leg_run, old vs new (rows = the per-tick path records, compared whole)
+s4.debug_diagfall_p0.json  old FINISHED met=True  lag 18f/947t | new FINISHED met=True  lag 18f/947t | rows identical=True input_log identical=True
+s4.debug_idle_p0.json      old CAP      met=True  lag 0f/600t | new CAP      met=True  lag 0f/600t | rows identical=True input_log identical=True
+s4.debug_run_p0.json       old FINISHED met=True  lag 16f/923t | new FINISHED met=True  lag 16f/923t | rows identical=True input_log identical=True
+s4.debug_spindash_p0.json  old FINISHED met=False lag 18f/947t | new FINISHED met=False lag 18f/947t | rows identical=True input_log identical=True
+s4.debug_stream_p0.json    old FINISHED met=False lag 16f/923t | new FINISHED met=False lag 16f/923t | rows identical=True input_log identical=True
+s4.debug_topspeed_p0.json  old FINISHED met=True  lag 16f/923t | new FINISHED met=True  lag 16f/923t | rows identical=True input_log identical=True
+s4_diagfall_p0.json        old STUCK    met=False lag 0f/532t | new STUCK    met=False lag 0f/532t | rows identical=True input_log identical=True
+s4_idle_p0.json            old CAP      met=True  lag 0f/600t | new CAP      met=True  lag 0f/600t | rows identical=True input_log identical=True
+s4_run_p0.json             old FINISHED met=True  lag 1f/1100t | new FINISHED met=True  lag 1f/1100t | rows identical=True input_log identical=True
+s4_spindash_p0.json        old STUCK    met=False lag 0f/532t | new STUCK    met=False lag 0f/532t | rows identical=True input_log identical=True
+s4_stream_p0.json          old FINISHED met=False lag 1f/1100t | new FINISHED met=False lag 1f/1100t | rows identical=True input_log identical=True
+s4_topspeed_p0.json        old FINISHED met=True  lag 1f/1100t | new FINISHED met=True  lag 1f/1100t | rows identical=True input_log identical=True
+demo / demo.debug idle: COULD NOT RUN on BOTH sides by design (leg_drive needs sonic4 symbols: missing PSTATE_SPINDASH).
+
+== blastem_witness on the run leg
+old s4        MEASURED agrees=True path_agree 1100/1100 lag oracle 1 blastem 1 extra_lag_ticks []
+old s4.debug  MEASURED agrees=False path_agree 923/923 lag oracle 16 blastem 18 extra_lag_ticks [990, 994, 995, 1012, 1020, 1021, 1029, 1040]
+new s4        MEASURED agrees=True path_agree 1100/1100 lag oracle 1 blastem 1 extra_lag_ticks []
+new s4.debug  MEASURED agrees=False path_agree 923/923 lag oracle 16 blastem 18 extra_lag_ticks [990, 994, 995, 1012, 1020, 1021, 1029, 1040]
+s4.debug disagrees by 2 lag frames on BOTH sides, at the identical ticks: pre-existing, not this parcel.
+
+== blastem_boot (BlastEm 0.6.2 under xvfb, GDB RSP; 300 hits of Input_Tick from power-on)
+s4         old BOOTED 300/300 last (Frame_Counter,Logic_Tick)=(330, 0) | new BOOTED 300/300 last=(330, 0) | per-hit rows identical=True
+s4.debug   old BOOTED 300/300 last (Frame_Counter,Logic_Tick)=(361, 0) | new BOOTED 300/300 last=(361, 0) | per-hit rows identical=True
+demo       old BOOTED 300/300 last (Frame_Counter,Logic_Tick)=(301, 0) | new BOOTED 300/300 last=(301, 0) | per-hit rows identical=True
+demo.debug old BOOTED 300/300 last (Frame_Counter,Logic_Tick)=(302, 0) | new BOOTED 300/300 last=(302, 0) | per-hit rows identical=True

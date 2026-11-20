@@ -34,7 +34,7 @@
 # A region pins `end - start`. If `end` names a label the region does not own —
 # overwhelmingly the NEXT section's head — the pin measures the gap to a
 # neighbour, not this region's size, and the placer's pad between them enters
-# the pin. Three spellings, and the strict one is the DEFAULT:
+# the pin. Three spellings, and a bare label is read strictly:
 #
 #   end = "section:<name>"      this region's OWN extent (`lma + image_len`).
 #                              Prefer this. It cannot absorb a neighbour's pad
@@ -46,16 +46,13 @@
 #                              REFUSES if it sweeps pad, and refuses too if the
 #                              label is defined in another section — flush today
 #                              is still the neighbour's placement tomorrow.
-#   end_measures = "allotment" the end IS the next placement, deliberately. The
-#                              pin's WIDTH IS NOT A SIZE; it moves when the
-#                              neighbour moves. No byte count is written down —
-#                              the pad is an accident of where the successor
-#                              landed, not a property of this region.
 #
-# 80 region/shape pairs declare `allotment` today. Each is convertible with a
-# one-line edit that SHRINKS its pin by its pad, so its port gate must re-prove
-# at the new length — do it when that gate is next touched. Gates:
-# `tests/region_end_contracts.rs`.
+# There is no fourth spelling. `end_measures = "allotment"` (the end IS the next
+# placement; the width is not a size) was RETIRED by walk-measure-in-place
+# (2026-11-19): its last user, `player_climb`, lost its pad when the old walk
+# began measuring every ROM section in place, so the pad every allotment had
+# accounted for was scratch-measurement padding. The parser now refuses the key
+# as an unknown field. Gates: `tests/region_end_contracts.rs`.
 
 [rom]
 # The listing END-line address per shape — the assembled (pre-convsym) ROM
@@ -2524,14 +2521,17 @@ gate = "SIGIL_EMP_PLAYER_GLIDE"
 
 # player_climb (character-dispatch C4 Task 11) — Knuckles' wall climb + ledge pull-up:
 # PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth player state file and the
-# last player CODE before the character records, so its end anchor is CharDef_Sonic,
-# which player_glide's used to be. Its head label is the first-emitted proc
-# (Climb_WallDist). Pinned rather than DUMMY_REGION for the bootstrap reason.
+# last player CODE before the character records. Its head label is the first-emitted
+# proc (Climb_WallDist). Pinned rather than DUMMY_REGION for the bootstrap reason.
+# The window runs to the end of `player_instashield`, the section placed after it
+# (map.toml: `Ability_InstaShield` sits between `Climb_WallDist` and `CharDef_Sonic`),
+# which is what the pin has always measured: until walk-measure-in-place it ended at
+# `CharDef_Sonic` as a declared allotment over scratch-measurement padding; that pad is
+# gone in both shapes, so the window is spelled by its last section. The pin does not move.
 [[region]]
 name = "player_climb"
 start = "Climb_WallDist"
-end = "CharDef_Sonic"
-end_measures = "allotment"
+end = "section:player_instashield"
 gate = "SIGIL_EMP_PLAYER_CLIMB"
 
 # P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in

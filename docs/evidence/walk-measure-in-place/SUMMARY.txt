@@ -1,0 +1,14 @@
+walk-measure-in-place: per-shape proof (old = sigil 4104e5df, closure = master dbad6235; new = ccf36c43; aeon 99cb963d)
+produced by: scripts/walk_inplace_proof.sh --old <old> --new <new> --aeon-ref .aeon-sigil-ref-99cb963d --out <dir> --fr1 <G0b task5-fr1 out> --keep
+config_a_keystones_flipped = config_a_profile() (alias checked in source by the runner): its row is config_a's.
+
+shape         old file new file  old EoR  new EoR dropped sites flips   shift padding pointer wflip header appendix unexpl verdict
+plain           850296   850262   802428   802424     140   140     0  425676     106     687     0      3    41892      0 EXPLAINED
+debug           870560   870606   810122   810122     146   146     0  454165     115     864     0      3    53952      0 EXPLAINED
+demo             99994    99980    70170    70170      74    74     0   21543      67      90     0      3    24914      0 EXPLAINED
+demo_debug      106981   106981    70170    70170      78    78     0   34773      77      97     0      2     1477      0 EXPLAINED
+config_a        870972   870972   810122   810122     146   146     0  454451     124     851     0      2     2743      0 EXPLAINED
+config_b        617813   617715   570932   570866     142   142     0  425989      69     670     0      4    44902      0 EXPLAINED
+lean            798202   798198   798202   798198     140   140     1  421514     108     677     4      3        0      0 EXPLAINED
+stress_evict    870560   870606   810122   810122     146   146     0  454165     115     864     0      3    53952      0 EXPLAINED
+stress_art      921676   921722   861238   861238     146   146     0  415489     115     830     0      3    53941      0 EXPLAINED

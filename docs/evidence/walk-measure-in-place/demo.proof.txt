@@ -1,0 +1,16 @@
+== demo: old EndOfRom 0x1121a file 99994 | new EndOfRom 0x1121a file 99980
+  site `vblank` -8 at 0xc80: engine/system/vblank.emp:163 bsr.w $4DD0 -> jsr abs.l (+2); engine/system/vblank.emp:359 bsr.w $4DD0 -> jsr abs.l (+2); engine/system/vblank.emp:526 bsr.w $577C -> jsr abs.l (+2); engine/system/vblank.emp:542 bsr.w $6082 -> jsr abs.l (+2)
+  site `game_loop` -6 at 0xdde: engine/system/game_loop.emp:31 bsr.s $DE4 -> jsr abs.l (+4); engine/system/game_loop.emp:55 bsr.w $51AE -> jsr abs.l (+2)
+  site `replay` -2 at 0xf2a: engine/system/replay.emp:296 abs.w $ECA -> abs.l (+2)
+  site `tile_cache` -14 at 0x41de: engine/level/tile_cache.emp:664 bsr.w $5F40 -> jsr abs.l (+2); engine/level/tile_cache.emp:673 bsr.w $5F40 -> jsr abs.l (+2); engine/level/tile_cache.emp:834 bsr.w $5B34 -> jsr abs.l (+2); engine/level/tile_cache.emp:877 bsr.w $61D0 -> jsr abs.l (+2); engine/level/tile_cache.emp:1149 bsr.w $5DC6 -> jsr abs.l (+2); engine/level/tile_cache.emp:2266 bsr.w $5E0C -> jsr abs.l (+2); engine/level/tile_cache.emp:2273 bsr.w $5E0C -> jsr abs.l (+2)
+  site `parallax` -2 at 0x4dc8: engine/level/parallax.emp:1444 bsr.w $55F8 -> jsr abs.l (+2)
+  site `preset` -18 at 0x56a0: engine/effects/preset.emp:412 bsr.w $50C4 -> jsr abs.l (+2); engine/effects/preset.emp:417 bsr.w $513E -> jsr abs.l (+2); engine/effects/preset.emp:422 bsr.w $50F0 -> jsr abs.l (+2); engine/effects/preset.emp:426 bsr.w $5184 -> jsr abs.l (+2); engine/effects/preset.emp:434 bsr.w $515C -> jsr abs.l (+2); engine/effects/preset.emp:443 bsr.w $515C -> jsr abs.l (+2); engine/effects/preset.emp:453 bsr.w $4F7C -> jsr abs.l (+2); engine/effects/preset.emp:459 abs.w $4F76 -> abs.l (+2); engine/effects/preset.emp:461 bsr.w $4DCA -> jsr abs.l (+2)
+  site `load_art` -6 at 0x5776: engine/level/load_art.emp:81 bsr.w $5B66 -> jsr abs.l (+2); engine/level/load_art.emp:137 bsr.w $5AB4 -> jsr abs.l (+2); engine/level/load_art.emp:151 bsr.w $5B34 -> jsr abs.l (+2)
+  site `page_in` -14 at 0x5b58: engine/level/page_in.emp:159 bsr.w $6212 -> jsr abs.l (+2); engine/level/page_in.emp:248 bsr.w $5C1C -> jsr abs.l (+2); engine/level/page_in.emp:290 abs.w $58E4 -> abs.l (+2); engine/level/page_in.emp:292 bra.w $1072 -> jmp abs.l (+2); engine/level/page_in.emp:319 bsr.w $5D2A -> jsr abs.l (+2); engine/level/page_in.emp:328 bra.w $5D56 -> jmp abs.l (+2); engine/level/page_in.emp:435 bra.w $5D56 -> jmp abs.l (+2)
+  site `page_cache` -4 at 0x63c8: engine/level/page_cache.emp:244 bsr.w $5AF2 -> jsr abs.l (+2); engine/level/page_cache.emp:374 bra.w $5AB4 -> jmp abs.l (+2)
+  note islands unmoved: 3 (2 anchors + phase banks)
+  note symbols: 1678 listing names identical; 1346 m68k ROM labels, 1185 shifted (each exactly as the row map says, all <= 0, monotone per run); 2 Z80-space symbols unmoved
+  note mapped content: 90 byte(s) re-aimed pointers, 0 emitted width flip(s), 0 byte(s) saved by them
+  appendix old 29824 B / 1477 records, new 29810 B / 1476 records; distinct listing addresses old 1477 new 1476; 1 name(s) differ, all in changed shared-address groups; every new record matches the new listing
+  classes {'header': 3, 'pointer': 90, 'shift': 21543, 'padding': 67, 'deb2 appendix': 24914}
+PROOF demo EXPLAINED dropped=74 sites=74 positional=21703 unexplained=0 fails=0

@@ -1,0 +1,16 @@
+--- a/crates/sigil-harness/src/native.rs
++++ b/crates/sigil-harness/src/native.rs
+@@ -2982,6 +2982,13 @@
+                      (the map's re-layout parcel, or less content). {collision}"
+                 ));
+             }
++            if std::env::var("WALK_DIAG").is_ok() {
++                let inplace: Vec<Option<u32>> = (0..n)
++                    .map(|i| if is_rom_section(&sections[i]) && !bankish[i] { out[i] } else { None })
++                    .collect();
++                let m3 = measure_pinned(sections, &inplace).unwrap();
++                eprintln!("WALK_DIAG {}", width_flip_report(sections, &order, &img2, &sites2, &m3.img, &m3.sites, &remeasure, locate));
++            }
+             warnings.extend(round_drift);
+             return Ok(out);
+         }

@@ -11882,3 +11882,181 @@ full_crc = "ce326232"
 full_size = 870560
 anchor_crc = "c4936a69"
 anchor_end = 0xc5c8a
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "dbad62357614564809169bb4fedb50ba5b041002"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+strict_bodies = 29
+suites = 545
+passed = 6091
+failed = 0
+ignored = 3
+skips = 0
+ran_at = "unix:1795121996"
+
+[entry.strict.goldens]
+config_a = "6be62db3/870972"
+config_b = "d888a312/617813"
+demo = "2f9e2d4c/99994"
+demo_debug = "64717bac/106981"
+lean = "60a3552b/798202"
+s4 = "193507d9/850296"
+s4_debug = "ce326232/870560"
+
+[[entry]]
+name = "walk-measure-in-place"
+ab = "docs/evidence/walk-measure-in-place at 38e671ca: scripts/walk_inplace_proof.sh WALK_PROOF 9/9 EXPLAINED, 0 unexplained bytes (old sigil 4104e5df = master closure, new ccf36c43, aeon 99cb963d)"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+note = "old walk now measures every non-bank ROM section in place; drops the scratch-measurement zero padding (sonic4 release -34 B file, 140 B padding) in every shape"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2ce7438f"
+full_size = 870972
+anchor_crc = "a153cae9"
+anchor_end = 0xc5c8a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "128361b3"
+full_size = 617715
+anchor_crc = "a9058ecd"
+anchor_end = 0x8b5f2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4587df52"
+full_size = 99980
+anchor_crc = "5a5b6300"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "37d66535"
+full_size = 106981
+anchor_crc = "99043cd0"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f6b07847"
+full_size = 798198
+anchor_crc = "2b08718d"
+anchor_end = 0xc2df6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "142a39b9"
+full_size = 850262
+anchor_crc = "3f0a9b9c"
+anchor_end = 0xc3e78
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "20acdb67"
+full_size = 870606
+anchor_crc = "2172953d"
+anchor_end = 0xc5c8a
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "a46cf0d1fb24ea8c0bb188792bd22432f9b509d5"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+strict_bodies = 29
+suites = 545
+passed = 6090
+failed = 1
+ignored = 3
+skips = 0
+ran_at = "unix:1795131577"
+failing = ["generated_pins_match_the_hand_typed_baseline"]
+
+[entry.strict.goldens]
+config_a = "2ce7438f/870972"
+config_b = "128361b3/617715"
+demo = "4587df52/99980"
+demo_debug = "37d66535/106981"
+lean = "f6b07847/798198"
+s4 = "142a39b9/850262"
+s4_debug = "20acdb67/870606"
+
+[entry.superseded]
+by = "walk-measure-in-place-r2"
+reason = "#210's strict run was red on repin_pins::generated_pins_match_the_hand_typed_baseline: nine hand-typed pin literals not updated for the slide; fixed, no bytes moved"
+
+[[entry]]
+name = "walk-measure-in-place-r2"
+ab = "byte-neutral successor of #210 walk-measure-in-place (goldens identical); its proof stands: docs/evidence/walk-measure-in-place, WALK_PROOF 9/9 EXPLAINED, 0 unexplained bytes"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+note = "goldens byte-identical to `walk-measure-in-place`, this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. supersedes #210, whose strict run was red only on repin_pins' hand-typed baseline (nine literals the in-place slide moved), fixed with no byte change"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2ce7438f"
+full_size = 870972
+anchor_crc = "a153cae9"
+anchor_end = 0xc5c8a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "128361b3"
+full_size = 617715
+anchor_crc = "a9058ecd"
+anchor_end = 0x8b5f2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4587df52"
+full_size = 99980
+anchor_crc = "5a5b6300"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "37d66535"
+full_size = 106981
+anchor_crc = "99043cd0"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f6b07847"
+full_size = 798198
+anchor_crc = "2b08718d"
+anchor_end = 0xc2df6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "142a39b9"
+full_size = 850262
+anchor_crc = "3f0a9b9c"
+anchor_end = 0xc3e78
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "20acdb67"
+full_size = 870606
+anchor_crc = "2172953d"
+anchor_end = 0xc5c8a
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "012b7ab37cee93cbde2d17bb65c4693bd908ccac"
+aeon_rev = "99cb963d07a54a156b7dd97b801ad4ef93a68a08"
+strict_bodies = 29
+suites = 545
+passed = 6091
+failed = 0
+ignored = 3
+skips = 0
+ran_at = "unix:1795139986"
+
+[entry.strict.goldens]
+config_a = "2ce7438f/870972"
+config_b = "128361b3/617715"
+demo = "4587df52/99980"
+demo_debug = "37d66535/106981"
+lean = "f6b07847/798198"
+s4 = "142a39b9/850262"
+s4_debug = "20acdb67/870606"

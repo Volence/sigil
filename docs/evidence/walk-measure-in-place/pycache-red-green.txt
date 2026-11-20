@@ -1,0 +1,22 @@
+Freeze #210 blocker: root cause proven red/green (2026-11-19). Cause found by the controller; reproduced here.
+aeon land_gate_audit._who() compares os.path.dirname(co_filename) to its own tools/ dir. A tree made with cp -a carries the
+source tree's tools/__pycache__, whose pytest-rewritten bytecode keeps the SOURCE path as co_filename, so no frame
+matches and every docs read is charged to <unattributed>.
+
+Script: .walk-runs/pyc-rg2.sh (copied here as pycache-red-green.sh). Lane = build.sh's pre-build lane:
+  python3 -m pytest tools -q --no-header -p no:cacheprovider -m "not needs_build"
+
+tree: cp -a of .aeon-sigil-ref-99cb963d at /home/volence/sonic_hacks/.walk-pyc-r2 (99cb963d); SIGIL_BUILD=/home/volence/sonic_hacks/.sigil-walk/.target-land/release/sigil
+== RED: copied __pycache__ present: 6 dirs
+co_filename in test_citation_form.cpython-314-pytest-9.1.1.pyc = /home/volence/sonic_hacks/.aeon-sigil-ref-99cb963d/tools/test_citation_form.py
+RED rc=1
+====== LAND GATE: docs reads tools/land_gate.py RULES do not cover (3541) ======
+4220 passed, 2 skipped, 43 deselected, 11 warnings, 162 subtests passed in 254.19s (0:04:14)
+== remove the copied caches: find /home/volence/sonic_hacks/.walk-pyc-r2 -name __pycache__ -type d -prune -exec rm -rf {} +
+remaining __pycache__ dirs: 0
+GREEN rc=0
+LAND GATE sections: 0
+4220 passed, 2 skipped, 43 deselected, 12 warnings, 162 subtests passed in 260.50s (0:04:20)
+END
+
+Freeze #210 then re-ran with AEON_DIR = a fresh git clone of 99cb963d (no __pycache__), NOT NO_LINT: END exit=0.

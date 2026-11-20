@@ -1766,8 +1766,8 @@ Two smaller items booked here as well:
   advance to a revision carrying them. Until then a strict run against the plain `936439fa` ref tree is
   red on the Z80 rows by design.
 - 2026-11-18: that pin advance landed from `parcel/pin-advance-99cb963d` (entry #209, aeon
-  `99cb963d`, the pair merge plus the v2 harness commits; byte-neutral). #209 is not yet attested; the next
-  byte-moving freeze needs `refreeze --attest` of #209 against `.aeon-sigil-ref-99cb963d` first. The standing reference is `.aeon-sigil-ref-99cb963d`.
+  `99cb963d`, the pair merge plus the v2 harness commits; byte-neutral). #209 was attested PASSED on 2026-11-19 from `parcel/walk-measure-in-place`
+  (code = master `dbad6235`, 545 suites, 6091/0/3, 29 strict bodies), ahead of that parcel's byte-moving freeze. The standing reference is `.aeon-sigil-ref-99cb963d`.
 - Booked: the corpus walk drops 10 `dc` cells in `DacSampleTable` (`bankid`/`winptr` equs of link
   symbols). `split_z80_drops` counts them apart (a `dc` is not decoded as code by the closure, dropped or
   not); a define set that resolves them would let the Z80 drop count be an exact 0.
@@ -2418,3 +2418,52 @@ until its row is removed.
 - G0b Task 6 removed one such race: before it, every sound-on build in any process rewrote the shared copy's
   `engine/sound/generated/`, and a build reading those files while another rewrote them could see a short file.
   Builds now write only into their own build directory.
+
+## WALK-MEASURE-IN-PLACE
+
+- state: **LANDING** on `parcel/walk-measure-in-place` (2026-11-19)  size: `S`  project: `G0B`
+- The old walk (`native.rs` `packed_true_bases`) re-measured a section at its packed base only when a frozen size
+  table named one of its labels; the rest sat at a far-scratch slot. Now every non-bank ROM section is re-measured in
+  place (one filter, `labeled[i]` -> `is_rom_section`). It moves bytes in every shape; proof in
+  `docs/evidence/walk-measure-in-place/` (`scripts/walk_inplace_proof.sh`, 9/9 shapes EXPLAINED, 0 unexplained).
+- Found while proving it, booked:
+  - The padding was NOT only after never-pinned sections. A PINNED section that branches into a scratch-measured one
+    measured its `bsr.w` as `jsr abs.l` too (`vblank` 8 B, `tile_cache` 14 B, `load_art` 6 B, `parallax`,
+    `game_loop`, `player_common`, `ojz_scroll_test` in sonic4 release), and an internal short branch spanning such
+    sites could cascade to `.w` (`player_glide.emp:120`). The proof's site model covers all three and agrees with
+    sigil's own `width_flip_report` (scratch diagnostic build, patch kept) on all 9 shapes.
+  - lean carries one EMITTED width flip: `page_in.emp:290` `lea` abs.l `$8018` -> abs.w `$7FDC`, because the shift
+    moved its target below `$8000`. The other shapes have none.
+  - Round 0 still seeds lengths with the frozen-label pins and the far-scratch slots (`SCRATCH_FIRST`,
+    `far_scratch_slot`); only the converged lengths are in place now. Seeding round 0 in place too would retire the
+    scratch machinery from the old walk; byte-neutral by construction only if the fixpoint is unique, so it needs its
+    own proof. Moot if G0b deletes the old driver first.
+  - The cross-check diagnostic (an env-gated `width_flip_report` at convergence) is not in the tree. If walk changes
+    recur, a committed `--report walk-flips` would make the proof's site model checkable without a scratch build.
+  - FREEZE #210: first attempt failed, and NOT because of this parcel or Python 3.14 (my first guess, wrong). Its
+    AEON_DIR was a `cp -a` of `.aeon-sigil-ref-99cb963d`, which carried `tools/__pycache__`; pytest's
+    assertion-rewritten bytecode keeps the SOURCE tree's path as `co_filename`, aeon `land_gate_audit._who()`
+    compares `dirname(co_filename)` to its own `tools/`, never matches, and charges 3541 docs reads to
+    `<unattributed>`, so `build.sh`'s pytest lane exits 1 with every test passing. Proven red/green
+    (`docs/evidence/walk-measure-in-place/pycache-red-green.txt`); the freeze then completed from a fresh clone.
+  - FRAGILITY, open (sigil side; aeon books its own): any tree a sigil lane makes with `cp -a` for `AEON_DIR`
+    (freeze, attest, landing, proofs) must drop every `__pycache__`
+    (`find <copy> -name __pycache__ -type d -prune -exec rm -rf {} +`) or be a `git clone`/`git worktree add`.
+    The durable fix is aeon's: compare paths in `_who()` in a way a copied cache survives (e.g. by the
+    basename under any `tools/`, or by `PYTHONDONTWRITEBYTECODE`/`-p no:cacheprovider` plus
+    `sys.pycache_prefix` for the lane). Until then a copied tree reads as broken tooling.
+  - RESOLVED (controller ruling, G0b ledger; owner may override): `end_measures = "allotment"` RETIRED. Its last user,
+    `player_climb`, was zero-width in both shapes under the new walk; it now ends `section:player_instashield`
+    (the window has always covered `Ability_InstaShield`, so the pin does not move; the ruling said
+    `section:player_climb`, which would have shrunk the pin by the insta-shield section). `region_end_contracts`
+    is re-grounded: the parse guard on the manifest's `[[region]]` count, the negative control on re-spelling
+    each `section:` end as its successor's head label (78 of 80). Red-first in `region-end-contracts-rf.txt`.
+  - LESSON, process: tip #210's attest was recorded FAILED (6090/1) because `repin_pins`'
+    `generated_pins_match_the_hand_typed_baseline` asserts literal bases that the in-place slide moved (nine
+    literals). A byte-moving freeze must run that test (and fix its literals) BEFORE `refreeze --attest`; an
+    attest cannot be retried. Closed by #211 `walk-measure-in-place-r2` (`--supersede-tip`, byte-identical goldens),
+    attested PASSED 6091/0/3. A `refreeze --freeze` pre-flight that runs `repin_pins` would make this impossible.
+  - OPEN, pre-existing (not this parcel; old sigil 4104e5df identical): aeon `tools/landing_build.sh` at 99cb963d
+    passes every lane but cannot stamp, because sigil's G0a build export writes `<stem>.build.json` beside each
+    ROM and aeon's land-gate reads the untracked files as the tree changing mid-run. Either aeon ignores
+    `*.build.json` or sigil writes the export outside the tree. `docs/evidence/walk-measure-in-place/landing-build.txt`.

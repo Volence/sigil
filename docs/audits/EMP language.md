@@ -7,6 +7,14 @@ description: "Keep and patch. Best known as an exact-instruction assembler (its 
 ---
 # EMP language
 
+> [!warning] Corrections (2026-11-19, from language review A, part 1)
+> This page is kept as written. A later review re-checked it on sigil `c9c43c73` / aeon `a651af8f`: `empyrean/docs/v2/language/EMP language review A part 1.md`. Three statements below should not be quoted without these corrections.
+> - **"Its contract checker is beyond any other" and "No other assembler has this layer"** are too strong. What holds: no other tool found checks register contracts through calls on 68000 or Z80 instruction text inside the assembler. SixtyPical checks registers, flags and memory against declared contracts for the 6502. AZM, a 2026 Z80 assembler, documents part of the same idea. The research stage behind this page read one of the seven assemblers it names in that run, and compared no contract language.
+> - **"At zero cycles and zero bytes"** (the "Why this direction" table, option b) is wrong for scripts. Reviewer B's own table estimates +12 cycles per self-yield and +4 bytes per yield site. Zero holds for the spindash state only.
+> - **"40% to 47% of all code lines"** (the escape-hatch share) is an upper bound that lost its qualifier.
+> - **Status of the holes:** by the later review's grouping, step 0 closed 6 of the 13 (findings 1 and 2, and the truncation half of finding 3). 7 still build green, and 7 more were found.
+> - **Counts:** 604 procedures, not 605. At least 45 shipped forms are in no spec, not 24. Tenet 3 is relaxed 17 ways by one count, not 3.
+
 > [!question] Owner question (added mid-run)
 > Should the functional language cover **everything**, the engine and hot paths included, not just game logic? See "Owner direction" on [[Audit board]]. The lead must answer it here.
 >
