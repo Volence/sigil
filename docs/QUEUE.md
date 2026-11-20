@@ -2317,8 +2317,10 @@ until its row is removed.
   identical on 10/10. The one rule below was the whole ROM difference, as predicted. (The `.lst` and export are a
   separate question, G0B-COMPARE-IDENTITY-NAMES.) The old driver after the merge equals the walk tip 87b5c195's binary
   on the 7 shapes (`step0_shapes_cmp.sh`, SHAPES 7/7 IDENTICAL against aeon 99cb963d), which is the 7/7 base from now on.
-  project: `G0B-GAME-AS-DATA`  ruled (proxy, 2026-11-19): Option B, a separate parcel changes the OLD walk to measure
-  every non-bank section in place, freezes a new golden, and merges before cutover
+- project: `G0B-GAME-AS-DATA`  ruled (proxy, 2026-11-19): Option B, a separate parcel changes the OLD walk to measure
+  every non-bank section in place, freezes a new golden, and merges before cutover (done: `parcel/walk-measure-in-place`,
+  merged by Task 7 step 0).
+- The finding as booked in Task 5 (history):
 - The new driver builds all seven shipped shapes (every guard green: placement, alignment, budgets, sound fold, bank
   ids, the blob-end contract; `tests/game_as_data_driver.rs`), but no shape is byte-identical to the old driver.
 - **Measured (fix round 1), all 7 shapes: one rule accounts for the whole difference.** A scratch, never-committed
@@ -2378,11 +2380,10 @@ until its row is removed.
   checked. It does not affect the comparison (its reads were already in the old read set; the listings agree on every
   other row). Also still open: `--check`, `--report`, the warn-tier view (`report_warnings` now runs, the view is
   the same function).
-- `sigil build --project <dir|game.toml> --shape <name> -o <rom>` writes the ROM and nothing else. Not yet on the
-  new path: `--emit-lst` (and the lst source digest), the `.build.json` sidecar, the contract gate
-  (`run_contract_gate`), `--check`, `--report`, the warn-tier view (it prints a count). `--emit-lst`, `--check` and
-  `--report` are refused by name; `--no-build-json` is accepted. `--legacy` is accepted on the old grammar and not
-  yet required for `--aeon`/`--game` (controller ruling for Task 5).
+- As found in Task 5, before Task 7 (history): `--project` wrote the ROM and nothing else; `--emit-lst`, `--check`
+  and `--report` were refused by name and `--no-build-json` was accepted and ignored. Today `--check` and `--report`
+  are still refused by name; `--emit-lst` and `--no-build-json` work as on `--aeon`. `--legacy` is accepted on the
+  old grammar and not yet required for `--aeon`/`--game` (controller ruling for Task 5).
 - Candidate scope is the old rule (`engine.` or the game's own module prefix), not the description's source paths;
   the probe fixture is an ordinary candidate gated `shapes = []`. Task 9's two-root corpus is where a path rule
   belongs.

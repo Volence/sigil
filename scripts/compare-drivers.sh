@@ -12,8 +12,9 @@
 # at the tree's HEAD, with the tree's uncommitted tracked changes applied on top, so a
 # mutation planted in the tree reaches both copies). A worktree is never `cp -a`'d: its
 # `.git` is a file that would share the original's HEAD and index. Both builds of a shape
-# write to the SAME absolute path (one after the other, then moved aside), because the
-# listing's source digest names the output path.
+# run in the same directory, `$WORK/out`, with the same relative `-o`/`--emit-lst` names
+# (one after the other, then moved aside), so the output path the listing's source digest
+# records (resolved to an absolute path) is the same for both.
 #
 # Compared per shape: the ROM's SHA-256 (exact), the `.lst` bytes and the G0a build export
 # (`<stem>.build.json`) with `tool` and `inputsSha256` removed (spec: G0b 6, item 2).
