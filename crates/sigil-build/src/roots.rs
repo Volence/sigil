@@ -112,9 +112,9 @@ pub struct RootsInput<'a> {
 
 /// Is module `id` in a game's scope: under `engine.` or under the game's own prefix
 /// (`games.sonic4`)? The one scope rule for the candidates a shape may place
-/// ([`derive_roots`], [`gate_scan`]), and the test of which scanned modules belong to
-/// some OTHER game when the closure baseline is assembled ([`crate::baseline`]). Task 9's
-/// two-root corpus replaces the prefix test with the description's roots.
+/// ([`derive_roots`], [`gate_scan`]). Task 9's two-root corpus replaces the prefix test
+/// with the description's roots (the contract closure already scopes by them:
+/// [`crate::driver::Project::closure_roots`]).
 pub fn in_candidate_scope(id: &str, game_prefix: &str) -> bool {
     id.starts_with("engine.") || id.strip_prefix(game_prefix).is_some_and(|rest| rest.starts_with('.'))
 }

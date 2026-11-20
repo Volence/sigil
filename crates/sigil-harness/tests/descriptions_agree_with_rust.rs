@@ -316,6 +316,20 @@ fn pairs(rows: &[(&str, &str)]) -> Vec<(String, String)> {
     rows.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
 }
 
+/// Every proc name `items` declare, sections included.
+fn proc_names(items: &[sigil_frontend_emp::ast::Item], out: &mut BTreeSet<String>) {
+    use sigil_frontend_emp::ast::Item;
+    for item in items {
+        match item {
+            Item::Proc(pd) => {
+                out.insert(pd.name.clone());
+            }
+            Item::Section(sec) => proc_names(&sec.items, out),
+            _ => {}
+        }
+    }
+}
+
 /// Facts compared, by category, and every disagreement.
 #[derive(Default)]
 struct Tally {
@@ -526,19 +540,35 @@ fn descriptions_agree_with_rust() {
 
         // baseline: Rust's per-shape gate vs the rows the game-as-data gate assembles from
         // the description files (`sigil_build::baseline::closure_baseline`, the function
-        // `sigil build --project`'s gate calls; G0b Task 8). Until Task 9 the closure
-        // analyses the WHOLE aeon corpus on every shape, so that function adds every other
-        // game's own-source rows (sigil docs/QUEUE.md G0B-DESCRIBE-TASK2-RESIDUE item 3);
-        // this compares its result, not a union restated here.
+        // `sigil build --project`'s gate calls; G0b Task 8): the engine's file and the game's.
+        // The two gates analyse different module sets. The Rust constants are pinned against
+        // the WHOLE aeon scan (the profile-driven gate's corpus), while a `--project` shape's
+        // closure analyses only its engine root and its own game root (Task 9a,
+        // `Project::closure_roots`), where another game's procs never fire. So the Rust rows
+        // naming a proc that lives in a scanned module OUTSIDE those roots, and nowhere
+        // inside them, are the ones the narrowed gate cannot want; every other Rust row,
+        // including one naming a proc that lives nowhere, is compared as is.
         let project = sigil_build::driver::load_project(&aeon.join(&side.dir_rel), &|_| None)
             .unwrap_or_else(|e| panic!("{at}: load the project: {e}"));
-        let gb = sigil_build::baseline::closure_baseline(&project, &shape, &manifest)
+        let gb = sigil_build::baseline::closure_baseline(&project, &shape)
             .unwrap_or_else(|e| panic!("{at}: closure baseline: {e}"));
+        let roots = project.closure_roots();
+        let (mut inside, mut outside) = (BTreeSet::new(), BTreeSet::new());
+        for m in &manifest.modules {
+            let into = if sigil_build::driver::under_roots(&m.path, &roots) { &mut inside } else { &mut outside };
+            proc_names(&m.file.items, into);
+        }
+        assert!(!inside.is_empty(), "UNMEASURABLE: {at}: no proc lives under the closure roots {roots:?}");
+        let analysed = |proc: &str| inside.contains(proc) || !outside.contains(proc);
         let (z80, out, inout, d1c) = (gb.z80_out_unverified, gb.out_unverified, gb.inout_unverified, gb.d1c);
         let rust_d1c: Vec<(String, String, String)> = cb::d1c_baseline(p.debug, cb::is_demo_family(p))
             .into_iter()
+            .filter(|(caller, _, _)| analysed(caller))
             .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
             .collect();
+        let pairs = |rows: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs(rows).into_iter().filter(|(proc, _)| analysed(proc)).collect()
+        };
         t.rows("baseline", &format!("{at}: z80 out-unverified"), &pairs(cb::Z80_OUT_UNVERIFIED_BASELINE), &z80);
         t.rows("baseline", &format!("{at}: out-unverified"), &pairs(cb::OUT_UNVERIFIED_BASELINE), &out);
         t.rows("baseline", &format!("{at}: inout-unverified"), &pairs(cb::INOUT_UNVERIFIED_BASELINE), &inout);

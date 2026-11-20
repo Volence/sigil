@@ -16,8 +16,8 @@
 //! G0B-COMPARE-IDENTITY-NAMES, option a; see the script's header): the legacy artifacts are
 //! transformed into what the game-as-data driver must write (the `[shapes.*]` row name, the
 //! description read rows: the game's `game.toml` and the engine's `engine.toml`, plus, since G0b
-//! Task 8, the contract gate's reads: the engine's and the game's `baseline.toml` and every other
-//! game's `game.toml` and `baseline.toml`; the recomputed aggregate) and compared byte for byte. Those columns
+//! Task 8, the contract gate's reads: the engine's and the game's `baseline.toml`, and since Task
+//! 9a no other game's file; the recomputed aggregate) and compared byte for byte. Those columns
 //! pass only as `MATCH(declared-delta)`; the ROM is compared exactly.
 //!
 //! The three artifacts are held by separate tests so a red names the artifact that moved:
@@ -26,7 +26,9 @@
 //!
 //! The contract closure gate (G0b Task 8 step 0) is held the same way: both drivers' build logs
 //! must state the gate's pass (`gate_verdicts_agree_on_every_shape`), their `--report contracts`
-//! censuses must be identical (`closure_reports_match_on_every_shape`), and their `--check`
+//! censuses must be identical (`closure_reports_match_on_every_shape`; the legacy census runs
+//! with `--closure-scope game`, the engine + own-game module set a `--project` shape's gate
+//! analyses since Task 9a), and their `--check`
 //! counts too (`checks_match_on_every_shape`).
 //!
 //! Runner: the landing bar (`scripts/landing-run.sh`, which sets `AEON_DIR` and

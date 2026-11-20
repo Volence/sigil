@@ -3,13 +3,15 @@
 //! closure gate at all, so a `build.sh` arm switched to it would have shipped ROMs nothing
 //! contract-checked.
 //!
-//! The gate is the profile-driven driver's, run over the same closure; what differs is
-//! where its frozen rows come from. On `--project` they are read from the descriptions:
-//! the `baseline.toml` the engine description names, the one the game description names,
-//! and, because the closure still analyses every scanned module, the rows of each OTHER
-//! game that name a proc living in that game's own sources (`sigil_build::baseline`).
+//! The gate is the profile-driven driver's; what differs is the module set and where its
+//! frozen rows come from. On `--project` the closure analyses the engine root and the game's
+//! own root only (G0b Task 9a, `Project::closure_roots`), and its rows are read from the
+//! descriptions: the `baseline.toml` the engine description names and the one the game
+//! description names (`sigil_build::baseline`). Another game's sources are not analysed and
+//! its files are not read. A game that does not declare a constant the engine description's
+//! `required_consts` names is refused by name before the gate runs.
 //!
-//! A self-contained two-game fixture tree (engine `g` is built, `h` is the other game),
+//! A self-contained two-game fixture tree (engine + game `g` is built, `h` is the other game),
 //! whose baselines are sized to its own corpus, so the EXIT CODE carries the verdict here:
 //! the clean tree passes the gate (the build then stops at the next stage, the fixture has
 //! no engine constants, which is past the gate and not this file's business). Each red
@@ -29,6 +31,7 @@ terminus = "engine.epilogue"
 error_handler = "engine.debug.error_handler"
 release_fault = "engine.system.release_fault"
 required_labels = []
+required_consts = ["REQ_CONST"]
 baseline = "baseline.toml"
 constants = "constants.emp"
 types = "types.emp"
@@ -86,6 +89,8 @@ const ENGINE_BASELINE: &str = "format = 1\nd1c = [[\"EngCaller\", \"Callee\", \"
 /// `Parallax_Update` row: a fact about building `h`, which a `g` shape must not inherit).
 const H_BASELINE: &str = "format = 1\nd1c = [[\"HCaller\", \"Callee\", \"d0\"], [\"EngCaller\", \"Callee\", \"d0\"]]\n";
 const G_BASELINE: &str = "format = 1\n";
+/// `g`'s declaration of the constant the fixture engine requires.
+const G_EMP: &str = "module games.g.gconst\npub const REQ_CONST = -1\n";
 
 fn game_toml(id: &str) -> String {
     format!(
@@ -107,13 +112,14 @@ features = {{ debug = false, crash_report = true, sound = false }}
 
 /// The clean fixture tree under `root`, with `edit(path, text)` applied to each file first.
 fn tree(root: &Path, edit: impl Fn(&str, String) -> String) {
-    let files: [(&str, String); 9] = [
+    let files: [(&str, String); 10] = [
         ("engine/engine.toml", ENGINE_TOML.to_string()),
         ("engine/baseline.toml", ENGINE_BASELINE.to_string()),
         ("engine/eng.emp", ENGINE_EMP.to_string()),
         ("games/g/game.toml", game_toml("g")),
         ("games/g/map.toml", String::new()),
         ("games/g/baseline.toml", G_BASELINE.to_string()),
+        ("games/g/gconst.emp", G_EMP.to_string()),
         ("games/h/game.toml", game_toml("h")),
         ("games/h/baseline.toml", H_BASELINE.to_string()),
         ("games/h/hmod.emp", H_EMP.to_string()),
@@ -142,12 +148,14 @@ fn project_build(root: &Path) -> (String, Output) {
     (String::from_utf8_lossy(&out.stderr).into_owned(), out)
 }
 
+/// Two modules: the engine's and `g`'s. `h`'s module is scanned but not analysed.
 const PASSED: &str = "contract closure gate: passed (g release: 2 module(s) analysed;";
 const FAILED: &str = "error: contract closure gate FAILED.";
 
-/// CONTROL: the clean tree passes the gate on `--project`. It passes only if `h`'s
-/// own-source row joins (else `HCaller` is NEW) and `h`'s engine-proc row does not (else
-/// `EngCaller` is wanted twice and GONE once).
+/// CONTROL: the clean tree passes the gate on `--project`. It passes only if `h`'s module
+/// is not analysed (else `HCaller` is NEW) and `h`'s file is not read (else `EngCaller` is
+/// wanted twice and GONE once, and `HCaller` is GONE). The pass line names exactly the two
+/// baseline files read.
 #[test]
 fn the_clean_tree_passes_the_project_gate() {
     let tmp = tempfile::tempdir().unwrap();
@@ -156,9 +164,9 @@ fn the_clean_tree_passes_the_project_gate() {
     assert!(err.contains(PASSED), "the clean fixture must pass the gate, got:\n{err}");
     assert!(!err.contains(FAILED), "got:\n{err}");
     let home = tmp.path().canonicalize().unwrap();
-    for f in ["engine/baseline.toml", "games/g/baseline.toml", "games/h/baseline.toml"] {
-        assert!(err.contains(&home.join(f).display().to_string()), "the pass line names {f}, got:\n{err}");
-    }
+    let files = format!("{} or {})", home.join("engine/baseline.toml").display(), home.join("games/g/baseline.toml").display());
+    assert!(err.contains(&format!("; baseline {files}")), "the pass line names exactly the engine's and g's files, got:\n{err}");
+    assert!(!err.contains("games/h/"), "nothing of h is read, got:\n{err}");
 }
 
 /// A planted closure violation: `--project` refuses it, with the same located refusal line
@@ -186,18 +194,65 @@ fn a_planted_closure_violation_is_refused_on_project_as_on_aeon() {
     assert!(lerr.lines().any(|l| l == line), "--aeon must print the same refusal line\n{line}\ngot:\n{lerr}");
 }
 
-/// Baseline drift in the OTHER game's file: drop `h`'s own-source row and the firing is
-/// NEW, refused with the adjudication message naming the description files.
+/// Baseline drift in the game's own file: add a row for a proc that does not fire and it is
+/// GONE, refused with the adjudication message naming the description files.
 #[test]
-fn a_dropped_row_in_another_games_file_is_refused() {
+fn a_drifted_row_in_the_games_file_is_refused() {
     let tmp = tempfile::tempdir().unwrap();
-    tree(tmp.path(), |rel, t| if rel == "games/h/baseline.toml" { "format = 1\nd1c = [[\"EngCaller\", \"Callee\", \"d0\"]]\n".into() } else { t });
+    tree(tmp.path(), |rel, t| if rel == "games/g/baseline.toml" { "format = 1\nd1c = [[\"HCaller\", \"Callee\", \"d0\"]]\n".into() } else { t });
     let (err, out) = project_build(tmp.path());
     assert_eq!(out.status.code(), Some(1), "got:\n{err}");
     assert!(err.contains("[call.live-clobbered] (D1c) moved against the frozen baseline."), "got:\n{err}");
-    assert!(err.contains("\"HCaller @ Callee :: d0 (got 1, want 0)\""), "got:\n{err}");
-    assert!(err.contains("games/g/baseline.toml or "), "the message names the description files, got:\n{err}");
+    assert!(err.contains("\"HCaller @ Callee :: d0 (got 0, want 1)\""), "got:\n{err}");
+    assert!(err.contains("games/g/baseline.toml"), "the message names the description files, got:\n{err}");
     assert!(err.contains(FAILED), "got:\n{err}");
+}
+
+/// The other game is not this build (G0b Task 9a): a closure violation planted in `h`'s
+/// sources, with `h`'s baseline file deleted, does not reach `g`'s gate, which passes;
+/// the profile-driven driver, whose gate analyses the whole scan, refuses the same tree.
+#[test]
+fn another_games_sources_and_files_are_not_this_games_gate() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), |rel, t| if rel == "games/h/hmod.emp" { format!("{t}{VIOLATION}") } else { t });
+    std::fs::remove_file(tmp.path().join("games/h/baseline.toml")).unwrap();
+    let (err, _) = project_build(tmp.path());
+    assert!(err.contains(PASSED), "g's gate must not see h, got:\n{err}");
+    assert!(!err.contains("`Bad`"), "got:\n{err}");
+    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
+    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
+    let abs = tmp.path().canonicalize().unwrap();
+    let legacy = sigil(tmp.path(), &["--aeon", abs.to_str().unwrap(), "--game", "sonic4", "-o", "s4.bin"], false);
+    let lerr = String::from_utf8_lossy(&legacy.stderr);
+    assert!(lerr.contains("[proc.clobber-undeclared] `Bad` destroys `d2`"), "the whole-scan gate sees h's violation, got:\n{lerr}");
+}
+
+/// A game that does not declare a constant the engine requires is refused BY NAME, naming
+/// the constant, the engine description's `required_consts` row and the game, on every
+/// `--project` run: the build (with the gate on or opted out), `--check` and a report.
+#[test]
+fn a_game_missing_a_required_constant_is_refused_by_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), |rel, t| if rel == "games/g/gconst.emp" { "module games.g.gconst\npub const OTHER = -1\n".into() } else { t });
+    let home = tmp.path().canonicalize().unwrap();
+    let runs: [(&[&str], bool); 4] = [
+        (&["-o", "g.bin"], false),
+        (&["-o", "g.bin"], true),
+        (&["--check"], false),
+        (&["--report", "contracts"], false),
+    ];
+    for (extra, off) in runs {
+        let mut args = vec!["--project", "games/g", "--shape", "release"];
+        args.extend_from_slice(extra);
+        let out = sigil(tmp.path(), &args, off);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: got:\n{err}");
+        assert!(err.contains("[engine.required-const] game `g`"), "{args:?}: got:\n{err}");
+        assert!(err.contains("`REQ_CONST`"), "{args:?}: names the constant, got:\n{err}");
+        assert!(err.contains(&format!("{} `required_consts`", home.join("engine/engine.toml").display())), "{args:?}: names the row, got:\n{err}");
+        assert!(err.contains("(games/g/game.toml)"), "{args:?}: names the game's description, got:\n{err}");
+        assert!(!err.contains("contract closure gate"), "{args:?}: refused before the gate, got:\n{err}");
+    }
 }
 
 /// A stale row in the game's own file is GONE, refused.
@@ -212,7 +267,7 @@ fn a_stale_row_in_the_games_file_is_refused() {
 }
 
 /// Another game's row on an ENGINE proc does not join a `g` shape: with the row only in
-/// `h`'s file, `g` sees `EngCaller` as NEW.
+/// `h`'s file (which `g` never reads), `g` sees `EngCaller` as NEW.
 #[test]
 fn another_games_row_on_an_engine_proc_does_not_join() {
     let tmp = tempfile::tempdir().unwrap();
@@ -234,7 +289,7 @@ fn sigil_contracts_0_skips_the_project_gate_loudly() {
 }
 
 /// `--report contracts` on `--project` prints the census the gate reads, headed by the
-/// description's names.
+/// description's names: one D1c firing, the engine's (`h`'s proc is not analysed).
 #[test]
 fn the_project_contract_report_prints_the_census() {
     let tmp = tempfile::tempdir().unwrap();
@@ -243,7 +298,7 @@ fn the_project_contract_report_prints_the_census() {
     let report = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
     assert!(report.starts_with("contract closure, g release\n"), "got:\n{report}");
-    assert!(report.contains("-- [call.live-clobbered] firings (D1c, 2): --"), "got:\n{report}");
+    assert!(report.contains("-- [call.live-clobbered] firings (D1c, 1): --"), "got:\n{report}");
 }
 
 /// The mode pairings refuse with the profile-driven grammar's words.

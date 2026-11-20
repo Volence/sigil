@@ -235,9 +235,71 @@ impl Project {
     pub fn map_path(&self) -> PathBuf {
         self.game_dir.join(&self.game.map)
     }
+    /// The roots whose modules a shape's contract closure analyses (G0b Task 9a): the
+    /// engine root, then the game's sources root, canonical. Another game's sources, and a
+    /// fixture outside both (aeon's `tools/fixtures/`), are not this game's build.
+    pub fn closure_roots(&self) -> Vec<PathBuf> {
+        [self.engine_dir.clone(), self.sources_root()].into_iter().map(|d| std::fs::canonicalize(&d).unwrap_or(d)).collect()
+    }
+}
+
+/// Does `path` (a scanned module's file) sit under one of `roots` (canonical directories)?
+pub fn under_roots(path: &Path, roots: &[PathBuf]) -> bool {
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    roots.iter().any(|r| path.starts_with(r))
+}
+
+/// The `pub const` names `items` declare, sections included.
+fn declared_pub_consts<'a>(items: &'a [sigil_frontend_emp::ast::Item], out: &mut std::collections::BTreeSet<&'a str>) {
+    use sigil_frontend_emp::ast::Item;
+    for item in items {
+        match item {
+            Item::Const(c) if c.public => {
+                out.insert(c.name.as_str());
+            }
+            Item::Section(sec) => declared_pub_consts(&sec.items, out),
+            _ => {}
+        }
+    }
+}
+
+/// Refuse a game that does not declare every constant the engine description's
+/// `required_consts` names (G0b Task 9a), naming each missing constant, the engine.toml row
+/// and the game. A constant is declared when a module in the game's sources root holds a
+/// `pub const` of that name. There is no default: the engine names these by bare name
+/// (aeon's `Sfx_BeginSound` reads `SFXID_REV_LOOP`), so a game that leaves one out would
+/// otherwise reach the contract closure as an unresolved condition, or resolve only because
+/// another game's sources happen to be scanned.
+pub fn check_required_consts(p: &Project, manifest: &resolve::manifest::Manifest) -> Result<(), BuildError> {
+    if p.engine.required_consts.is_empty() {
+        return Ok(());
+    }
+    let root = p.sources_root();
+    let root = std::fs::canonicalize(&root).unwrap_or(root);
+    let mut declared = std::collections::BTreeSet::new();
+    for m in manifest.modules.iter().filter(|m| under_roots(&m.path, std::slice::from_ref(&root))) {
+        declared_pub_consts(&m.file.items, &mut declared);
+    }
+    let missing: Vec<&str> =
+        p.engine.required_consts.iter().map(String::as_str).filter(|c| !declared.contains(c)).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(BuildError::Desc(format!(
+        "[engine.required-const] game `{}` ({}) declares no `pub const` named {} in its sources ({}); \
+         {} `required_consts` requires every game on this engine to declare it, with no default",
+        p.game.id,
+        p.game_path.display(),
+        missing.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>().join(", "),
+        root.display(),
+        p.engine_path.display(),
+    )))
 }
 
 /// Read `project` (a game directory holding `game.toml`, or the file) and find its engine.
+/// A game that does not declare every constant the engine's `required_consts` names is
+/// refused here ([`check_required_consts`]), so every `--project` run (build, check, each
+/// report, the closure gate) refuses it by name before anything reads the name.
 ///
 /// The engine is found by observation first: the nearest ancestor of the game directory
 /// that holds `<engine.root>/engine.toml` is the game's own checkout. Only a game with no
@@ -273,7 +335,14 @@ pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> R
     let engine_dir = checkout.join(&game.engine.root);
     let engine_path = engine_dir.join("engine.toml");
     let engine = describe::load_engine(&engine_path)?;
-    Ok(Project { game_path, game_dir, game, checkout, engine_dir, engine_path, engine })
+    let project = Project { game_path, game_dir, game, checkout, engine_dir, engine_path, engine };
+    if !project.engine.required_consts.is_empty() {
+        // Description time, before any front end or the closure reads a required name: the
+        // scan's own errors are reported by the stage that uses it.
+        let (manifest, _) = resolve::manifest::Manifest::scan(&project.checkout);
+        check_required_consts(&project, &manifest)?;
+    }
+    Ok(project)
 }
 
 /// The shape's define environment, in order: the three the shape's features DERIVE
@@ -900,6 +969,7 @@ mod tests {
         error_handler = "engine.debug.error_handler"
         release_fault = "engine.system.release_fault"
         required_labels = []
+        required_consts = []
         baseline = "b"
         constants = "c"
         types = "t"
@@ -917,6 +987,20 @@ mod tests {
         dac_blip_bank = "d"
         dac_shared_bank = "e"
     "#;
+
+    /// `required_consts` is a closed, required key (G0b Task 9a): a misspelling is refused by
+    /// name, and an engine description that leaves the key out is refused naming it, so no
+    /// engine is read as "requires nothing" by accident.
+    #[test]
+    fn required_consts_is_a_closed_required_key() {
+        assert!(ENGINE.contains("required_consts = []\n"), "the fixture lost its row");
+        let typo = ENGINE.replace("required_consts = []", "required_const = []");
+        let err = toml::from_str::<describe::EngineDesc>(&typo).expect_err("a misspelt key").to_string();
+        assert!(err.contains("required_const"), "the refusal names the key: {err}");
+        let absent = ENGINE.replace("required_consts = []\n", "");
+        let err = toml::from_str::<describe::EngineDesc>(&absent).expect_err("an absent key").to_string();
+        assert!(err.contains("required_consts"), "the refusal names the missing key: {err}");
+    }
 
     const GAME: &str = r#"format = 1
         id = "g"

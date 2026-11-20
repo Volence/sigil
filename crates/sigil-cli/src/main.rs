@@ -167,7 +167,7 @@ const ENTRIES: &[Entry] = &[
         usage: &[
             "usage: sigil build --aeon <dir> [--legacy] [-o <out.bin>] [--emit-lst <lst>]",
             "                   [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean]",
-            "                   [--report ram|contracts|indirect-cost|name-env]",
+            "                   [--report ram|contracts|indirect-cost|name-env [--closure-scope corpus|game]]",
             "                   [--extra-entry <module|path.emp>]... [--check]",
             "                   [--anchor-overlay <anchors.toml>] [--no-build-json]",
             "note:  -o also writes <out stem>.build.json beside the ROM (the build-data export,",
@@ -181,6 +181,10 @@ const ENTRIES: &[Entry] = &[
             "       post-relaxation placement and writes no ROM; a green check proves nothing",
             "       about region budget or overlap, image bounds, the checksum or the closure",
             "       gate, and is not a statement that the game builds",
+            "note:  --closure-scope game runs --report contracts|indirect-cost over the engine",
+            "       and the selected game's own modules, the corpus a --project shape's gate",
+            "       analyses (the G0b comparison job's census); corpus, the default, is every",
+            "       scanned module",
             "dev:   --native is an accepted no-op (a native build is the only build).",
             "       --stress-evict and --stress-art each fix an off-canonical development",
             "       shape and take no other shape selector.",
@@ -216,6 +220,7 @@ const ENTRIES: &[Entry] = &[
             valued("--anchor-overlay"),
             flag("--no-build-json"),
             valued("--report"),
+            valued("--closure-scope"),
         ],
         run: run_build,
     },
@@ -1917,8 +1922,12 @@ fn run_build(entry: &Entry, args: &[String]) {
 
     match opts.report {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
-        Some(ReportKind::Contracts) => run_contract_report(aeon_path, &target_subject(aeon_path, &opts.target)),
-        Some(ReportKind::IndirectCost) => run_indirect_cost_report(aeon_path, &target_subject(aeon_path, &opts.target)),
+        Some(ReportKind::Contracts) => {
+            run_contract_report(aeon_path, &target_subject(aeon_path, &opts.target).scoped(aeon_path, opts.closure_scope))
+        }
+        Some(ReportKind::IndirectCost) => {
+            run_indirect_cost_report(aeon_path, &target_subject(aeon_path, &opts.target).scoped(aeon_path, opts.closure_scope))
+        }
         Some(ReportKind::NameEnv) => run_name_env_report(aeon_path, &opts.target),
         None if opts.check => run_check_native(aeon_path, &opts),
         None => run_build_native(aeon_path, &opts),
@@ -2057,13 +2066,15 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 /// closure sees. A census run against the wrong define set silently analyzes arms the
 /// shipped ROM never assembles.
 ///
-/// SCOPE, precisely: the DEFINES are target-accurate, the MODULE SET is not. The walk
-/// takes every `.emp` the manifest scan finds, so both games' modules enter one
-/// closure under one game's defines. That is the census shape every corpus gate
-/// already walks, and narrowing it to `profile.registry` would make this surface
-/// disagree with all of them — recorded in the gap ledger rather than changed here.
+/// SCOPE, precisely: the DEFINES are target-accurate; the MODULE SET follows the subject.
+/// The profile-driven walk takes every `.emp` the manifest scan finds, so both games'
+/// modules enter one closure under one game's defines. That is the census shape every
+/// corpus gate already walks, and narrowing it to `profile.registry` would make this
+/// surface disagree with all of them — recorded in the gap ledger rather than changed
+/// here. A `--project` shape analyses its engine root and its own game root (G0b Task 9a),
+/// and `--closure-scope game` runs the profile-driven report over that same set.
 fn run_contract_report(aeon: &std::path::Path, subject: &ClosureSubject) {
-    let (report, _manifest) = corpus_closure_or_exit(aeon, subject);
+    let (report, _manifest, _) = corpus_closure_or_exit(aeon, subject);
     print_report_header("contract closure", &subject.label, &subject.defines);
     print_contract_report(&report);
 }
@@ -2083,7 +2094,7 @@ fn run_contract_report(aeon: &std::path::Path, subject: &ClosureSubject) {
 /// each [`IndirectPolicy`](sigil_frontend_emp::closure::IndirectPolicy), so the
 /// report can never describe a different closure than the one that ships.
 fn run_indirect_cost_report(aeon: &std::path::Path, subject: &ClosureSubject) {
-    let (report, _manifest) = corpus_closure_or_exit(aeon, subject);
+    let (report, _manifest, _) = corpus_closure_or_exit(aeon, subject);
     print_report_header("indirect-bound cost", &subject.label, &subject.defines);
 
     let sites = &report.bounded_indirect_sites;
@@ -2204,23 +2215,29 @@ fn corpus_closure_or_exit(
 ) -> (
     sigil_frontend_emp::corpus_contracts::ContractReport,
     sigil_frontend_emp::resolve::manifest::Manifest,
+    usize,
 ) {
     use sigil_frontend_emp::corpus_contracts;
 
     let defines = &subject.defines;
     let manifest = scan_or_exit(aeon);
 
-    // The corpus is every module the scan finds, both games and any fixture, for either
-    // driver (`--report contracts`'s documented SCOPE below). Narrowing a game-as-data
-    // shape to its own game is not neutral today and Task 9's two-root corpus does not make
-    // it so by itself (an engine module names a game-declared constant demo lacks;
-    // `sigil_build::baseline`'s header).
-    let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
+    // The corpus: for the profile-driven driver, every module the scan finds, both games
+    // and any fixture (`--report contracts`'s documented SCOPE above); for a game-as-data
+    // shape, the modules under its two roots, the engine's and the game's own (G0b Task 9a,
+    // `ClosureSubject::roots`). The manifest itself stays whole: it only locates firings.
+    let files: Vec<_> = manifest
+        .modules
+        .iter()
+        .filter(|m| subject.roots.as_ref().is_none_or(|r| sigil_build::driver::under_roots(&m.path, r)))
+        .map(|m| m.file.clone())
+        .collect();
     // The L1 interface env, bound against THIS shape's game (the game RAM module's
     // parent id names it) — so a comptime condition on an `Iface.MEMBER`
     // (`if Game.CAMERA_JUMP_LOCK { }`) selects the arm the shipped ROM assembles
     // instead of landing on `[comptime.unresolved]`. Bind errors are as fatal as
     // scan errors: a half-bound env silently poisons every condition it missed.
+    let analysed = files.len();
     let (iface_env, bind_diags) = corpus_contracts::bind_corpus_interfaces(
         &files,
         defines,
@@ -2237,7 +2254,7 @@ fn corpus_closure_or_exit(
     }
     // The manifest rides back out so the gate can turn a firing's span into a
     // file:line:col — see `locate_firing`.
-    (corpus_contracts::analyze_corpus_with_contracts(&files, defines, &iface_env), manifest)
+    (corpus_contracts::analyze_corpus_with_contracts(&files, defines, &iface_env), manifest, analysed)
 }
 
 /// What the contract closure gate and the closure reports run over: one shape's define
@@ -2252,16 +2269,51 @@ struct ClosureSubject {
     defines: Vec<(String, i128)>,
     /// The game module prefix the L1 interface env binds against (`games.sonic4`).
     game_prefix: String,
+    /// The roots whose modules the closure analyses, or `None` for every scanned module.
+    /// A game-as-data shape analyses its engine root and its own game root
+    /// ([`sigil_build::driver::Project::closure_roots`], G0b Task 9a); the profile-driven
+    /// driver analyses the whole scan.
+    roots: Option<Vec<std::path::PathBuf>>,
+    /// The game's own source directory (`--closure-scope game` takes it as the game root).
+    game_root: std::path::PathBuf,
     baseline: sigil_harness::contract_baseline::ShapeBaseline,
+}
+
+/// Which modules a profile-driven `--report contracts|indirect-cost` analyses
+/// (`--closure-scope`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ClosureScope {
+    /// Every scanned module, both games and any fixture: the profile-driven gate's corpus.
+    #[default]
+    Corpus,
+    /// The engine root and the selected game's root: the corpus a `--project` shape's gate
+    /// analyses (G0b Task 9a), so the comparison job can compare the two drivers' censuses
+    /// over one module set.
+    Game,
+}
+
+impl ClosureSubject {
+    /// This profile-driven subject with `scope` applied. `Game` takes the engine root
+    /// (`<aeon>/engine`) and the directory of the profile's game root file.
+    fn scoped(mut self, aeon: &std::path::Path, scope: ClosureScope) -> ClosureSubject {
+        if scope == ClosureScope::Game {
+            let canon = |p: std::path::PathBuf| std::fs::canonicalize(&p).unwrap_or(p);
+            self.roots = Some(vec![canon(aeon.join("engine")), canon(self.game_root.clone())]);
+        }
+        self
+    }
 }
 
 /// The profile-driven driver's closure subject for `target`: the profile's defines and
 /// game, and the baseline constants.
 fn target_subject(aeon: &std::path::Path, target: &BuildTarget) -> ClosureSubject {
     let (label, profile) = target.label_and_profile();
+    let game_root_file = aeon.join(profile.game_root_rel);
     ClosureSubject {
+        game_root: game_root_file.parent().map(std::path::Path::to_path_buf).unwrap_or_default(),
         defines: shape_defines_or_exit(&profile, aeon),
         game_prefix: profile.game_module_prefix().to_string(),
+        roots: None,
         baseline: sigil_harness::contract_baseline::ShapeBaseline::for_profile(&profile),
         label,
     }
@@ -2269,19 +2321,21 @@ fn target_subject(aeon: &std::path::Path, target: &BuildTarget) -> ClosureSubjec
 
 /// The game-as-data driver's closure subject for `shape` of `project`, every fact from
 /// the descriptions: the defines the build uses ([`sigil_build::driver::shape_defines`]),
-/// the game's prefix, and the baseline its descriptions' `baseline.toml` files give
-/// ([`sigil_build::baseline::closure_baseline`]: the engine's rows, the game's, and the
-/// own-source rows of any other game the scan analyses). A description that cannot be
-/// read stops the run.
+/// the game's prefix, the two roots the closure analyses (the engine's and the game's own,
+/// [`sigil_build::driver::Project::closure_roots`]), and the baseline its descriptions'
+/// `baseline.toml` files give ([`sigil_build::baseline::closure_baseline`]: the engine's rows
+/// and the game's). A description that cannot be read stops the run (a game that leaves out
+/// a constant the engine requires never gets here: `load_project` refuses it by name).
 fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Result<ClosureSubject, String> {
     let (resolved, defines) = sigil_build::driver::shape_defines(project, shape).map_err(|e| e.to_string())?;
-    let (manifest, _) = sigil_frontend_emp::resolve::manifest::Manifest::scan(&project.checkout);
-    let b = sigil_build::baseline::closure_baseline(project, &resolved, &manifest).map_err(|e| e.to_string())?;
+    let b = sigil_build::baseline::closure_baseline(project, &resolved).map_err(|e| e.to_string())?;
     let home = b.files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>().join(" or ");
     Ok(ClosureSubject {
         label: format!("{} {shape}", project.game.id),
         defines,
         game_prefix: project.game_prefix().to_string(),
+        roots: Some(project.closure_roots()),
+        game_root: project.sources_root(),
         baseline: sigil_harness::contract_baseline::ShapeBaseline {
             z80_out_unverified: b.z80_out_unverified,
             out_unverified: b.out_unverified,
@@ -2326,7 +2380,7 @@ fn run_contract_gate(aeon: &std::path::Path, subject: impl FnOnce() -> ClosureSu
     }
 
     let subject = subject();
-    let (report, manifest) = corpus_closure_or_exit(aeon, &subject);
+    let (report, manifest, analysed) = corpus_closure_or_exit(aeon, &subject);
     let base = &subject.baseline;
     let src_index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
     let mut failed = false;
@@ -2630,7 +2684,7 @@ fn run_contract_gate(aeon: &std::path::Path, subject: impl FnOnce() -> ClosureSu
     eprintln!(
         "contract closure gate: passed ({}: {} module(s) analysed; baseline {})",
         subject.label,
-        manifest.modules.len(),
+        analysed,
         base.home
     );
 }
@@ -3153,6 +3207,9 @@ struct BuildOpts {
     anchor_overlay: Option<String>,
     /// `--no-build-json`: with `-o`, write the ROM but no `<stem>.build.json` beside it.
     no_build_json: bool,
+    /// `--closure-scope corpus|game`: which modules `--report contracts|indirect-cost`
+    /// analyses ([`ClosureScope`]). Refused without one of those reports.
+    closure_scope: ClosureScope,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -3197,11 +3254,19 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut check = false;
     let mut anchor_overlay: Option<String> = None;
     let mut no_build_json = false;
+    let mut closure_scope: Option<ClosureScope> = None;
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--aeon" => aeon = Some(next_value(args, &mut i, "--aeon")?),
+            "--closure-scope" => {
+                closure_scope = Some(match next_value(args, &mut i, "--closure-scope")?.as_str() {
+                    "corpus" => ClosureScope::Corpus,
+                    "game" => ClosureScope::Game,
+                    other => return Err(format!("unknown --closure-scope '{other}' (want corpus or game)")),
+                })
+            }
             "-o" => output = Some(next_value(args, &mut i, "-o")?),
             "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
             "--game" => game = Some(next_value(args, &mut i, "--game")?),
@@ -3309,7 +3374,13 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             return Err("--report prints instead of building; --anchor-overlay needs a build".into());
         }
     }
-    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay, no_build_json })
+    // The scope picks the module set of a closure REPORT; a build's gate keeps the whole
+    // corpus, so the scope beside anything else would be silently ignored.
+    if closure_scope.is_some() && !matches!(report, Some(ReportKind::Contracts | ReportKind::IndirectCost)) {
+        return Err("--closure-scope applies to --report contracts|indirect-cost".into());
+    }
+    let closure_scope = closure_scope.unwrap_or_default();
+    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries, check, anchor_overlay, no_build_json, closure_scope })
 }
 
 /// `sigil build --project`'s options (G0b Task 5).
@@ -3373,6 +3444,13 @@ fn parse_project_args(args: &[String]) -> Result<ProjectOpts, String> {
             a @ ("--aeon" | "--legacy" | "--game" | "--debug" | "--config-a" | "--config-b" | "--lean"
             | "--stress-evict" | "--stress-art" | "--native") => {
                 return Err(format!("{a} selects the profile-driven driver; --project takes the shape from --shape"))
+            }
+            // A `--project` closure always analyses the engine and its own game (G0b Task 9a);
+            // the scope is the profile-driven report's knob for matching that.
+            "--closure-scope" => {
+                return Err("--closure-scope is a profile-driven (--aeon) report option; a --project closure \
+                            always analyses the engine and its own game"
+                    .into())
             }
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -4959,6 +5037,30 @@ mod tests {
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--debug"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--game", "demo"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--game", "genesis"])).is_err());
+    }
+
+    /// `--closure-scope` (G0b Task 9a) picks the module set of a closure REPORT only:
+    /// `corpus` is the default, `game` narrows, and beside a build, `--check` or another
+    /// report it is refused rather than silently ignored.
+    #[test]
+    fn parse_build_args_closure_scope_grammar() {
+        use crate::ClosureScope;
+        let s = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let scope = |v: &[&str]| crate::parse_build_args(&s(v)).map(|o| o.closure_scope);
+        assert_eq!(scope(&["--aeon", "x", "--report", "contracts"]), Ok(ClosureScope::Corpus));
+        assert_eq!(scope(&["--aeon", "x", "--report", "contracts", "--closure-scope", "game"]), Ok(ClosureScope::Game));
+        assert_eq!(scope(&["--aeon", "x", "--report", "indirect-cost", "--closure-scope", "corpus"]), Ok(ClosureScope::Corpus));
+        for bad in [
+            &["--aeon", "x", "--closure-scope", "game", "-o", "r.bin"][..],
+            &["--aeon", "x", "--closure-scope", "game", "--check"][..],
+            &["--aeon", "x", "--closure-scope", "game", "--report", "ram"][..],
+        ] {
+            let err = scope(bad).expect_err("refused");
+            assert!(err.contains("--closure-scope applies to --report contracts|indirect-cost"), "{bad:?}: {err}");
+        }
+        assert!(scope(&["--aeon", "x", "--report", "contracts", "--closure-scope", "all"]).unwrap_err().contains("unknown --closure-scope 'all'"));
+        let p = crate::parse_project_args(&s(&["--project", "g", "--shape", "s", "--report", "contracts", "--closure-scope", "game"]));
+        assert!(p.unwrap_err().contains("--closure-scope is a profile-driven (--aeon) report option"));
     }
 
     /// `--check` rides every target selector and `--extra-entry`, and refuses the

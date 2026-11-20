@@ -363,6 +363,12 @@ pub struct EngineDesc {
     pub gate: Vec<GateRule>,
     /// Labels the driver reads from every build's layout.
     pub required_labels: Vec<String>,
+    /// Added by G0b Task 9a: comptime constants the ENGINE's own sources name by bare name and
+    /// every game must declare (a `pub const` in the game's sources), with no engine default.
+    /// A game that declares one of them nowhere is refused by name
+    /// ([`crate::driver::check_required_consts`]) before the closure or the build reads the
+    /// name; a silent default is how a game could ship without ever stating the value.
+    pub required_consts: Vec<String>,
     pub sound: SoundDesc,
     /// The engine's contract-closure baseline rows ([`BaselineDesc`]).
     pub baseline: PathBuf,
@@ -764,6 +770,7 @@ mod tests {
             error_handler = "e"
             release_fault = "r"
             required_labels = []
+            required_consts = []
             baseline = "b"
             constants = "c"
             types = "t"

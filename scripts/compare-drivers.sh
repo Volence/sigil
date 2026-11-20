@@ -26,9 +26,9 @@
 #   * the description files the game-as-data driver reads: `games/<g>/game.toml` and
 #     `<engine.root>/engine.toml` are rows of its listing's read set, and so (G0b Task 8)
 #     are the files its contract closure gate reads its frozen rows from, where the legacy
-#     driver's live in Sigil's source: the `baseline` file engine.toml names, the one the
-#     game's game.toml names, and, because the closure analyses every scanned module until
-#     Task 9, each OTHER `games/*/game.toml` and the `baseline` file it names.
+#     driver's live in Sigil's source: the `baseline` file engine.toml names and the one the
+#     game's game.toml names. No other game's file: since G0b Task 9a the closure analyses
+#     only the engine root and the game's own root, so no other game's rows are read.
 # The job transforms the LEGACY listing and export into the artifacts the new driver must
 # write (DIGEST-SHAPE `target=` -> the row name; exactly those DIGEST-READ rows, each file
 # named from the copy's own descriptions, crc and size from the copy's own files, inserted
@@ -46,7 +46,10 @@
 #                       red-first shape; DIFFERS(<legacy>/<project>) otherwise);
 #   report=MATCH        the two closure censuses are identical below their two header lines
 #                       (the label line names the shape each driver's way; the define line
-#                       must hold the same set);
+#                       must hold the same set). The legacy census runs with
+#                       `--closure-scope game`: a --project shape analyses the engine and its
+#                       own game only (G0b Task 9a), the legacy gate the whole scan, so the
+#                       censuses are compared over the one module set both can analyse;
 #   check=MATCH         both checks exit 0 and their `checked:` counts are identical.
 # `SIGIL_CONTRACTS` is removed from every run, so the opt-out can never fake a pass.
 #
@@ -172,10 +175,6 @@ if shape not in g.get("shapes", {}):
 eroot = g["engine"]["root"]
 e = tomllib.load(open(os.path.join(ptree, eroot, "engine.toml"), "rb"))
 descs = [f"games/{game}/game.toml", f"{eroot}/engine.toml", f"{eroot}/{e['baseline']}", f"games/{game}/{g['baseline']}"]
-for other in sorted(os.listdir(os.path.join(ptree, "games"))):
-    op = os.path.join(ptree, "games", other, "game.toml")
-    if other != game and os.path.isfile(op):
-        descs += [f"games/{other}/game.toml", f"games/{other}/{tomllib.load(open(op, 'rb'))['baseline']}"]
 
 # THE DECLARED DELTA (proxy ruling, G0B-COMPARE-IDENTITY-NAMES option a). The OLD artifacts
 # are transformed into the artifacts the new driver must write, and those are compared to
@@ -279,7 +278,7 @@ for row in "${ROWS[@]}"; do
   if [ "$gl" = "$gp" ] && { [ "$gl" = passed ] || [ "$gl" = refused ]; }; then gate="AGREE($gl)"; else gate="DIFFERS($gl/$gp)"; fi
   # The closure census and the check, each driver its own way.
   # shellcheck disable=SC2086
-  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags --report contracts \
+  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags --report contracts --closure-scope game \
       > "$WORK/res/$name/legacy/report.txt" 2> "$WORK/logs/$name.legacy.report.log"
   lrr=$?
   env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --project "$WORK/project/games/$game" --shape "$shape" --report contracts \

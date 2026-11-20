@@ -2296,13 +2296,23 @@ until its row is removed.
      agree-with-Rust test compares. Task 9 can delete that rule only AFTER aeon settles the engine/game contract for
      `SFXID_REV_LOOP` (an engine-root `comptime` condition on a constant only sonic4 declares; aeon DEFERRED_WORK
      G0B-ENGINE-NAMES-GAME-CONST, a Task 9 prerequisite the two-root corpus does not remove; G0B-TASK5-NEW-PATH-GAPS).
+     **CLOSED by Task 9a** (2026-11-20; aeon 58df4539, paired): aeon `engine/engine.toml` declares
+     `required_consts = ["SFXID_REV_LOOP"]` (a game omitting one is refused by name at `load_project`,
+     `sigil_build::driver::check_required_consts`) and demo declares it `-1`. A `--project` shape's closure now
+     analyses only the engine root and the game's own root (`Project::closure_roots`), and `closure_baseline` reads
+     the engine's and the game's `baseline.toml` and nothing else: the other-games rule is deleted. The
+     agree-with-Rust test compares the Rust constants restricted to the procs that narrowed closure can fire (a Rust
+     row naming a proc that lives only outside both roots is not wanted by it). Measured: demo 80 modules, sonic4
+     197, the gate passes on all 10 shapes.
   4. **Facts left in Rust on purpose.** `harvest_engine_constants`' `VDP_Shadow_len` exclusion (`native.rs:940`) is a
      residual-AS collision rule, derivable as "a constant a struct twin also produces"; it is not a field. The
      `SIGIL_EMP_*` AS definedness defines (`native.rs:1228`) are port history. The `--game`/target names in
      `sigil-cli` `main.rs` (`label_and_profile`, :3792-3798) go with the legacy CLI.
   7. **Task 3 agree-with-Rust residue** (`crates/sigil-harness/tests/descriptions_agree_with_rust.rs`). (a) Its demo
-     baseline is the union engine + sonic4 + demo (item 3); Task 9's two-root corpus removes that union, and the test's
-     comment points here. (b) `GateRule.modules` is documented as "a module id, or a glob over ids" but `describe.rs`
+     baseline was the union engine + sonic4 + demo (item 3). **(a) CLOSED by Task 9a, not Task 9** (the union could not
+     go until aeon stated `SFXID_REV_LOOP` as a required game constant, which Task 9's two-root corpus does not do): the
+     description side is now engine + game only, and the test restricts the whole-corpus Rust constants to the procs
+     the narrowed closure can fire. (b) `GateRule.modules` is documented as "a module id, or a glob over ids" but `describe.rs`
      has no matcher; the test matches exact ids and a single `*`. No row uses a glob today; Task 5's closed gating
      owns the real matcher and must replace the test's. **(b) CLOSED in Task 5:** `sigil_build::gating::glob_match`
      (`*` within a dotted segment, `**` across) is the matcher, and the test imports it. (c) Like item 4 of the Task 2 report, the test reads the
@@ -2406,6 +2416,10 @@ until its row is removed.
     counts) columns, held by `driver_comparison`; its declared delta now also lists the files the project gate
     reads (the engine's and the game's baseline.toml, every other games/*/game.toml and its baseline.toml).
   - The warn-tier view needed nothing more: `report_warnings` already ran on both paths.
+  - **Superseded by Task 9a (2026-11-20):** the corpus IS narrowed now (engine root + the game's own root), the
+    other-games rule and its reads are gone, and the fixture test's other-game cases became "another game's
+    sources and files are not this game's gate" and "a game missing a required constant is refused by name"
+    (10 tests). See G0B-DESCRIBE-TASK2-RESIDUE item 3 and G0B-TASK9A-RESIDUE.
 - **Closed by Task 7:** `--project` now writes the listing (`--emit-lst`, with its source digest) and the
   `<stem>.build.json` export (unless `--no-build-json`) through the SAME writer as `--aeon`
   (`write_build_artifacts`; each driver supplies a `BuildIdentity`). The `engine/debug/generated/` item below is
@@ -2522,6 +2536,27 @@ until its row is removed.
     passes every lane but cannot stamp, because sigil's G0a build export writes `<stem>.build.json` beside each
     ROM and aeon's land-gate reads the untracked files as the tree changing mid-run. Either aeon ignores
     `*.build.json` or sigil writes the export outside the tree. `docs/evidence/walk-measure-in-place/landing-build.txt`.
+
+## G0B-TASK9A-RESIDUE
+
+- state: open 2026-11-20 (found in G0b Task 9a)  size: `S`  project: `G0B-GAME-AS-DATA`
+- What Task 9a (required game constants, the narrowed project gate) leaves for later tasks:
+  1. **`--closure-scope corpus|game` is a legacy-only report flag.** The comparison job's `report=` column needs the
+     two drivers' censuses over ONE module set, and a `--project` shape now analyses engine + its own game while the
+     legacy gate keeps the whole scan (its Rust constants are pinned to it, and narrowing the legacy GATE would make
+     the 7/7 reference tree, aeon 99cb963d, whose demo lacks `SFXID_REV_LOOP`, go blind). So the legacy
+     `--report contracts|indirect-cost` takes `--closure-scope game` (engine root + the profile's game root
+     directory) and the job passes it; refused with anything else. It goes with the legacy driver (Task 11).
+  2. **Two scope rules for one question until Task 9.** The closure scopes by FILE roots
+     (`Project::closure_roots`: engine dir + game sources root), which keeps sonic4's `data.*` modules (files under
+     `games/sonic4/data/sound/`, ids outside `games.sonic4`) and drops `tools/fixtures/`; placement candidates still
+     scope by ID prefix (`roots::in_candidate_scope`). Task 9's two-root resolution replaces the prefix test with
+     the roots, which makes them one rule.
+  3. **"Declares" means a `pub const` anywhere in the game's sources root**, sections included
+     (`check_required_consts`). That is what the narrowed closure resolves the bare name against. It says nothing
+     about the sound-on BUILD: the Z80 sound seams still read sonic4's `config/sound_ids.emp` by fixed path
+     (`seam2::SOUND_IDS_REL`, and `seam1`'s table pins `SFXID_REV_LOOP` = `$AB`), so how a sound-on game's own value
+     reaches the Z80 driver is a G0c question (aeon DEFERRED_WORK G0C-SOUND-SEAMS). Cherub (Task 13) is sound-off.
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
