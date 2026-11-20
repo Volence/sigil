@@ -1,12 +1,12 @@
-//! The fold gate accounts for every head seam-2 folded against. `validate_sound_fold`
-//! compares each folded bank base with the base the chainer placed it at; a head the
+//! The fold gate accounts for every head seam-2 folded against. The fold check
+//! (`native::check_sound_fold`, as the driver's sound seam runs it) compares each folded bank base with the base the chainer placed it at; a head the
 //! layout does not place, or places behind another label, is refused by name rather than
 //! left out of the comparison, and a sound-off shape that places one is refused too.
 //!
 //! THE EXPECTATIONS ARE DERIVED. The heads come from `seam2::FOLDED_BANK_HEADS`, the
 //! constants seam-2 predicts under, and the count each shape must compare comes from the
 //! shape's own sound flag. The layouts are the reference tree's own resolves
-//! (`native::resolve_frozen_layout`, the placement half of the build), planted in memory
+//! (`shapes::resolved_layout`, the placement half of the game-as-data build), planted in memory
 //! for the refusals: the tree on disk is never edited.
 //!
 //! THE SOURCE PLANTS go through the whole build on a scratch copy of the reference tree
@@ -17,18 +17,30 @@
 //! Reference tree: `AEON_DIR`. Absent, each test skips green outside strict mode and
 //! hard-fails naming the path under `SIGIL_STRICT_GATE=1`.
 
-use sigil_harness::native::{self, GameProfile};
 use sigil_harness::seam2::{self, FOLDED_BANK_HEADS};
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::reference_tree_for_shape;
 use sigil_ir::{Label, Section};
 use std::path::{Path, PathBuf};
 
-fn reference(profile: &GameProfile) -> Option<PathBuf> {
-    reference_tree_for_profile(profile)
+fn reference(profile: &Shape) -> Option<PathBuf> {
+    reference_tree_for_shape(profile)
 }
 
-fn resolved(aeon: &Path, profile: &GameProfile) -> Vec<Section> {
-    native::resolve_frozen_layout(aeon, profile).unwrap_or_else(|e| panic!("resolve {}: {e}", profile.name))
+fn resolved(aeon: &Path, profile: &Shape) -> Vec<Section> {
+    shapes::resolved_layout(aeon, profile).unwrap_or_else(|e| panic!("resolve {}: {e}", profile.name()))
+}
+
+/// The fold gate over `layout` for the shape, as the driver's sound seam runs it
+/// (`HarnessSeams::validate_sound`): seam-2's predicted heads for a sound-on shape, none
+/// for a sound-off one. Returns how many folded heads it compared.
+fn validate_sound_fold(aeon: &Path, layout: &[Section], profile: &Shape) -> Result<usize, String> {
+    let f = profile.features(aeon);
+    if !f.sound {
+        return sigil_harness::native::check_sound_fold(layout, None);
+    }
+    let predicted = seam2::sound_layout_in(aeon, None)?;
+    sigil_harness::native::check_sound_fold(layout, Some(&predicted.folded_heads(f.debug)))
 }
 
 /// Index of the section carrying `label` and the label's index within it.
@@ -40,17 +52,18 @@ fn locate(layout: &[Section], label: &str) -> (usize, usize) {
         .unwrap_or_else(|| panic!("the reference layout places no `{label}`, the plant would plant nothing"))
 }
 
-fn expect_refusal(layout: &[Section], profile: &GameProfile, aeon: &Path, code: &str, label: &str) {
-    let err = native::validate_sound_fold(aeon, layout, profile)
+fn expect_refusal(layout: &[Section], profile: &Shape, aeon: &Path, code: &str, label: &str) {
+    let err = validate_sound_fold(aeon, layout, profile)
         .map(|n| format!("Ok({n})"))
-        .expect_err(&format!("{}: a layout planted for {code} on `{label}` passed the fold gate", profile.name));
-    assert!(err.contains(code), "{}: expected {code}, got: {err}", profile.name);
-    assert!(err.contains(&format!("`{label}`")), "{}: the refusal must name `{label}`: {err}", profile.name);
+        .expect_err(&format!("{}: a layout planted for {code} on `{label}` passed the fold gate", profile.name()));
+    assert!(err.contains(code), "{}: expected {code}, got: {err}", profile.name());
+    assert!(err.contains(&format!("`{label}`")), "{}: the refusal must name `{label}`: {err}", profile.name());
 }
 
-fn sound_on_shapes() -> Vec<GameProfile> {
-    let shapes: Vec<GameProfile> =
-        native::shipped_shapes().into_iter().map(|(_, p)| p).filter(|p| p.sound_on).collect();
+fn sound_on_shapes() -> Vec<Shape> {
+    let Some(aeon) = reference(&Shape::new("sonic4", "release")) else { return Vec::new() };
+    let shapes: Vec<Shape> =
+        shapes::shipped(&aeon).expect("shipped shapes").into_iter().filter(|p| p.features(&aeon).sound).collect();
     assert!(!shapes.is_empty(), "no shipped shape is sound-on, the plants would test nothing");
     shapes
 }
@@ -59,14 +72,14 @@ fn sound_on_shapes() -> Vec<GameProfile> {
 /// when it has not.
 #[test]
 fn shipped_shapes_compare_every_folded_head() {
-    let shapes = native::shipped_shapes();
-    assert!(shapes.iter().any(|(_, p)| p.sound_on) && shapes.iter().any(|(_, p)| !p.sound_on));
-    for (name, profile) in &shapes {
-        let Some(aeon) = reference(profile) else { return };
+    let Some(aeon) = reference(&Shape::new("sonic4", "release")) else { return };
+    let shipped = shapes::shipped(&aeon).expect("shipped shapes");
+    assert!(shipped.iter().any(|p| p.features(&aeon).sound) && shipped.iter().any(|p| !p.features(&aeon).sound));
+    for profile in &shipped {
+        let name = profile.name();
         let layout = resolved(&aeon, profile);
-        let n = native::validate_sound_fold(&aeon, &layout, profile)
-            .unwrap_or_else(|e| panic!("shape `{name}`: {e}"));
-        let want = if profile.sound_on { FOLDED_BANK_HEADS.len() } else { 0 };
+        let n = validate_sound_fold(&aeon, &layout, profile).unwrap_or_else(|e| panic!("shape `{name}`: {e}"));
+        let want = if profile.features(&aeon).sound { FOLDED_BANK_HEADS.len() } else { 0 };
         assert_eq!(n, want, "shape `{name}` compared {n} folded heads, expected {want}");
     }
 }
@@ -74,7 +87,7 @@ fn shipped_shapes_compare_every_folded_head() {
 /// The heads the gate compares are the ones seam-2 predicted, at the bases it predicted.
 #[test]
 fn folded_heads_are_seam2_predictions() {
-    let profile = native::sonic4_profile(false);
+    let profile = Shape::new("sonic4", "release");
     let Some(aeon) = reference(&profile) else { return };
     let layout = seam2::sound_layout(&aeon).expect("layout");
     for debug in [false, true] {
@@ -141,8 +154,9 @@ fn moved_head_is_refused() {
 /// A sound-off shape that places a folded head is refused by name.
 #[test]
 fn sound_off_shape_placing_a_head_is_refused() {
-    let off: Vec<GameProfile> =
-        native::shipped_shapes().into_iter().map(|(_, p)| p).filter(|p| !p.sound_on).collect();
+    let Some(aeon) = reference(&Shape::new("sonic4", "release")) else { return };
+    let off: Vec<Shape> =
+        shapes::shipped(&aeon).expect("shipped shapes").into_iter().filter(|p| !p.features(&aeon).sound).collect();
     assert!(!off.is_empty(), "no shipped shape is sound-off");
     for profile in off {
         let Some(aeon) = reference(&profile) else { return };
@@ -208,7 +222,7 @@ fn rename_in_source(root: &Path, head: &str, to: &str) -> PathBuf {
 #[test]
 fn head_renamed_in_source_fails_the_build() {
     for debug in [false, true] {
-        let profile = native::sonic4_profile(debug);
+        let profile = Shape::new("sonic4", if debug { "debug" } else { "release" });
         let Some(real) = reference(&profile) else { return };
         for head in FOLDED_BANK_HEADS {
             let tmp = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).expect("scratch dir on disk");
@@ -216,10 +230,10 @@ fn head_renamed_in_source_fails_the_build() {
             let to = format!("{head}_Renamed");
             let module = rename_in_source(tmp.path(), head, &to);
             assert!(std::fs::read_to_string(&module).unwrap().contains(&format!("data {to} ")));
-            let err = native::build_rom_chained(tmp.path(), &profile)
+            let err = shapes::image(tmp.path(), &profile)
                 .err()
-                .unwrap_or_else(|| panic!("{}: renaming `{head}` in source built green", profile.name));
-            assert!(err.contains(head), "{}: the refusal must name `{head}`: {err}", profile.name);
+                .unwrap_or_else(|| panic!("{}: renaming `{head}` in source built green", profile.name()));
+            assert!(err.contains(head), "{}: the refusal must name `{head}`: {err}", profile.name());
         }
     }
 }

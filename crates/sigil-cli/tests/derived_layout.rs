@@ -1,6 +1,6 @@
 //! Derived ROM layout (2026-08-26, decision d-7) — the shipped-shape invariants the
 //! derived placement must keep, read off the SAME resolve the ROM comes from
-//! (`native::resolve_frozen_layout`), never off a pin:
+//! (`shapes::resolved_layout`, the game-as-data driver's resolve), never off a pin:
 //!
 //!   * the error_handler island is the LAST byte-emitting section, immediately before
 //!     `EndOfRom` — the MD Debugger locates its symbol table with two `lea`
@@ -11,7 +11,8 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test derived_layout
 //! ```
 use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::reference_tree_for_shape;
 
 // The frozen resolve touches the shared engine/sound/generated dir.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -19,12 +20,12 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// For `profile`: the section carrying `ErrorHandlerBlob` has the greatest base of every
 /// byte-emitting ROM section, its end (base + blob offset + blob length) is exactly the
 /// `EndOfRom` address, and nothing emits a byte at or past that end.
-fn error_handler_is_the_last_emission(profile: native::GameProfile) {
-    let Some(aeon) = reference_tree_for_profile(&profile) else {
+fn error_handler_is_the_last_emission(profile: Shape) {
+    let Some(aeon) = reference_tree_for_shape(&profile) else {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let layout = native::resolve_frozen_layout(&aeon, &profile).unwrap_or_else(|e| panic!("{e}"));
+    let layout = shapes::resolved_layout(&aeon, &profile).unwrap_or_else(|e| panic!("{e}"));
 
     let mut blob: Option<(u32, u32)> = None; // (section base, blob offset)
     let mut end_of_rom: Option<u32> = None;
@@ -62,10 +63,10 @@ fn error_handler_is_the_last_emission(profile: native::GameProfile) {
 
 #[test]
 fn s4_debug_error_handler_is_the_last_emission() {
-    error_handler_is_the_last_emission(native::sonic4_profile(true));
+    error_handler_is_the_last_emission(Shape::new("sonic4", "debug"));
 }
 
 #[test]
 fn s4_error_handler_is_the_last_emission() {
-    error_handler_is_the_last_emission(native::sonic4_profile(false));
+    error_handler_is_the_last_emission(Shape::new("sonic4", "release"));
 }

@@ -2509,8 +2509,10 @@ pub fn build_rom_chained_with_listing(
     // against the banks as placed. First among the post-link checks: a moved bank also
     // trips the island checks below, and this names the bytes that would select the
     // wrong window.
+    let engine_desc = sigil_build::describe::load_engine(&aeon.join("engine/engine.toml")).map_err(|e| e.to_string())?;
     crate::sound_bank_ids::validate_sound_bank_ids_in(
         aeon,
+        &engine_desc.sound,
         profile.anchor_overlay.as_ref(),
         &resolved,
         &linked,

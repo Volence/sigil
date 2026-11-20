@@ -16,24 +16,32 @@
 //! the id's input moved and the offsets that changed are the sites
 //! ([`crate::seam1::blob_bank_id_sites`], [`crate::seam2::dac_head_bank_id_sites`]).
 //!
-//! A shape that declares no sound (`GameProfile::sound_on == false`) has nothing to
+//! Which labels bracket the blob, head the DAC table and head each bank, and which blob
+//! consts carry a bank id, are the ENGINE's facts: `engine.toml [sound]`
+//! ([`sigil_build::describe::SoundDesc`]), passed in by the caller. (Until G0b Task 11
+//! they were literals in this file.)
+//!
+//! A shape that declares no sound (its `features.sound` is false) has nothing to
 //! check, and says so only after confirming that its layout really carries no resident
 //! blob bytes and no `DacSampleTable`. A sound-on shape in which any label, any site
 //! group, or any byte cannot be found is refused: an unmeasured id is not a matching
 //! one.
 
+use sigil_build::describe::SoundDesc;
 use sigil_ir::Section;
 use sigil_link::LinkedImage;
 use std::path::Path;
 
+// ── The profile-driven driver's sound literals, now read by nothing in the build: the
+// check reads `engine.toml [sound]`. Kept only for `descriptions_agree_with_rust`, the
+// agree-with-Rust test, and deleted with it and that driver in the G0b Task 11 deletion
+// commit. ──
+
 /// The resident blob's bank-id consts, each an 8-bit operand of a `SetBank` call.
 pub const BLOB_BANK_ID_CONSTS: &[&str] = &["SND_ENGINE_TABLE_BANK", "SFX_BLOB_BANK"];
 
-/// The placed labels whose bank each blob const must select. `SND_ENGINE_TABLE_BANK`
-/// banks the engine-table head section; `SFX_BLOB_BANK` banks both the id-to-blob
-/// window table (in that head) and the SFX block itself, so its sites must equal the
-/// id of each.
-fn blob_const_bank_labels(name: &str) -> Option<&'static [&'static str]> {
+/// The placed labels whose bank each blob const must select.
+pub fn blob_const_bank_labels(name: &str) -> Option<&'static [&'static str]> {
     match name {
         "SND_ENGINE_TABLE_BANK" => Some(&["SoundTablesZ80_Head"]),
         "SFX_BLOB_BANK" => Some(&["SfxBlobWinTab", "Sfx_33"]),
@@ -42,13 +50,24 @@ fn blob_const_bank_labels(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The resident blob's bracket labels in `engine/system/boot_data.emp`.
+#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
 const BLOB_START: &str = "Z80_Sound_Start";
+#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
 const BLOB_END: &str = "Z80_Sound_End";
 /// The DAC descriptor head's label in `games/sonic4/data/sound/soundbankhead.emp`.
+#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
 const DAC_HEAD: &str = "DacSampleTable";
 /// The two DAC bank heads in `games/sonic4/data/sound/dac_banks.emp`.
+#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
 const DAC_BLIP_BANK: &str = "Dac_Temp_Blip";
+#[allow(dead_code)] // read as text by descriptions_agree_with_rust; deleted with it
 const DAC_SHARED_BANK: &str = "Dac_SharedBank_Start";
+
+/// The resident blob's bank-id consts (`engine.toml [[sound.blob_bank_ids]]` `name`s),
+/// each an 8-bit operand of a `SetBank` call.
+pub fn blob_bank_id_consts(sound: &SoundDesc) -> Vec<String> {
+    sound.blob_bank_ids.iter().map(|c| c.name.clone()).collect()
+}
 
 /// The offsets at which `real` and `doc` differ, each required to hold `want_real` in
 /// `real` and `want_doc` in `doc`. `doc` is the same artifact re-emitted with one bank
@@ -108,11 +127,11 @@ pub struct SiteGroup {
     /// The artifact, for the diagnostic (`resident Z80 blob (plain shape)`).
     pub artifact: String,
     /// The placed label the artifact starts at; each offset is relative to it.
-    pub base_label: &'static str,
+    pub base_label: String,
     /// What folded the byte, for the diagnostic (`SND_ENGINE_TABLE_BANK`).
     pub baked_as: String,
     /// The placed labels whose bank id every site must equal.
-    pub bank_labels: &'static [&'static str],
+    pub bank_labels: Vec<String>,
     /// Artifact offsets of the bank-id bytes.
     pub offsets: Vec<u32>,
 }
@@ -144,8 +163,8 @@ pub fn check_site_groups(
                 g.artifact, g.baked_as
             ));
         }
-        let base = need(g.base_label)?;
-        for &bank_label in g.bank_labels {
+        let base = need(&g.base_label)?;
+        for bank_label in &g.bank_labels {
             let bank_lma = need(bank_label)?;
             let placed_id = crate::seam2::bank_id_of(bank_lma);
             for &off in &g.offsets {
@@ -205,12 +224,13 @@ fn linked_byte(linked: &LinkedImage, lma: u32) -> Option<u8> {
 /// the expected ids are derived.
 pub fn validate_sound_bank_ids(
     aeon: &Path,
+    sound: &SoundDesc,
     resolved: &[Section],
     linked: &LinkedImage,
     sound_on: bool,
     debug: bool,
 ) -> Result<usize, String> {
-    validate_sound_bank_ids_in(aeon, None, resolved, linked, sound_on, debug)
+    validate_sound_bank_ids_in(aeon, sound, None, resolved, linked, sound_on, debug)
 }
 
 /// [`validate_sound_bank_ids`] for a build under an anchor overlay: the sites are
@@ -218,6 +238,7 @@ pub fn validate_sound_bank_ids(
 /// come from the overlay; they are `bank_id_of` the banks as placed.
 pub fn validate_sound_bank_ids_in(
     aeon: &Path,
+    sound: &SoundDesc,
     ov: Option<&crate::map_placement::AnchorOverlay>,
     resolved: &[Section],
     linked: &LinkedImage,
@@ -225,30 +246,31 @@ pub fn validate_sound_bank_ids_in(
     debug: bool,
 ) -> Result<usize, String> {
     let placed = |label: &str| placed_lma(resolved, label);
+    let (blob_start, blob_end, dac_head) = (sound.blob_start.as_str(), sound.blob_end.as_str(), sound.dac_head.as_str());
     if !sound_on {
-        let blob_len = match (placed(BLOB_START), placed(BLOB_END)) {
+        let blob_len = match (placed(blob_start), placed(blob_end)) {
             (Some(s), Some(e)) => e.saturating_sub(s),
             _ => 0,
         };
-        if blob_len != 0 || placed(DAC_HEAD).is_some() {
+        if blob_len != 0 || placed(dac_head).is_some() {
             return Err(format!(
                 "[sound.bank-id-vs-placement] this shape declares sound off, yet its layout \
-                 carries sound bank-id bytes (resident blob {blob_len} bytes, `{DAC_HEAD}` \
+                 carries sound bank-id bytes (resident blob {blob_len} bytes, `{dac_head}` \
                  {}). Their ids would go unchecked; the shape's sound flag and its registry \
                  disagree",
-                if placed(DAC_HEAD).is_some() { "placed" } else { "absent" }
+                if placed(dac_head).is_some() { "placed" } else { "absent" }
             ));
         }
         return Ok(0);
     }
 
     let crate::seam1::BlobBankIdSites { by_const: blob_sites, blob_len } =
-        crate::seam1::blob_bank_id_sites_in(aeon, ov, debug)?;
-    let placed_blob_len = match (placed(BLOB_START), placed(BLOB_END)) {
+        crate::seam1::blob_bank_id_sites_in(aeon, &blob_bank_id_consts(sound), ov, debug)?;
+    let placed_blob_len = match (placed(blob_start), placed(blob_end)) {
         (Some(s), Some(e)) => e.saturating_sub(s),
         _ => {
             return Err(format!(
-                "[sound.bank-id-vs-placement] cannot measure: `{BLOB_START}`/`{BLOB_END}` are not \
+                "[sound.bank-id-vs-placement] cannot measure: `{blob_start}`/`{blob_end}` are not \
                  both placed in this sound-on build"
             ))
         }
@@ -263,12 +285,16 @@ pub fn validate_sound_bank_ids_in(
     let shape = if debug { "debug" } else { "plain" };
     let mut groups = Vec::new();
     for (name, offsets) in blob_sites {
-        let bank_labels = blob_const_bank_labels(name).ok_or_else(|| {
-            format!("[sound.bank-id-vs-placement] blob const {name} names no bank label to check")
-        })?;
+        let bank_labels = sound
+            .blob_bank_ids
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.banks.clone())
+            .filter(|b| !b.is_empty())
+            .ok_or_else(|| format!("[sound.bank-id-vs-placement] blob const {name} names no bank label to check"))?;
         groups.push(SiteGroup {
             artifact: format!("resident Z80 blob ({shape} shape)"),
-            base_label: BLOB_START,
+            base_label: blob_start.to_string(),
             baked_as: name.to_string(),
             bank_labels,
             offsets,
@@ -277,16 +303,16 @@ pub fn validate_sound_bank_ids_in(
     let dac = crate::seam2::dac_head_bank_id_sites_in(aeon, ov)?;
     groups.push(SiteGroup {
         artifact: "DacSampleTable head".to_string(),
-        base_label: DAC_HEAD,
+        base_label: dac_head.to_string(),
         baked_as: "ds_bank (dac_blip_bank)".to_string(),
-        bank_labels: &[DAC_BLIP_BANK],
+        bank_labels: vec![sound.dac_blip_bank.clone()],
         offsets: dac.blip,
     });
     groups.push(SiteGroup {
         artifact: "DacSampleTable head".to_string(),
-        base_label: DAC_HEAD,
+        base_label: dac_head.to_string(),
         baked_as: "ds_bank (dac_shared_bank)".to_string(),
-        bank_labels: &[DAC_SHARED_BANK],
+        bank_labels: vec![sound.dac_shared_bank.clone()],
         offsets: dac.shared,
     });
     check_site_groups(&groups, &placed, &|lma| linked_byte(linked, lma))
@@ -299,9 +325,9 @@ mod tests {
     fn group(offsets: Vec<u32>) -> SiteGroup {
         SiteGroup {
             artifact: "blob".into(),
-            base_label: "Base",
+            base_label: "Base".into(),
             baked_as: "ID".into(),
-            bank_labels: &["Bank"],
+            bank_labels: vec!["Bank".into()],
             offsets,
         }
     }
@@ -353,7 +379,7 @@ mod tests {
         let r = rom(0x200, &[], 0);
         let read = |a: u32| r.get(a as usize).copied();
         let mut g = group(vec![2]);
-        g.bank_labels = &["Missing"];
+        g.bank_labels = vec!["Missing".into()];
         assert!(check_site_groups(&[g], &placed, &read).unwrap_err().contains("cannot measure"));
         assert!(check_site_groups(&[group(vec![])], &placed, &read)
             .unwrap_err()

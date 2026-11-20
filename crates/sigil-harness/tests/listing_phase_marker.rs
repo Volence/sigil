@@ -29,8 +29,8 @@
 //! requires that the shipped set is not UNIFORMLY empty: at least one shape must
 //! report a real phased symbol, with its two addresses.
 
-use sigil_harness::native::{self, GameProfile};
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes;
+use sigil_harness::test_support::reference_tree_for_shape;
 use sigil_link::ListingSymbol;
 
 /// The `PHASE` rows of an emitted listing, as `(name, vma, lma)`.
@@ -56,10 +56,11 @@ fn emitted_count(listing: &[ListingSymbol]) -> Option<usize> {
 
 #[test]
 fn every_shipped_shape_declares_which_of_its_addresses_are_phased() {
-    let shapes: Vec<(&str, GameProfile)> = native::shipped_shapes();
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
+    let shipped = shapes::shipped(&aeon).expect("shipped shapes");
     assert!(
-        !shapes.is_empty(),
-        "shipped_shapes() enumerated nothing; a walk over an empty set is green for \
+        !shipped.is_empty(),
+        "shapes::shipped enumerated nothing; a walk over an empty set is green for \
          the one reason that proves nothing"
     );
 
@@ -67,9 +68,9 @@ fn every_shipped_shape_declares_which_of_its_addresses_are_phased() {
     let mut total_phased = 0usize;
     let mut report: Vec<String> = Vec::new();
 
-    for (label, profile) in &shapes {
-        let Some(aeon) = reference_tree_for_profile(profile) else { return };
-        let listing = match native::build_rom_chained_with_listing(&aeon, profile) {
+    for profile in &shipped {
+        let label = profile.name();
+        let listing = match shapes::build(&aeon, profile) {
             Ok(b) => b.listing,
             Err(e) => {
                 faults.push(format!("shape `{label}`: build failed, so nothing was measured: {e}"));

@@ -1,11 +1,11 @@
 //! HOLE-INTERIOR-RESERVED over the SHIPPED shapes — the `[[hole]]` half of the
 //! placement contract, driven through `native::validate_placement` (the post-resolve
-//! gate `build_rom_chained_with_listing` runs) against each shape's real `map.toml` and
+//! gate `sigil build --project` runs, `sigil_build::guards::validate_placement`) against each shape's real `map.toml` and
 //! the real resolve the ROM comes from.
 //!
 //! A `[[hole]]` is a reserved empty span: it opens at its `after` label, runs to `at`,
 //! and the module `filled_by` names is the one thing allowed inside. The unit fixtures
-//! in `native::placement_validation_tests` prove the predicate's shape; this file proves
+//! in `sigil_build::guards`' placement-validation tests prove the predicate's shape; this file proves
 //! it over the layouts that actually ship, in both directions:
 //!
 //!   * GREEN — every live hole in every shipped shape holds nothing but its filler;
@@ -25,14 +25,15 @@
 //! ```
 use sigil_harness::map_placement::PlacementMap;
 use sigil_harness::native;
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::reference_tree_for_shape;
 
 // The frozen resolve touches the shared engine/sound/generated dir.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// `profile`'s real placement map, read from the aeon tree the build reads it from.
-fn map_for(aeon: &std::path::Path, profile: &native::GameProfile) -> PlacementMap {
-    let path = profile.map_path(aeon);
+fn map_for(aeon: &std::path::Path, profile: &Shape) -> PlacementMap {
+    let path = profile.map_path(aeon).unwrap_or_else(|e| panic!("{e}"));
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     sigil_harness::map_placement::load_placement_map(&src)
@@ -44,13 +45,14 @@ fn map_for(aeon: &std::path::Path, profile: &native::GameProfile) -> PlacementMa
 /// population is established before any expensive resolve is paid for.
 fn shapes_with_a_live_hole(
     aeon: &std::path::Path,
-) -> Vec<(&'static str, native::GameProfile, PlacementMap)> {
-    native::shipped_shapes()
+) -> Vec<(String, Shape, PlacementMap)> {
+    shapes::shipped(aeon)
+        .expect("shipped shapes")
         .into_iter()
-        .filter_map(|(name, profile)| {
+        .filter_map(|profile| {
             let m = map_for(aeon, &profile);
-            let live = m.holes_for(profile.sound_on).count();
-            (live > 0).then_some((name, profile, m))
+            let live = m.holes_for(profile.features(aeon).sound).count();
+            (live > 0).then_some((profile.name(), profile, m))
         })
         .collect()
 }
@@ -61,11 +63,11 @@ fn shapes_with_a_live_hole(
 /// one is visible in the log rather than silently cheaper.
 #[test]
 fn some_shipped_shape_declares_a_live_hole() {
-    let Some(aeon) = reference_tree_for_profile(&native::demo_profile(false)) else {
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("demo", "release")) else {
         return;
     };
     let live = shapes_with_a_live_hole(&aeon);
-    let names: Vec<&str> = live.iter().map(|(n, _, _)| *n).collect();
+    let names: Vec<&str> = live.iter().map(|(n, _, _)| n.as_str()).collect();
     assert!(
         !live.is_empty(),
         "no shipped shape declares a live `[[hole]]`, every assertion in this file is \
@@ -78,20 +80,20 @@ fn some_shipped_shape_declares_a_live_hole() {
 /// agree — the reserved interior holds nothing but the module `filled_by` names.
 #[test]
 fn every_live_hole_holds_only_its_filler() {
-    let Some(aeon) = reference_tree_for_profile(&native::demo_profile(false)) else {
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("demo", "release")) else {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut checked = 0usize;
     for (name, profile, m) in shapes_with_a_live_hole(&aeon) {
-        let Some(aeon) = reference_tree_for_profile(&profile) else {
+        let Some(aeon) = reference_tree_for_shape(&profile) else {
             continue;
         };
-        let resolved = native::resolve_frozen_layout(&aeon, &profile)
+        let resolved = shapes::resolved_layout(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: resolve: {e}"));
-        let registry = native::module_registry(&aeon, &profile)
+        let registry = shapes::module_registry(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: module roots: {e}"));
-        native::validate_placement(&resolved, &m, profile.sound_on, &registry)
+        native::validate_placement(&resolved, &m, profile.features(&aeon).sound, &registry)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         checked += 1;
     }
@@ -108,18 +110,18 @@ fn every_live_hole_holds_only_its_filler() {
 /// the aeon tree is never written to — only the in-memory `PlacementMap` is doctored.
 #[test]
 fn a_right_edge_past_the_post_hole_data_is_refused() {
-    let Some(aeon) = reference_tree_for_profile(&native::demo_profile(false)) else {
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("demo", "release")) else {
         return;
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut proven = 0usize;
     for (name, profile, m) in shapes_with_a_live_hole(&aeon) {
-        let Some(aeon) = reference_tree_for_profile(&profile) else {
+        let Some(aeon) = reference_tree_for_shape(&profile) else {
             continue;
         };
-        let resolved = native::resolve_frozen_layout(&aeon, &profile)
+        let resolved = shapes::resolved_layout(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: resolve: {e}"));
-        let registry = native::module_registry(&aeon, &profile)
+        let registry = shapes::module_registry(&aeon, &profile)
             .unwrap_or_else(|e| panic!("{name}: module roots: {e}"));
 
         // Index into `m.holes` (not into the gated view), so the doctored right edge
@@ -128,7 +130,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
             .holes
             .iter()
             .enumerate()
-            .filter(|(_, h)| m.holes_for(profile.sound_on).any(|g| std::ptr::eq(g, *h)))
+            .filter(|(_, h)| m.holes_for(profile.features(&aeon).sound).any(|g| std::ptr::eq(g, *h)))
             .map(|(i, _)| i)
             .collect();
         for i in live {
@@ -152,7 +154,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
             // NOT permit: extending `at` to its end puts exactly that section inside.
             let mut post: Vec<(u32, u32, &str)> = resolved
                 .iter()
-                .filter(|s| native::is_rom_section(s))
+                .filter(|s| sigil_build::place::is_rom_section(s))
                 .filter(|s| !permitted.contains(&s.name.as_str()))
                 .map(|s| (s.lma, s.image_bytes().len() as u32, s.name.as_str()))
                 .filter(|(lma, len, _)| *len > 0 && *lma >= hole.at)
@@ -172,7 +174,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
             let e = native::validate_placement(
                 &resolved,
                 &doctored,
-                profile.sound_on,
+                profile.features(&aeon).sound,
                 &registry,
             )
             .expect_err(&format!(
@@ -192,7 +194,7 @@ fn a_right_edge_past_the_post_hole_data_is_refused() {
 
             // CONTROL, the other direction: the undoctored map over the identical
             // resolve passes, so the red is the moved right edge and nothing else.
-            native::validate_placement(&resolved, &m, profile.sound_on, &registry)
+            native::validate_placement(&resolved, &m, profile.features(&aeon).sound, &registry)
                 .unwrap_or_else(|e| panic!("{name}: control: {e}"));
             proven += 1;
         }

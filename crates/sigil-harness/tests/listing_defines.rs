@@ -49,8 +49,8 @@
 //! symmetric today, and an assertion that fires on a correct tree trains people to
 //! weaken it.
 
-use sigil_harness::native::{self, GameProfile};
-use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::{reference_tree_for_shape, shadow_aeon_tree};
 use sigil_link::ListingSymbol;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -99,15 +99,15 @@ fn containment_faults(
 /// The (release, debug) pairs. Only a GAME has both shapes; `config_a`/`config_b`/
 /// `lean` are single off-canonical shapes with no counterpart, so they are outside
 /// this property rather than silently folded into it.
-fn shape_pairs() -> Vec<(&'static str, GameProfile, GameProfile)> {
+fn shape_pairs() -> Vec<(&'static str, Shape, Shape)> {
     vec![
-        ("sonic4", native::sonic4_profile(false), native::sonic4_profile(true)),
-        ("demo", native::demo_profile(false), native::demo_profile(true)),
+        ("sonic4", Shape::new("sonic4", "release"), Shape::new("sonic4", "debug")),
+        ("demo", Shape::new("demo", "release"), Shape::new("demo", "debug")),
     ]
 }
 
-fn build_listing(aeon: &Path, label: &str, profile: &GameProfile) -> Result<Vec<ListingSymbol>, String> {
-    native::build_rom_chained_with_listing(aeon, profile)
+fn build_listing(aeon: &Path, label: &str, profile: &Shape) -> Result<Vec<ListingSymbol>, String> {
+    shapes::build(aeon, profile)
         .map(|b| b.listing)
         .map_err(|e| format!("shape `{label}`: build failed, so nothing was measured: {e}"))
 }
@@ -120,35 +120,30 @@ fn build_listing(aeon: &Path, label: &str, profile: &GameProfile) -> Result<Vec<
 /// the build compiled against; a shape whose listing carries no equates at all.
 #[test]
 fn every_shipped_shape_publishes_its_command_line_defines_in_its_listing() {
-    let shapes = native::shipped_shapes();
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("sonic4", "release")) else { return };
+    let shipped = shapes::shipped(&aeon).expect("shipped shapes");
     assert!(
-        !shapes.is_empty(),
-        "shipped_shapes() enumerated nothing, a walk over an empty set is green for \
+        !shipped.is_empty(),
+        "shapes::shipped enumerated nothing, a walk over an empty set is green for \
          the one reason that proves nothing"
     );
-
-    let mut aeon = None;
-    for (_, profile) in &shapes {
-        let Some(root) = reference_tree_for_profile(profile) else { return };
-        aeon = Some(root);
-    }
-    let aeon = aeon.expect("shapes is non-empty, so the loop ran at least once");
 
     let mut faults: Vec<String> = Vec::new();
     let mut unmeasured: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
-    for (label, profile) in &shapes {
-        let listing = match build_listing(&aeon, label, profile) {
+    for profile in &shipped {
+        let label = profile.name();
+        let listing = match build_listing(&aeon, &label, profile) {
             Ok(l) => l,
             Err(e) => {
                 unmeasured.push(e);
                 continue;
             }
         };
-        // THE EXPECTATION, derived from the profile + the game's map — the same call
-        // the build's own lowering makes, never a transcribed name list.
-        let expected = match native::shape_defines(profile, &aeon) {
+        // THE EXPECTATION, derived from the descriptions + the game's map — the same
+        // merge the build's own lowering makes, never a transcribed name list.
+        let expected = match shapes::shape_defines(&aeon, profile) {
             Ok(d) => d,
             Err(e) => {
                 unmeasured.push(format!("shape `{label}`: define env unreadable: {e}"));
@@ -199,13 +194,13 @@ fn every_shipped_shape_publishes_its_command_line_defines_in_its_listing() {
         "{} of {} shipped shapes could not be measured, so this run says nothing about \
          them:\n  {}",
         unmeasured.len(),
-        shapes.len(),
+        shipped.len(),
         unmeasured.join("\n  "),
     );
     eprintln!(
         "define rows: {checked} define(s) across {} shipped shapes reached their \
          listing at their own value",
-        shapes.len()
+        shipped.len()
     );
     assert!(
         faults.is_empty(),
@@ -233,7 +228,7 @@ fn every_games_release_equates_are_contained_in_its_debug_equates() {
 
     let mut aeon = None;
     for (_, release, _) in &pairs {
-        let Some(root) = reference_tree_for_profile(release) else { return };
+        let Some(root) = reference_tree_for_shape(release) else { return };
         aeon = Some(root);
     }
     let aeon = aeon.expect("pairs is non-empty");
@@ -242,14 +237,14 @@ fn every_games_release_equates_are_contained_in_its_debug_equates() {
     let mut unmeasured: Vec<String> = Vec::new();
 
     for (game, release_profile, debug_profile) in &pairs {
-        let release = match build_listing(&aeon, release_profile.name, release_profile) {
+        let release = match build_listing(&aeon, &release_profile.name(), release_profile) {
             Ok(l) => equate_names(&l),
             Err(e) => {
                 unmeasured.push(e);
                 continue;
             }
         };
-        let debug = match build_listing(&aeon, debug_profile.name, debug_profile) {
+        let debug = match build_listing(&aeon, &debug_profile.name(), debug_profile) {
             Ok(l) => equate_names(&l),
             Err(e) => {
                 unmeasured.push(e);
@@ -359,13 +354,13 @@ const DEMO_AS_ANCHOR: &str = "__Aeon_AS_Carrier:  equ 0";
 /// reason that does not name both origins.
 #[test]
 fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origins() {
-    let profile = native::demo_profile(false);
-    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let profile = Shape::new("demo", "release");
+    let Some(aeon) = reference_tree_for_shape(&profile) else { return };
 
     // CONTROL, on the undoctored tree: the copy mechanism is not what makes the
     // doctored build red, and today's tree has no such collision.
     let clean = shadow_aeon_tree(&aeon, &[]).expect("shadow copy of the reference tree");
-    native::build_rom_chained_with_listing(clean.root(), &profile)
+    shapes::build(clean.root(), &profile)
         .unwrap_or_else(|e| panic!("undoctored shadow build must succeed, got: {e}"));
 
     let src = std::fs::read_to_string(aeon.join(DEMO_AS_ROOT_REL))
@@ -376,14 +371,14 @@ fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origin
         "the witness anchors on `{DEMO_AS_ANCHOR}`; it is no longer in \
          {DEMO_AS_ROOT_REL} exactly once, so this test would doctor nothing"
     );
-    // The name is read from the profile rather than typed, so the witness cannot
-    // outlive the define it collides with.
-    let key = profile
-        .emp_defines
+    // The name is read from the shape's define env rather than typed, so the witness
+    // cannot outlive the define it collides with.
+    let defines = shapes::shape_defines(&aeon, &profile).expect("demo release defines");
+    let key = defines
         .iter()
-        .find(|(k, _)| *k == "MAX_RING_BUFFER")
-        .map(|(k, _)| *k)
-        .expect("the demo profile declares MAX_RING_BUFFER");
+        .find(|(k, _)| k == "MAX_RING_BUFFER")
+        .map(|(k, _)| k.as_str())
+        .expect("the demo shape declares MAX_RING_BUFFER");
     let doctored = src.replace(
         DEMO_AS_ANCHOR,
         &format!("{DEMO_AS_ANCHOR}\n\n; RED-FIRST WITNESS\n{key} = 5"),
@@ -392,7 +387,7 @@ fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origin
 
     let tree = shadow_aeon_tree(&aeon, &[(DEMO_AS_ROOT_REL, doctored.as_str())])
         .expect("doctored shadow copy");
-    let err = match native::build_rom_chained_with_listing(tree.root(), &profile) {
+    let err = match shapes::build(tree.root(), &profile) {
         Err(e) => e,
         Ok(_) => panic!(
             "the doctored build SUCCEEDED: `{key}` is declared both as a command-line \
@@ -403,8 +398,9 @@ fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origin
     };
     assert!(err.contains(key), "the refusal does not name the define: {err}");
     assert!(
-        err.contains("crates/sigil-harness/src/native.rs"),
-        "the refusal does not name the DEFINE's origin: {err}"
+        err.contains("games/demo/map.toml [defines]"),
+        "the refusal does not name the DEFINE's origin (demo declares it in its map's \
+         [defines]; the profile-driven driver named its own native.rs literal): {err}"
     );
     assert!(
         err.contains("the program's own equate") && err.contains("$00000005"),

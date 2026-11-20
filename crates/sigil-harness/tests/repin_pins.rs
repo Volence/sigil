@@ -14,19 +14,18 @@
 //! generator ever mis-derives a value, the mismatch surfaces HERE first,
 //! named — not as a byte-diff panic three suites later.
 
-use sigil_harness::native;
 use sigil_harness::pins;
 use sigil_harness::repin::{
     build_dir_of_this_run, drift_report, load_manifest, render, resolve, stale_pins_message,
-    Listing, Provenance,
+    Provenance,
 };
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::test_support::reference_tree_for_shape;
 
 /// The committed pins.rs must equal an in-memory regeneration from SIGIL'S OWN
 /// resolved layout, modulo the `[provenance]` stamp lines (a rebuild that moves no
 /// pin is not drift).
 ///
-/// The addresses come from `native::sigil_native_symbol_listing` — sigil's own
+/// The addresses come from `repin::listing_of` over the driver's resolved layout — sigil's own
 /// fully-resolved symbol table (labels + folded equates incl. MDDBG, `.emp` locals
 /// demangled, section-END markers synthesized), no asl anywhere. REFERENCE-DEPENDENT
 /// on the sibling aeon tree's SOURCE (`AEON_DIR`): the sound-on resolve emits its
@@ -35,35 +34,22 @@ use sigil_harness::test_support::reference_tree_for_profile;
 fn pins_rs_is_current() {
     // The listing is sigil's own resolve of the sonic4 shape, so the reference this
     // needs is that profile's SOURCE — no built ROM and no asl listing.
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
+    let shape = |row: &str| sigil_harness::shapes::Shape::new("sonic4", row);
+    let Some(aeon) = reference_tree_for_shape(&shape("release")) else {
         return;
     };
-    let (pm, pe) = native::sigil_native_symbol_listing(&aeon, false)
-        .unwrap_or_else(|e| panic!("plain resolve: {e}"));
-    let (dm, de) = native::sigil_native_symbol_listing(&aeon, true)
-        .unwrap_or_else(|e| panic!("debug resolve: {e}"));
-    // Phase-bank label LMAs (T4): a `phase_bank` region pins its base to the LMA.
-    let pl = native::phase_bank_lmas(&aeon, false).unwrap_or_else(|e| panic!("plain phase lma: {e}"));
-    let dl = native::phase_bank_lmas(&aeon, true).unwrap_or_else(|e| panic!("debug phase lma: {e}"));
-    // Section extents (REPIN-END): the `section:<name>` boundary spelling.
-    let ps = native::section_extents(&aeon, false).unwrap_or_else(|e| panic!("plain sections: {e}"));
-    let ds = native::section_extents(&aeon, true).unwrap_or_else(|e| panic!("debug sections: {e}"));
-    // Label→section ownership (R6): the flush-neighbour end check.
-    let po = native::section_label_owners(&aeon, false).unwrap_or_else(|e| panic!("plain owners: {e}"));
-    let do_ = native::section_label_owners(&aeon, true).unwrap_or_else(|e| panic!("debug owners: {e}"));
-    let plain = Listing::from_symbols(pm, pe, "plain".into())
-        .with_phase_lma(pl)
-        .with_sections(ps)
-        .with_label_owners(po);
-    let debug = Listing::from_symbols(dm, de, "debug".into())
-        .with_phase_lma(dl)
-        .with_sections(ds)
-        .with_label_owners(do_);
+    // One resolved layout per shape; symbols, phase-bank LMAs (T4), section extents
+    // (REPIN-END) and label ownership (R6) are all read off it (`repin::listing_of`).
+    let layout = |row: &str| {
+        sigil_harness::shapes::resolved_layout(&aeon, &shape(row)).unwrap_or_else(|e| panic!("{row} resolve: {e}"))
+    };
+    let plain = sigil_harness::repin::listing_of(&layout("release"), "plain").unwrap_or_else(|e| panic!("plain: {e}"));
+    let debug = sigil_harness::repin::listing_of(&layout("debug"), "debug").unwrap_or_else(|e| panic!("debug: {e}"));
     let manifest = load_manifest(include_str!("../repin.toml")).expect("repin.toml must load");
     let resolved = resolve(&manifest, &plain, &debug).unwrap_or_else(|e| panic!("resolve: {e}"));
     let prov = Provenance {
-        plain_path: "sigil-native canonical resolve".into(),
-        debug_path: "sigil-native canonical resolve".into(),
+        plain_path: "sigil build --project games/sonic4 --shape release".into(),
+        debug_path: "sigil build --project games/sonic4 --shape debug".into(),
         plain_stamp: plain.stamp.clone(),
         debug_stamp: debug.stamp.clone(),
     };

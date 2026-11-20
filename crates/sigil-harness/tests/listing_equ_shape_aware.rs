@@ -30,8 +30,8 @@
 //! UNMEASURABLE IS RED: a build failure, a missing row, a missing label, or a use site
 //! that cannot be identified uniquely fails the test naming what was not measured.
 
-use sigil_harness::native::{self, GameProfile};
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::reference_tree_for_shape;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -45,7 +45,7 @@ const CMPI_W_IMM_D6: u16 = 0x0C46;
 /// Fold every `pub const` of `engine/system/constants.emp` under `profile`'s own
 /// define set, independently of the harvest under test: a direct parse + fold with
 /// `shape_defines`, the define set the `.emp` build lowers under.
-fn fold_under_profile(aeon: &Path, profile: &GameProfile) -> HashMap<String, i64> {
+fn fold_under_profile(aeon: &Path, profile: &Shape) -> HashMap<String, i64> {
     let path = aeon.join("engine/system/constants.emp");
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("UNMEASURED: read {}: {e}", path.display()));
@@ -56,15 +56,15 @@ fn fold_under_profile(aeon: &Path, profile: &GameProfile) -> HashMap<String, i64
         path.display(),
         pdiags.first()
     );
-    let defines = native::shape_defines(profile, aeon)
-        .unwrap_or_else(|e| panic!("UNMEASURED: shape `{}` define env: {e}", profile.name));
+    let defines = shapes::shape_defines(aeon, profile)
+        .unwrap_or_else(|e| panic!("UNMEASURED: shape `{}` define env: {e}", profile.name()));
     let (vals, diags) =
         sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(&sigil_frontend_emp::Sandbox::from(aeon)), &defines);
     assert!(
         !diags.iter().any(|d| d.level == sigil_span::Level::Error),
         "UNMEASURED: folding {} under shape `{}`'s defines failed: {:?}",
         path.display(),
-        profile.name,
+        profile.name(),
         diags.first()
     );
     vals.into_iter().collect()
@@ -117,11 +117,11 @@ fn source_use_sites(aeon: &Path) -> usize {
 
 #[test]
 fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
-    let profile = native::stress_evict_profile();
-    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let profile = Shape::new("sonic4", "stress-evict");
+    let Some(aeon) = reference_tree_for_shape(&profile) else { return };
 
-    let build = native::build_rom_chained_with_listing(&aeon, &profile).unwrap_or_else(|e| {
-        panic!("UNMEASURED: shape `{}` did not build, so nothing was measured: {e}", profile.name)
+    let build = shapes::build(&aeon, &profile).unwrap_or_else(|e| {
+        panic!("UNMEASURED: shape `{}` did not build, so nothing was measured: {e}", profile.name())
     });
     // The listing TEXT, as `sigil build --emit-lst` publishes it (minus the digest
     // header, which carries no equate rows).
@@ -131,7 +131,7 @@ fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
 
     // Expectations, derived.
     let stress = fold_under_profile(&aeon, &profile);
-    let canonical = fold_under_profile(&aeon, &native::sonic4_profile(true));
+    let canonical = fold_under_profile(&aeon, &Shape::new("sonic4", "debug"));
     let want_clamp = *stress
         .get(CLAMP)
         .unwrap_or_else(|| panic!("UNMEASURED: constants.emp has no pub const `{CLAMP}`"));
@@ -142,7 +142,7 @@ fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
          the canonical debug shape alike, so this gate cannot tell a shape-aware harvest \
          from a shape-blind one. The fixture define went inert; re-point the gate at a \
          constant the shape actually moves",
-        profile.name
+        profile.name()
     );
 
     // 1. The ROM's encoded immediate at the one use site.
@@ -194,7 +194,7 @@ fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
         "the ROM encodes `cmpi.w #${rom_imm:04X}, d6` at ${site_at:06X} but `{CLAMP}` folds \
          to {want_clamp} under shape `{}`'s defines: the derivation does not describe this \
          build",
-        profile.name
+        profile.name()
     );
 
     // 1 (the assertion). The published row equals what the ROM encodes.
@@ -231,7 +231,7 @@ fn stress_shape_listing_publishes_the_harvested_constant_the_rom_encodes() {
         "{} of {compared} harvested engine constants publish a value other than their fold \
          under shape `{}`'s defines:\n  {}",
         faults.len(),
-        profile.name,
+        profile.name(),
         faults.join("\n  ")
     );
 }

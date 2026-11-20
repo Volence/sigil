@@ -153,6 +153,7 @@ pub trait Seams {
     fn validate_sound(
         &self,
         checkout: &Path,
+        sound_desc: &describe::SoundDesc,
         overlay: Option<&AnchorOverlay>,
         resolved: &[Section],
         linked: &sigil_link::LinkedImage,
@@ -757,6 +758,43 @@ struct PreparedEmp {
     lopts: LowerOptions,
 }
 
+/// The module roots `gate_shape` places from `order` over `manifest` (the build's scan):
+/// [`crate::roots::derive_roots`] under the engine's then the game's `[[gate]]` rules, then
+/// the placed-within-analysed check.
+fn derive_registry(
+    p: &Project,
+    manifest: &resolve::manifest::Manifest,
+    gate_shape: &ResolvedShape,
+    order: &[String],
+    seeds: &[String],
+) -> Result<Vec<ModuleSpec>, BuildError> {
+    let rules: Vec<describe::GateRule> = p.engine.gate.iter().chain(p.game.gate.iter()).cloned().collect();
+    let map_name = p.map_path().display().to_string();
+    let registry = crate::roots::derive_roots(&crate::roots::RootsInput {
+        manifest,
+        order,
+        game_prefix: p.game_prefix(),
+        rules: &rules,
+        shape: gate_shape,
+        seeds,
+        terminus: &p.engine.terminus,
+        map_name: &map_name,
+    })?;
+    check_placed_in_analysed(&registry, manifest, &p.closure_roots())?;
+    Ok(registry)
+}
+
+/// The module roots shape `shape_name` places: the derivation the build runs before any
+/// front end (its scan, its map `order`, its gate rules), with nothing lowered or placed.
+pub fn module_roots(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<Vec<ModuleSpec>, BuildError> {
+    let Plan { gate_shape, pmap, .. } = plan(p, shape_name, opts)?;
+    let (manifest, mdiags) = p.scan();
+    if let Some(e) = mdiags.iter().find(|d| d.level == sigil_span::Level::Error) {
+        return Err(ctx(format!("manifest scan: {e:?}")));
+    }
+    derive_registry(p, &manifest, &gate_shape, &pmap.order, &entry_seeds(p)?)
+}
+
 fn prepare_emp(
     p: &Project,
     gate_shape: &ResolvedShape,
@@ -770,19 +808,7 @@ fn prepare_emp(
         return Err(ctx(format!("manifest scan: {e:?}")));
     }
     let seeds = entry_seeds(p)?;
-    let rules: Vec<describe::GateRule> = p.engine.gate.iter().chain(p.game.gate.iter()).cloned().collect();
-    let map_name = p.map_path().display().to_string();
-    let registry = crate::roots::derive_roots(&crate::roots::RootsInput {
-        manifest: &manifest,
-        order,
-        game_prefix: p.game_prefix(),
-        rules: &rules,
-        shape: gate_shape,
-        seeds: &seeds,
-        terminus: &p.engine.terminus,
-        map_name: &map_name,
-    })?;
-    check_placed_in_analysed(&registry, &manifest, &p.closure_roots())?;
+    let registry = derive_registry(p, &manifest, gate_shape, order, &seeds)?;
     let helpers: Vec<&str> = p.engine.helpers.iter().map(String::as_str).collect();
     let removed = rewrite_helper_imports(&mut manifest, &helpers);
     let extra: Vec<String> = opts
@@ -1015,7 +1041,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     listing.extend(define_rows.iter().cloned());
     let z80_windows = crate::emit::z80_windows(&map, &resolved).map_err(ctx)?;
     let linked = sigil_link::link(&resolved, &stubs).map_err(|d| ctx(crate::guards::render_declared_chain("link", &d, &sources)))?;
-    opts.seams.validate_sound(&p.checkout, opts.anchor_overlay.as_ref(), &resolved, &linked, sound, debug).map_err(ctx)?;
+    opts.seams.validate_sound(&p.checkout, &p.engine.sound, opts.anchor_overlay.as_ref(), &resolved, &linked, sound, debug).map_err(ctx)?;
     crate::guards::validate_placement(&resolved, &pmap, sound, &registry).map_err(ctx)?;
     align.validate_resolved(&resolved).map_err(ctx)?;
     crate::guards::check_budgets(&resolved, &map, &pmap).map_err(ctx)?;
@@ -1150,7 +1176,7 @@ fn relocate_rows(order: &mut Vec<String>, relocate: &[String], fault_heads: &[St
 /// Whether the shape carries the MD Debugger island: the engine's `error_handler` and
 /// `release_fault` modules are the two arms of one gate, so exactly one is placed, and it
 /// is the one the features say (`debug || crash_report`).
-fn declares_island(p: &Project, shape: &ResolvedShape, registry: &[ModuleSpec]) -> Result<bool, BuildError> {
+pub fn declares_island(p: &Project, shape: &ResolvedShape, registry: &[ModuleSpec]) -> Result<bool, BuildError> {
     let axis = shape.features.debug || shape.features.crash_report;
     let island = registry.iter().any(|m| m.module_id == p.engine.error_handler);
     let lean = registry.iter().any(|m| m.module_id == p.engine.release_fault);

@@ -19,6 +19,7 @@
 //! the section.
 
 use sigil_harness::native;
+use sigil_harness::shapes::{self, Shape};
 use sigil_harness::test_support::{aeon_dir, strict_gate};
 use std::path::{Path, PathBuf};
 
@@ -37,7 +38,7 @@ struct Spellings {
 impl Spellings {
     fn derive(aeon: &Path) -> Spellings {
         native::ensure_generated(aeon);
-        let prog = native::build_emp(aeon, &native::sonic4_profile(false)).unwrap_or_else(|e| panic!("build_emp: {e}"));
+        let prog = shapes::emp_program(aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("build_emp: {e}"));
         let sec = prog
             .sections
             .iter()
@@ -139,9 +140,9 @@ fn both_spellings_of_the_section_row_build_the_same_rom() {
     let builds: Vec<(Vec<u8>, Vec<u8>)> = shapes
         .iter()
         .map(|&(debug, key)| {
-            let live = native::build_native_full_file(&aeon_dir(), debug)
+            let live = shapes::full_file(&aeon_dir(), &Shape::new("sonic4", if debug { "debug" } else { "release" }))
                 .unwrap_or_else(|e| panic!("{key} live: {e}"));
-            let other = native::build_native_full_file(tmp.path(), debug)
+            let other = shapes::full_file(tmp.path(), &Shape::new("sonic4", if debug { "debug" } else { "release" }))
                 .unwrap_or_else(|e| panic!("{key} other spelling: {e}"));
             (live, other)
         })
@@ -169,7 +170,7 @@ fn misspelled_section_row_fails_the_build_loudly() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let bad = format!("\"section:{SECTION}_nope\"");
     doctored_aeon(tmp.path(), |_, _| bad.clone());
-    let e = native::build_native_full_file(tmp.path(), false).expect_err("an unknown section row must stop the build");
+    let e = shapes::full_file(tmp.path(), &Shape::new("sonic4", "release")).expect_err("an unknown section row must stop the build");
     let want = format!("`section:{SECTION}_nope`");
     assert!(e.contains("[map.order-unknown-section]") && e.contains(&want), "got: {e}");
 }
@@ -183,7 +184,7 @@ fn section_row_and_label_for_one_section_fail_the_build_loudly() {
     }
     let tmp = tempfile::tempdir().expect("tempdir");
     let sp = doctored_aeon(tmp.path(), |current, other| format!("{current}, {other}"));
-    let e = native::build_native_full_file(tmp.path(), false).expect_err("a double-declared section must stop the build");
+    let e = shapes::full_file(tmp.path(), &Shape::new("sonic4", "release")).expect_err("a double-declared section must stop the build");
     let (label, section) = (sp.label.replace('"', "`"), sp.section.replace('"', "`"));
     assert!(
         e.contains("[map.order-double-declared]") && e.contains(&label) && e.contains(&section),

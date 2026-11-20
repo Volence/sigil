@@ -34,7 +34,6 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::native::{self, GameProfile};
 use sigil_harness::pins;
 use sigil_harness::provenance;
 
@@ -42,24 +41,33 @@ fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden")
 }
 
-/// Every frozen target: the `provenance.toml` target key, the size-table stem, and the
-/// profile that ships it. The list is the gate's own subject — a shape added to
-/// `derive_offcanon`'s targets without a row here is caught by
-/// `every_frozen_size_table_is_gated` below.
-fn targets() -> Vec<(&'static str, &'static str, GameProfile)> {
+/// Every frozen target: the `provenance.toml` target key and the size-table stem. The
+/// list is the gate's own subject — a shape added to `derive_offcanon`'s targets without
+/// a row here is caught by `every_frozen_size_table_is_gated` below.
+fn targets() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("s4", "s4.txt", native::sonic4_profile(false)),
-        ("s4_debug", "s4_debug.txt", native::sonic4_profile(true)),
-        ("demo", "demo.txt", native::demo_profile(false)),
-        ("demo_debug", "demo_debug.txt", native::demo_profile(true)),
-        ("config_a", "config_a.txt", native::config_a_profile()),
-        ("config_b", "config_b.txt", native::config_b_profile()),
-        ("lean", "lean.txt", native::lean_profile()),
+        ("s4", "s4.txt"),
+        ("s4_debug", "s4_debug.txt"),
+        ("demo", "demo.txt"),
+        ("demo_debug", "demo_debug.txt"),
+        ("config_a", "config_a.txt"),
+        ("config_b", "config_b.txt"),
+        ("lean", "lean.txt"),
     ]
 }
 
+/// The size table's `EndOfRom` row: the assembled bar the freeze record carries (the
+/// profile-driven driver read it as `GameProfile::assembled_len`).
+fn endofrom_row(stem: &str) -> usize {
+    let path = golden_dir().join("offcanonical_sizes").join(stem);
+    let txt = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    *sigil_harness::repin::parse_size_table(&txt)
+        .get("EndOfRom")
+        .unwrap_or_else(|| panic!("{stem}: no `EndOfRom` row")) as usize
+}
+
 /// The `# assembled_end=0x...` header of a size table, or an error naming the miss.
-/// Deliberately a second reader of the same file `load_frozen_table` parses rows out
+/// Deliberately a second reader of the same file `repin::parse_size_table` parses rows out
 /// of: the header and the `EndOfRom` row are two copies, and this is what compares them.
 fn header_assembled_end(stem: &str) -> Result<usize, String> {
     let path = golden_dir().join("offcanonical_sizes").join(stem);
@@ -73,17 +81,17 @@ fn header_assembled_end(stem: &str) -> Result<usize, String> {
     Err(format!("{stem}: no `# assembled_end=` header, the table is not derive_offcanon output"))
 }
 
-/// THE gate: each shape's profile-visible assembled bar == the provenance chain tip's
-/// `anchor_end` for that shape.
+/// THE gate: each shape's frozen assembled bar (its size table's `EndOfRom` row) == the
+/// provenance chain tip's `anchor_end` for that shape.
 ///
-/// `assembled_len()` reads the shape's committed boundary table live; `anchor_end` was
+/// The `EndOfRom` row is read from the committed boundary table live; `anchor_end` was
 /// written at the last freeze. What the equality proves differs by shape — cross-tool
 /// for the canonical pair, freeze-vs-current for the off-canonical five (see the
 /// module header). Both directions of disagreement mean a landing did half its work.
 #[test]
 fn assembled_len_matches_provenance_tip_for_every_shape() {
     let mut bad: Vec<String> = Vec::new();
-    for (key, _stem, profile) in targets() {
+    for (key, stem) in targets() {
         let tip = match provenance::tip_target(&golden_dir(), key) {
             Ok(t) => t,
             // A target absent from the tip is a FAILURE, never a skip: the shape is
@@ -94,13 +102,12 @@ fn assembled_len_matches_provenance_tip_for_every_shape() {
                 continue;
             }
         };
-        let derived = profile.assembled_len();
+        let derived = endofrom_row(stem);
         if derived != tip.anchor_end {
             bad.push(format!(
-                "{key}: profile `{}` assembled_len() = {derived:#x} but provenance tip \
+                "{key}: `{stem}` EndOfRom = {derived:#x} but provenance tip \
                  anchor_end = {:#x} (delta {}{:#x}), the size table and the freeze \
                  describe different ROMs; re-run derive_offcanon, or refreeze",
-                profile.name,
                 tip.anchor_end,
                 if derived > tip.anchor_end { "+" } else { "-" },
                 derived.abs_diff(tip.anchor_end),
@@ -117,7 +124,7 @@ fn assembled_len_matches_provenance_tip_for_every_shape() {
 #[test]
 fn size_table_header_agrees_with_its_endofrom_row() {
     let mut bad: Vec<String> = Vec::new();
-    for (_key, stem, profile) in targets() {
+    for (_key, stem) in targets() {
         let header = match header_assembled_end(stem) {
             Ok(v) => v,
             Err(e) => {
@@ -125,7 +132,7 @@ fn size_table_header_agrees_with_its_endofrom_row() {
                 continue;
             }
         };
-        let row = profile.assembled_len();
+        let row = endofrom_row(stem);
         if header != row {
             bad.push(format!(
                 "{stem}: header `# assembled_end={header:#x}` but `EndOfRom {row:#x}`, a \
@@ -146,7 +153,7 @@ fn size_table_header_agrees_with_its_endofrom_row() {
 fn canonical_pins_agree_with_the_canonical_size_tables() {
     for debug in [false, true] {
         let pinned = if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN };
-        let frozen = native::sonic4_profile(debug).assembled_len();
+        let frozen = endofrom_row(if debug { "s4_debug.txt" } else { "s4.txt" });
         assert_eq!(
             pinned, frozen,
             "canonical {} shape: pins::{}ASSEMBLED_LEN = {pinned:#x} but {} `EndOfRom` = \
@@ -170,7 +177,7 @@ fn every_frozen_size_table_is_gated() {
         .filter(|n| n.ends_with(".txt"))
         .collect();
     on_disk.sort();
-    let mut gated: Vec<String> = targets().iter().map(|(_, s, _)| s.to_string()).collect();
+    let mut gated: Vec<String> = targets().iter().map(|(_, s)| s.to_string()).collect();
     gated.sort();
     assert_eq!(
         on_disk, gated,

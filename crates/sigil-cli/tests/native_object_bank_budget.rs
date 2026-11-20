@@ -13,6 +13,7 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_object_bank_budget
 //! ```
+use sigil_harness::shapes::{self, Shape};
 use sigil_harness::{map_placement, native};
 use std::path::{Path, PathBuf};
 
@@ -60,8 +61,8 @@ fn canonical_object_bank_within_budget() {
         return;
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
-    let map = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = shapes::resolved_layout(&aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
+    let map = shapes::memory_map(&aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
     let pmap = placement_map();
     let rows = native::check_budgets(&resolved, &map, &pmap).unwrap_or_else(|e| panic!("{e}"));
     let used = rows
@@ -86,8 +87,8 @@ fn doctored_tiny_budget_fails_the_check() {
         return;
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
-    let map = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = shapes::resolved_layout(&aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
+    let map = shapes::memory_map(&aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("{e}"));
     let pmap = placement_map();
 
     // Baseline: the real map passes.

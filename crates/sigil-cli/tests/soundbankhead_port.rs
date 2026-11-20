@@ -20,8 +20,9 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
-use sigil_harness::test_support::reference_tree_for_profile;
-use sigil_harness::{native, pins};
+use sigil_harness::pins;
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::reference_tree_for_shape;
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
 use std::path::PathBuf;
@@ -48,7 +49,7 @@ fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     // EMIT-FIRST: the embedded head .bin are gitignored build artifacts.
     // The embedded artifacts come from the build's `generated` root (G0b Task 9).
-    let (_generated, roots) = native::standalone_sound_roots(&aeon);
+    let (_generated, roots) = shapes::standalone_sound_roots(&aeon, &Shape::new("sonic4", if debug { "debug" } else { "release" }));
     let path = aeon.join("games/sonic4/data/sound/soundbankhead.emp");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read: {e}"));
     let (file, pd) = parse_str(&src);
@@ -136,7 +137,7 @@ fn soundbankhead_pin_is_the_lma_not_the_vma() {
     let _guard = lock();
     // No ROM is read here: the shipped resolve assembles the sonic4 shape from source,
     // so the tree this needs is the one that profile's build reads.
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
+    let Some(aeon) = reference_tree_for_shape(&Shape::new("sonic4", "release")) else {
         return;
     };
     // Both shapes are resolved BEFORE either is compared, so a scope failure in the debug
@@ -145,8 +146,8 @@ fn soundbankhead_pin_is_the_lma_not_the_vma() {
     let layouts: Vec<_> = shapes
         .iter()
         .map(|&debug| {
-            native::resolve_canonical_sections(&aeon, debug)
-                .unwrap_or_else(|e| panic!("resolve_canonical_sections(debug={debug}): {e}"))
+            shapes::resolved_layout(&aeon, &Shape::new("sonic4", if debug { "debug" } else { "release" }))
+                .unwrap_or_else(|e| panic!("resolved_layout(debug={debug}): {e}"))
         })
         .collect();
     for (debug, resolved) in shapes.into_iter().zip(layouts) {

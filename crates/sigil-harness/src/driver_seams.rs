@@ -27,13 +27,14 @@ impl Seams for HarnessSeams {
     fn validate_sound(
         &self,
         checkout: &Path,
+        sound_desc: &sigil_build::describe::SoundDesc,
         overlay: Option<&AnchorOverlay>,
         resolved: &[Section],
         linked: &sigil_link::LinkedImage,
         sound_on: bool,
         debug: bool,
     ) -> Result<(), String> {
-        crate::sound_bank_ids::validate_sound_bank_ids_in(checkout, overlay, resolved, linked, sound_on, debug)?;
+        crate::sound_bank_ids::validate_sound_bank_ids_in(checkout, sound_desc, overlay, resolved, linked, sound_on, debug)?;
         if sound_on {
             let layout = crate::seam2::sound_layout_in(checkout, overlay)?;
             crate::native::check_sound_fold(resolved, Some(&layout.folded_heads(debug)))?;

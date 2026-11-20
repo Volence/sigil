@@ -1086,9 +1086,9 @@ impl ResidentBlobs {
 
 /// The resident blob's bank-id operands, as [`blob_bank_id_sites`] finds them.
 pub struct BlobBankIdSites {
-    /// For each const in [`crate::sound_bank_ids::BLOB_BANK_ID_CONSTS`], the blob
-    /// offsets whose byte is that const's value.
-    pub by_const: Vec<(&'static str, Vec<u32>)>,
+    /// For each bank-id const asked for (`engine.toml [[sound.blob_bank_ids]]`), the
+    /// blob offsets whose byte is that const's value.
+    pub by_const: Vec<(String, Vec<u32>)>,
     /// The emitted blob's byte length.
     pub blob_len: usize,
 }
@@ -1103,14 +1103,16 @@ pub struct BlobBankIdSites {
 /// immediate, so the doctored blob has the same length and every other byte stays.
 pub fn blob_bank_id_sites(
     aeon: &Path,
+    consts: &[String],
     debug: bool,
 ) -> Result<BlobBankIdSites, String> {
-    blob_bank_id_sites_in(aeon, None, debug)
+    blob_bank_id_sites_in(aeon, consts, None, debug)
 }
 
 /// [`blob_bank_id_sites`] under an anchor overlay.
 pub fn blob_bank_id_sites_in(
     aeon: &Path,
+    consts: &[String],
     ov: Option<&crate::map_placement::AnchorOverlay>,
     debug: bool,
 ) -> Result<BlobBankIdSites, String> {
@@ -1120,14 +1122,14 @@ pub fn blob_bank_id_sites_in(
     let probe = emitted ^ 0xFF;
     let real = native_blob_checked_in(aeon, ov, debug, None)?;
     let mut out = Vec::new();
-    for &name in crate::sound_bank_ids::BLOB_BANK_ID_CONSTS {
-        let doc = native_blob_checked_in(aeon, ov, debug, Some((name, i64::from(probe))))?;
+    for name in consts {
+        let doc = native_blob_checked_in(aeon, ov, debug, Some((name.as_str(), i64::from(probe))))?;
         let what = format!(
             "resident Z80 blob ({} shape), const {name}",
             if debug { "debug" } else { "plain" }
         );
         let sites = crate::sound_bank_ids::diff_id_sites(&real, &doc, emitted, probe, &what)?;
-        out.push((name, sites));
+        out.push((name.clone(), sites));
     }
     Ok(BlobBankIdSites { by_const: out, blob_len: real.len() })
 }

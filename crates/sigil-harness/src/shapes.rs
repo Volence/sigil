@@ -192,9 +192,13 @@ pub fn resolved_layout(aeon: &Path, s: &Shape) -> Result<Vec<Section>, String> {
     Ok(build(aeon, s)?.export_inputs.sections)
 }
 
-/// The module roots the shape places.
+/// The module roots the shape places (`driver::module_roots`: the derivation the build
+/// runs before any front end, nothing lowered or placed).
 pub fn module_registry(aeon: &Path, s: &Shape) -> Result<Vec<ModuleSpec>, String> {
-    Ok(build(aeon, s)?.registry)
+    let seams = HarnessSeams;
+    let env = no_env;
+    let p = s.project(aeon)?;
+    driver::module_roots(&p, &s.shape, &s.options(&seams, &env)).map_err(|e| e.to_string())
 }
 
 /// The driver's environment for a [`Shape`] build: none. A shape names a game inside the

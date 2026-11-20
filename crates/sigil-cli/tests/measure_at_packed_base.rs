@@ -3,7 +3,7 @@
 //!
 //! THE REPORT THIS REPRODUCES (2026-08-26, ring-sparkle): seven `nop`s added to
 //! `RingCollision` — 14 bytes of code growth in `engine/objects/rings.emp`, far
-//! upstream of `player_sensors` — made `sigil build --game sonic4` refuse with an
+//! upstream of `player_sensors` — made `sigil build --game sonic4` (the since-deleted profile grammar) refuse with an
 //! overlap naming `section`/`player_sensors`, a pair nothing had touched. The
 //! packing walk's collision-fallback measurement parked `collision_data` at a
 //! scratch slot that wraps the 24-bit bus (`0x300_0000`, masked to `0x0`), so its
@@ -32,8 +32,8 @@
 //! Reference tree: `AEON_DIR`, else the sibling aeon checkout. A missing tree
 //! skips green outside strict mode and HARD-FAILS under `SIGIL_STRICT_GATE=1`.
 
-use sigil_harness::native;
-use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::{reference_tree_for_shape, shadow_aeon_tree};
 use std::path::Path;
 
 /// The module the report's growth lands in, and the line the `nop`s go after —
@@ -41,13 +41,10 @@ use std::path::Path;
 const RINGS_MODULE: &str = "engine/objects/rings.emp";
 const INJECT_AFTER: &str = "pub proc RingCollision () clobbers(d0-d7/a0-a3) {\n";
 
-/// The sonic4 shape the report names (the plain one — the first sonic4 row in
-/// [`native::shipped_shapes`], the same table every other gate enumerates).
-fn sonic4_shape() -> (&'static str, native::GameProfile) {
-    native::shipped_shapes()
-        .into_iter()
-        .find(|(_, p)| p.game_root_rel.starts_with("games/sonic4/"))
-        .expect("a shipped sonic4 shape exists")
+/// The sonic4 shape the report names: the plain one, sonic4's `release` row.
+fn sonic4_shape() -> (String, Shape) {
+    let s = Shape::new("sonic4", "release");
+    (s.name(), s)
 }
 
 /// The rings module's text with `count` `nop`s injected at the top of
@@ -65,8 +62,8 @@ fn grown_rings(aeon: &Path, count: usize) -> String {
 
 /// Build one shape exactly as `sigil build` does; `Err` is the refusal or the
 /// first error-level diagnostic.
-fn build(aeon: &Path, label: &str, profile: &native::GameProfile) -> Result<native::RomBuild, String> {
-    let built = native::build_rom_chained_with_listing(aeon, profile)
+fn build(aeon: &Path, label: &str, profile: &Shape) -> Result<sigil_build::driver::BuildOutput, String> {
+    let built = shapes::build(aeon, profile)
         .map_err(|e| format!("shape `{label}`: {e}"))?;
     if let Some(first) =
         built.warnings.iter().find(|w| w.level == sigil_span::Level::Error)
@@ -84,7 +81,8 @@ fn build(aeon: &Path, label: &str, profile: &native::GameProfile) -> Result<nati
 #[test]
 fn fourteen_bytes_of_upstream_code_growth_still_builds() {
     let (label, profile) = sonic4_shape();
-    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let label = label.as_str();
+    let Some(aeon) = reference_tree_for_shape(&profile) else { return };
 
     let clean = shadow_aeon_tree(&aeon, &[]).expect("shadow copy of the reference tree");
     let clean_rom = build(clean.root(), label, &profile)
@@ -105,29 +103,41 @@ fn fourteen_bytes_of_upstream_code_growth_still_builds() {
     assert_ne!(clean_rom, grown_rom, "the injected growth must actually reach the image");
 }
 
+/// The ROM address of every non-equate listing label below `$400000`.
+fn rom_labels(built: &sigil_build::driver::BuildOutput) -> std::collections::BTreeMap<String, u32> {
+    built.listing.iter().filter(|l| !l.is_equate && l.value < 0x40_0000).map(|l| (l.name.clone(), l.value)).collect()
+}
+
 /// PARCEL-SCALE GROWTH: 2500 `nop`s (5000 bytes) — more than the pre-fix measuring
-/// rig could even measure (its spread stepped 0x400 per section) — builds, packs the
-/// downstream run, and reports `[layout.provisional-drift]` naming what moved.
+/// rig could even measure (its spread stepped 0x400 per section) — builds and packs the
+/// downstream run: labels placed after `RingCollision` move up, labels before it stay.
+///
+/// G0b Task 11: under the profile-driven driver this test also required the
+/// `[layout.provisional-drift]` warning, which compared each packed base with that
+/// driver's frozen provisional base. The game-as-data driver reads no frozen table, so
+/// there is no provisional base to drift from; the packing is witnessed directly instead.
 #[test]
 fn parcel_scale_growth_packs_downstream_and_reports_the_drift() {
     let (label, profile) = sonic4_shape();
-    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let label = label.as_str();
+    let Some(aeon) = reference_tree_for_shape(&profile) else { return };
 
+    let clean = shadow_aeon_tree(&aeon, &[]).expect("shadow copy of the reference tree");
+    let before = rom_labels(&build(clean.root(), label, &profile).unwrap_or_else(|e| panic!("the UNDOCTORED copy must build: {e}")));
+    drop(clean);
     let doctored = grown_rings(&aeon, 2500);
     let grown = shadow_aeon_tree(&aeon, &[(RINGS_MODULE, &doctored)])
         .expect("shadow copy with the parcel-scale growth");
     let built = build(grown.root(), label, &profile)
         .unwrap_or_else(|e| panic!("5000 bytes of code growth must build and pack downstream: {e}"));
+    let after = rom_labels(&built);
 
-    let drift: Vec<&native::BuildWarning> =
-        built.warnings.iter().filter(|w| w.id == "layout.provisional-drift").collect();
-    assert!(
-        !drift.is_empty(),
-        "a growth past the drift tolerance must be reported, not silent"
-    );
-    assert!(
-        drift.iter().any(|w| w.message.contains("refreeze at landing")),
-        "the drift report says what the landing owes: {:?}",
-        drift.first().map(|w| &w.message)
-    );
+    let ring = *before.get("RingCollision").expect("`RingCollision` is in the listing");
+    let moved_back: Vec<&String> =
+        before.iter().filter(|(n, a)| **a < ring && after.get(*n).is_some_and(|b| b != *a)).map(|(n, _)| n).collect();
+    assert!(moved_back.is_empty(), "labels placed before the growth moved: {:?}", &moved_back[..moved_back.len().min(8)]);
+    let pushed: usize =
+        before.iter().filter(|(n, a)| **a > ring && after.get(*n).is_some_and(|b| *b > **a)).count();
+    eprintln!("labels after RingCollision pushed up by the growth: {pushed}");
+    assert!(pushed > 0, "5000 bytes of growth moved no label after `RingCollision`, the growth did not pack downstream");
 }

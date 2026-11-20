@@ -26,8 +26,8 @@
 //!
 //! **Which instrument each half uses** (a gate that asks the same resolver the pin file
 //! asked cannot notice that resolver being wrong): the window comes from the SYMBOL
-//! listing (`native::sigil_native_symbol_listing`), the content extent from the SECTION
-//! TABLE of the resolved layout the ROM is emitted from (`native::section_extents` →
+//! listing (`repin::symbol_listing_of`), the content extent from the SECTION
+//! TABLE of the resolved layout the ROM is emitted from (`repin::section_extents_of` →
 //! `resolve_canonical_sections`). Two derivations, so a symbol address that disagrees
 //! with the section geometry is visible here. Neither half can catch a wrong resolve —
 //! both come from one link of one tree — and this file does not claim otherwise.
@@ -37,9 +37,8 @@
 
 use std::collections::HashMap;
 
-use sigil_harness::native;
 use sigil_harness::repin::{load_manifest, resolve, Listing, SectionExtent, SECTION_PREFIX};
-use sigil_harness::test_support::reference_tree_for_profile;
+use sigil_harness::test_support::reference_tree_for_shape;
 
 const MANIFEST: &str = include_str!("../repin.toml");
 
@@ -56,18 +55,22 @@ struct Live {
 }
 
 fn live() -> Option<Live> {
-    let aeon = reference_tree_for_profile(&native::sonic4_profile(false))?;
-    let (pm, pe) = native::sigil_native_symbol_listing(&aeon, false)
-        .unwrap_or_else(|e| panic!("plain resolve: {e}"));
-    let (dm, de) = native::sigil_native_symbol_listing(&aeon, true)
-        .unwrap_or_else(|e| panic!("debug resolve: {e}"));
-    let pl = native::phase_bank_lmas(&aeon, false).unwrap_or_else(|e| panic!("plain phase lma: {e}"));
-    let dl = native::phase_bank_lmas(&aeon, true).unwrap_or_else(|e| panic!("debug phase lma: {e}"));
-    let ps = native::section_extents(&aeon, false).unwrap_or_else(|e| panic!("plain sections: {e}"));
-    let ds = native::section_extents(&aeon, true).unwrap_or_else(|e| panic!("debug sections: {e}"));
+    let shape = |row: &str| sigil_harness::shapes::Shape::new("sonic4", row);
+    let aeon = reference_tree_for_shape(&shape("release"))?;
+    let layout = |row: &str| {
+        sigil_harness::shapes::resolved_layout(&aeon, &shape(row)).unwrap_or_else(|e| panic!("{row} resolve: {e}"))
+    };
+    let (pr, dr) = (layout("release"), layout("debug"));
+    use sigil_harness::repin::{phase_bank_lmas_of, section_extents_of, section_label_owners_of, symbol_listing_of};
+    let (pm, pe) = symbol_listing_of(&pr).unwrap_or_else(|e| panic!("plain resolve: {e}"));
+    let (dm, de) = symbol_listing_of(&dr).unwrap_or_else(|e| panic!("debug resolve: {e}"));
+    let pl = phase_bank_lmas_of(&pr).unwrap_or_else(|e| panic!("plain phase lma: {e}"));
+    let dl = phase_bank_lmas_of(&dr).unwrap_or_else(|e| panic!("debug phase lma: {e}"));
+    let ps = section_extents_of(&pr).unwrap_or_else(|e| panic!("plain sections: {e}"));
+    let ds = section_extents_of(&dr).unwrap_or_else(|e| panic!("debug sections: {e}"));
     assert!(!ps.is_empty() && !ds.is_empty(), "a shape with no section table cannot judge any end");
-    let po = native::section_label_owners(&aeon, false).unwrap_or_else(|e| panic!("plain owners: {e}"));
-    let do_ = native::section_label_owners(&aeon, true).unwrap_or_else(|e| panic!("debug owners: {e}"));
+    let po = section_label_owners_of(&pr).unwrap_or_else(|e| panic!("plain owners: {e}"));
+    let do_ = section_label_owners_of(&dr).unwrap_or_else(|e| panic!("debug owners: {e}"));
     assert!(!po.is_empty() && !do_.is_empty(), "an empty ownership map silently skips the flush check");
     Some(Live {
         plain: Listing::from_symbols(pm.clone(), pe, "plain".into())

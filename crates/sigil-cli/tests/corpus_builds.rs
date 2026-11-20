@@ -10,10 +10,9 @@
 //! refreeze and belongs to the artifact lane; a brick is red until someone fixes it
 //! and belongs here.
 //!
-//! WHAT THIS GATE ASSERTS. For each shape in [`native::shipped_shapes`] — the ONE
-//! table meaning "all shipped shapes", the same one the byte gates enumerate — the
-//! build entry `sigil build` reaches (`build_rom_chained_with_listing`; the canonical
-//! sonic4 driver delegates to it) returns `Ok` and its diagnostic channel carries no
+//! WHAT THIS GATE ASSERTS. For each shape in [`shapes::shipped`] — every non-fixture
+//! row of every `games/*/game.toml`, the same enumeration the byte gates use — the
+//! build entry `sigil build --project` reaches (`sigil_build::driver::build`) returns `Ok` and its diagnostic channel carries no
 //! error-level row. Every shape is measured before any is judged, so a run names
 //! EVERY bricked shape, not the first.
 //!
@@ -37,14 +36,15 @@
 
 use sigil_harness::map_placement;
 use sigil_harness::native;
-use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
+use sigil_harness::shapes::{self, Shape};
+use sigil_harness::test_support::{reference_tree, reference_tree_for_shape, shadow_aeon_tree};
 use std::path::Path;
 
 /// Build one shape exactly as `sigil build` does, judging only whether the compiler
 /// ACCEPTED the corpus: `Err` names the shape and the refusal, or the first
 /// error-level diagnostic the build carried out.
-fn build_shape(aeon: &Path, label: &str, profile: &native::GameProfile) -> Result<(), String> {
-    let built = native::build_rom_chained_with_listing(aeon, profile)
+fn build_shape(aeon: &Path, label: &str, profile: &Shape) -> Result<(), String> {
+    let built = shapes::build(aeon, profile)
         .map_err(|e| format!("shape `{label}`: {e}"))?;
     let errors: Vec<&native::BuildWarning> =
         built.warnings.iter().filter(|w| w.level == sigil_span::Level::Error).collect();
@@ -66,7 +66,7 @@ fn build_shape(aeon: &Path, label: &str, profile: &native::GameProfile) -> Resul
 /// whole corpus builds.
 fn corpus_bricks<'a>(
     aeon: &Path,
-    shapes: impl IntoIterator<Item = (&'a str, &'a native::GameProfile)>,
+    shapes: impl IntoIterator<Item = (&'a str, &'a Shape)>,
 ) -> Vec<String> {
     shapes
         .into_iter()
@@ -77,20 +77,19 @@ fn corpus_bricks<'a>(
 /// THE GATE: every shipped shape builds from source with zero error diagnostics.
 #[test]
 fn every_shipped_shape_builds_from_source() {
-    let shapes = native::shipped_shapes();
-    assert!(!shapes.is_empty(), "shipped_shapes() enumerated nothing, a gate over no shapes gates nothing");
-
-    // The guard is derived from each shape's own profile (its residual root and its
-    // placement map), so it cannot name an input the build does not read. Under
-    // strict mode a missing path panics naming itself inside `reference_tree`.
-    let mut aeon = None;
+    // The tree is found by the descriptions every shape reads; then each shape's own
+    // guard (its game description and placement map) is checked, so it cannot name an
+    // input the build does not read. Under strict mode a missing path panics naming
+    // itself inside `reference_tree`.
+    let Some(aeon) = reference_tree(&["engine/engine.toml"]) else { return };
+    let shapes: Vec<(String, Shape)> =
+        shapes::shipped(&aeon).expect("shipped shapes").into_iter().map(|s| (s.name(), s)).collect();
+    assert!(!shapes.is_empty(), "shapes::shipped enumerated nothing, a gate over no shapes gates nothing");
     for (_, profile) in &shapes {
-        let Some(root) = reference_tree_for_profile(profile) else { return };
-        aeon = Some(root);
+        let Some(_) = reference_tree_for_shape(profile) else { return };
     }
-    let aeon = aeon.expect("shapes is non-empty, so the loop ran at least once");
 
-    let bricks = corpus_bricks(&aeon, shapes.iter().map(|(l, p)| (*l, p)));
+    let bricks = corpus_bricks(&aeon, shapes.iter().map(|(l, p)| (l.as_str(), p)));
     eprintln!(
         "corpus builds: {} of {} shipped shapes build from source at {}",
         shapes.len() - bricks.len(),
@@ -128,15 +127,18 @@ const EDITOR_SCENE_SECTION: &str = "ojz_effects_editor_act1";
 /// builds (so the copy itself is not what makes the doctored one red).
 #[test]
 fn a_deleted_map_row_bricks_the_build_and_the_gate_names_it() {
-    let shapes = native::shipped_shapes();
-    // The first shape whose placement map is sonic4's — the map the row lives in.
-    let (label, profile) = shapes
-        .iter()
-        .find(|(_, p)| p.game_root_rel.starts_with("games/sonic4/"))
+    let Some(aeon) = reference_tree(&["engine/engine.toml"]) else { return };
+    // The first shipped sonic4 shape — its placement map is the one the row lives in.
+    let profile = shapes::shipped(&aeon)
+        .expect("shipped shapes")
+        .into_iter()
+        .find(|s| s.game == "sonic4")
         .expect("a shipped sonic4 shape exists");
-    let Some(aeon) = reference_tree_for_profile(profile) else { return };
+    let label = &profile.name();
+    let profile = &profile;
+    let Some(aeon) = reference_tree_for_shape(profile) else { return };
 
-    let map_path = profile.map_path(&aeon);
+    let map_path = profile.map_path(&aeon).expect("map path");
     let map_rel = map_path.strip_prefix(&aeon).expect("map path is under the tree");
     let map_rel = map_rel.to_str().expect("map path is UTF-8");
     let map_src = std::fs::read_to_string(&map_path)
@@ -166,7 +168,7 @@ fn a_deleted_map_row_bricks_the_build_and_the_gate_names_it() {
     // Direction 2: the deleted row bricks the build, and the report names it.
     let bricked = shadow_aeon_tree(&aeon, &[(map_rel, &doctored)])
         .unwrap_or_else(|e| panic!("shadow aeon tree (bricked): {e}"));
-    let bricks = corpus_bricks(bricked.root(), [(*label, profile)]);
+    let bricks = corpus_bricks(bricked.root(), [(label.as_str(), profile)]);
     assert_eq!(bricks.len(), 1, "exactly the doctored shape is red: {bricks:?}");
     let report = &bricks[0];
     eprintln!("injected brick, as the gate reports it:\n  {report}");

@@ -12,9 +12,9 @@
 //! shared with every canonical test running beside this one.
 
 use sigil_harness::map_placement::{load_placement_map, parse_anchor_overlay, AnchorOverlay};
-use sigil_harness::native::{self, GameProfile};
+use sigil_harness::shapes;
 use sigil_harness::seam2::{bank_id_of, sound_bank_id_in, sound_layout_in};
-use sigil_harness::test_support::{reference_tree_for_profile, shadow_aeon_tree};
+use sigil_harness::test_support::{reference_tree_for_shape, shadow_aeon_tree};
 use std::path::Path;
 
 /// The map's `(dac_banks, sound_bank)` anchor addresses.
@@ -69,7 +69,7 @@ fn clip_overlay(aeon: &Path) -> (u32, u32, AnchorOverlay) {
 /// by the tree alone returns the first layout three times.
 #[test]
 fn one_process_derives_the_map_and_the_overlay_layouts_apart() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
     let (to_dac, to_snd, ov) = clip_overlay(&aeon);
     let first = sound_layout_in(&aeon, None).expect("canonical layout");
     let middle = sound_layout_in(&aeon, Some(&ov)).expect("overlay layout");
@@ -101,12 +101,12 @@ fn listed_lma(listing: &[sigil_link::ListingSymbol], name: &str) -> u32 {
 /// sound fold), so a green build is those checks passing over the overlay.
 #[test]
 fn an_overlay_build_holds_each_island_at_its_overlay_address() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
     let (to_dac, to_snd, ov) = clip_overlay(&aeon);
     let shadow = shadow_aeon_tree(&aeon, &[]).expect("shadow tree");
     for debug in [false, true] {
-        let profile = native::sonic4_profile(debug).with_anchor_overlay(ov.clone());
-        let built = native::build_rom_chained_with_listing(shadow.root(), &profile)
+        let profile = shapes::Shape::new("sonic4", if debug { "debug" } else { "release" }).with_anchor_overlay(ov.clone());
+        let built = shapes::build(shadow.root(), &profile)
             .unwrap_or_else(|e| panic!("the overlay build (debug={debug}) failed:\n{e}"));
         assert_eq!(listed_lma(&built.listing, "Dac_Temp_Blip"), to_dac, "debug={debug}");
         assert_eq!(listed_lma(&built.listing, "SoundTablesZ80_Head"), to_snd, "debug={debug}");
@@ -124,8 +124,8 @@ fn an_overlay_build_holds_each_island_at_its_overlay_address() {
 /// overlay was never consulted.
 #[test]
 fn an_overlay_nothing_can_place_fails_the_build() {
-    let profile = native::sonic4_profile(false);
-    let Some(aeon) = reference_tree_for_profile(&profile) else { return };
+    let profile = shapes::Shape::new("sonic4", "release");
+    let Some(aeon) = reference_tree_for_shape(&profile) else { return };
     let src = std::fs::read_to_string(aeon.join("games/sonic4/map.toml")).expect("read map.toml");
     let pmap = load_placement_map(&src).expect("map");
     let object_bank = pmap.anchors.iter().find(|a| a.name == "object_bank").expect("object_bank anchor").at;
@@ -133,30 +133,27 @@ fn an_overlay_nothing_can_place_fails_the_build() {
     let (to_dac, to_snd) = (object_bank + 0x1_0000, object_bank + 0x1_0000 + (snd - dac));
     assert!(to_snd < dac, "the fixture overlay must sit below the map's DAC anchor");
     let shadow = shadow_aeon_tree(&aeon, &[]).expect("shadow tree");
-    match native::build_rom_chained_with_listing(shadow.root(), &profile.with_anchor_overlay(bank_overlay(to_dac, to_snd))) {
+    match shapes::build(shadow.root(), &profile.with_anchor_overlay(bank_overlay(to_dac, to_snd))) {
         Ok(_) => panic!("banks moved to {to_dac:#x}/{to_snd:#x}, inside the packed run, built green"),
-        // The DAC bank section is placed at the overlay address and collides there.
-        Err(e) => assert!(e.contains("overlap") && e.contains(&format!("[{to_dac:#X},")), "{e}"),
+        // The DAC bank anchor is held at the overlay address and the packed run in front
+        // of it overruns it: the game-as-data driver's walk refuses that before any link
+        // (the profile-driven driver reported the resulting overlap at link time).
+        Err(e) => assert!(e.contains("[layout.anchor-overrun]") && e.contains(&format!("at {to_dac:#x}")), "{e}"),
     }
 }
 
-/// The shipping profiles carry no overlay: without the switch, nothing reads one.
+/// No described shape carries an overlay: without the switch, nothing reads one. A shape
+/// row has no overlay key, and the description schema refuses an invented one
+/// (`deny_unknown_fields`), so a `[shapes.*]` row that tried to carry one fails to load.
 #[test]
 fn no_shipping_profile_carries_an_overlay() {
-    let profiles: Vec<GameProfile> = vec![
-        native::sonic4_profile(false),
-        native::sonic4_profile(true),
-        native::demo_profile(false),
-        native::demo_profile(true),
-        native::config_a_profile(),
-        native::config_b_profile(),
-        native::lean_profile(),
-        native::stress_evict_profile(),
-        native::stress_art_profile(),
-    ];
-    for p in profiles {
-        assert!(p.anchor_overlay.is_none(), "profile `{}` carries an anchor overlay", p.name);
-    }
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let game = sigil_harness::test_support::write_project_fixture(tmp.path());
+    let path = game.join("game.toml");
+    let text = std::fs::read_to_string(&path).unwrap() + "anchor_overlay = \"overlay.toml\"\n";
+    std::fs::write(&path, text).unwrap();
+    let err = sigil_build::describe::load_game(&path).expect_err("a shape row carrying an overlay must not load");
+    assert!(err.to_string().contains("anchor_overlay"), "the refusal must name the key: {err}");
 }
 
 /// A scratch output directory for one binary run, removed on drop.
@@ -180,7 +177,7 @@ impl Drop for Scratch {
 /// the map's.
 #[test]
 fn the_emit_binary_emits_from_the_overlay() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
     let (_, _, ov) = clip_overlay(&aeon);
     let scratch = Scratch::new("emit");
     let file = scratch.0.join("anchors.toml");
@@ -225,7 +222,7 @@ fn overlay_text(ov: &AnchorOverlay) -> String {
 /// `emit_sound_blob` refuses an overlay it cannot read, and writes nothing.
 #[test]
 fn the_emit_binary_refuses_a_missing_overlay() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
     let scratch = Scratch::new("missing");
     let out = scratch.0.join("generated");
     let missing = scratch.0.join("no-such-anchors.toml");
@@ -248,7 +245,7 @@ fn the_emit_binary_refuses_a_missing_overlay() {
 /// nothing.
 #[test]
 fn the_emit_binary_refuses_two_overlays() {
-    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else { return };
+    let Some(aeon) = reference_tree_for_shape(&shapes::Shape::new("sonic4", "release")) else { return };
     let scratch = Scratch::new("twice");
     let out = scratch.0.join("generated");
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_emit_sound_blob"))

@@ -73,8 +73,8 @@ fn emit(mut cmd: Command, emitter: &Path, aeon: &Path, out: &Path, label: &str) 
 
 #[test]
 fn installed_binary_needs_no_build_tree() {
-    let profile = sigil_harness::native::sonic4_profile(false);
-    let Some(aeon) = sigil_harness::test_support::reference_tree_for_profile(&profile) else { return };
+    let shape = sigil_harness::shapes::Shape::new("sonic4", "release");
+    let Some(aeon) = sigil_harness::test_support::reference_tree_for_shape(&shape) else { return };
     let aeon = aeon.canonicalize().expect("canonical aeon");
     let checkout = sigil_harness::source_digest::sigil_source_root();
     let emitter =

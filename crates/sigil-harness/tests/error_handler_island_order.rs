@@ -26,9 +26,12 @@
 //! arms below meaningful: when the contracts HOLD, the call proceeds and fails on the
 //! missing tool instead, so a refuse-everything guard cannot satisfy this file.
 
-use sigil_harness::native::{
-    self, ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN, SONIC4_APPENDIX_FLOOR,
-};
+use sigil_harness::native::{self, ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN};
+
+/// The appendix size floor these synthetic listings are measured with: sonic4's
+/// `game.toml` `appendix_floor` (0x2000). It is the probe's own parameter, not a fact
+/// read from a tree (the profile-driven driver's `SONIC4_APPENDIX_FLOOR` is deleted).
+const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
 use sigil_link::ListingSymbol;
 use std::path::Path;
 
