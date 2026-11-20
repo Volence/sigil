@@ -768,7 +768,7 @@ mod tests {
     /// Named roots (G0b Task 9): a `generated/` path reads the build's generated root
     /// even when a source tree carries a file of that name (a stale copy an earlier
     /// process left at the old mount), a missing generated file stays missing, and the
-    /// old mount spelling is an ordinary engine path.
+    /// old mount spelling is refused by name.
     #[test]
     fn a_generated_path_reads_the_generated_root_and_nothing_else() {
         let scratch = scratch_dir("generated-root");
@@ -792,9 +792,15 @@ mod tests {
         assert_eq!(got, gen.join("sound/blob.bin"));
         let missing = ev.resolve_sandbox_path("generated/sound/absent.bin", span()).expect("resolves");
         assert_eq!(missing, gen.join("sound/absent.bin"), "a missing generated file must not fall back to a tree");
-        let old = ev.resolve_sandbox_path("engine/sound/generated/blob.bin", span()).expect("resolves");
-        assert_eq!(old, tree.join("engine/sound/generated/blob.bin"), "no mount: the old spelling is an engine path");
         assert!(ev.diags.is_empty(), "{:?}", ev.diags);
+        // No mount: the old spelling is refused by name, never the tree's stale copy.
+        let old = ev.resolve_sandbox_path("engine/sound/generated/blob.bin", span());
+        assert!(old.is_none(), "the old spelling resolved to {old:?}: a stale tree copy would stand in for the build's output");
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("[root.stale-generated]") && d.message.contains("`generated/sound/blob.bin`")),
+            "expected a [root.stale-generated] refusal naming the remedy, got {:?}",
+            ev.diags
+        );
 
         let _ = std::fs::remove_dir_all(&scratch);
     }

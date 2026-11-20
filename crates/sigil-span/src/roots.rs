@@ -39,7 +39,8 @@
 //! reference tree (aeon 99cb963d), whose sources embed the sound seams' output as
 //! `engine/sound/generated/<file>`. [`SourceRoots::with_legacy_sound_mount`] maps exactly
 //! that prefix onto `generated/sound/`, for that driver only. The game-as-data driver
-//! never sets it: its sources name the `generated` root.
+//! never sets it: its sources name the `generated` root, and without the mount the old
+//! prefix is refused by name (`[root.stale-generated]`), never read from the tree.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -174,12 +175,33 @@ impl SourceRoots {
                 Component::RootDir | Component::Prefix(_) => {}
             }
         }
+        let mount: Vec<&str> = LEGACY_SOUND_MOUNT.split('/').collect();
         if self.legacy_sound_mount {
-            let mount: Vec<&str> = LEGACY_SOUND_MOUNT.split('/').collect();
             if segs.len() > mount.len() && segs[..mount.len()] == mount[..] {
                 let mut rest = vec!["sound"];
                 rest.extend_from_slice(&segs[mount.len()..]);
                 return self.inside(RootName::Generated, path, &rest);
+            }
+        } else {
+            // Without the mount the old prefix is refused by name, however it is spelled
+            // (judged on the `..`-folded path): the tree's copy there is rewritten by
+            // aeon's build.sh, so resolving it as an engine path would let a stale tree
+            // file stand in for this build's own seam output (Task 6's guarantee).
+            let mut folded: Vec<&str> = Vec::new();
+            for s in &segs {
+                if *s == ".." {
+                    folded.pop();
+                } else {
+                    folded.push(s);
+                }
+            }
+            if folded.len() >= mount.len() && folded[..mount.len()] == mount[..] {
+                let rest = folded[mount.len()..].join("/");
+                return Err(format!(
+                    "[root.stale-generated] `{path}` names the retired `{LEGACY_SOUND_MOUNT}/` location, which \
+                     is not this build's output (the tree's copy there is a stale leftover); the sound seams' \
+                     output is the `generated` root: spell it `generated/sound/{rest}`"
+                ));
             }
         }
         if let Some(root) = segs.first().and_then(|s| RootName::from_segment(s)) {
@@ -325,9 +347,19 @@ mod tests {
         let none = SourceRoots::new(t.root.join("aeon/engine"), t.root.join("aeon/games/g"));
         let err = none.locate("generated/sound/s.bin").unwrap_err();
         assert!(err.starts_with("[root.missing]"), "{err}");
-        // The old prefix is an ordinary engine path unless the legacy driver mounts it.
-        let e = roots(&t).locate("engine/sound/generated/s.bin").unwrap();
-        assert_eq!(e.file(), t.root.join("aeon/engine/sound/generated/s.bin"));
+        // The old prefix is refused by name unless the legacy driver mounts it: the tree's
+        // copy there is rewritten by aeon's build.sh and must never stand in for this
+        // build's own output (Task 6's guarantee). `..` spellings of it are refused too.
+        for old in ["engine/sound/generated/s.bin", "engine/x/../sound/generated/s.bin", "engine/sound/generated"] {
+            let err = roots(&t).locate(old).unwrap_err();
+            assert!(err.starts_with("[root.stale-generated]"), "{old}: {err}");
+            assert!(err.contains("`generated/sound/"), "{old}: the remedy names the generated root: {err}");
+        }
+        let err = none.locate("engine/sound/generated/s.bin").unwrap_err();
+        assert!(err.starts_with("[root.stale-generated]"), "with no generated root too: {err}");
+        // A sibling of the old prefix is an ordinary engine path.
+        let sib = roots(&t).locate("engine/sound/generated_not/s.bin").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(sib.file(), t.root.join("aeon/engine/sound/generated_not/s.bin"));
         let legacy = roots(&t).with_legacy_sound_mount().locate("engine/sound/generated/s.bin").unwrap();
         assert_eq!(body(&legacy), "generated");
     }
