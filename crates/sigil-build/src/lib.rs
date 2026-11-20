@@ -29,6 +29,9 @@ pub mod roots;
 /// name and the engine description, beside the old profile-driven driver.
 pub mod driver;
 
+/// The contract-closure baseline a game-as-data shape is gated on, from its descriptions.
+pub mod baseline;
+
 /// The build directory: a private directory outside the tree for what a build
 /// generates, and the `generated` root mounted from it (G0b Task 6).
 pub mod build_dir;

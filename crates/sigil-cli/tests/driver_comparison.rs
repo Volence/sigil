@@ -22,6 +22,11 @@
 //! `rom_bytes_match_on_every_shape`, `listings_match_on_every_shape`,
 //! `exports_match_on_every_shape`.
 //!
+//! The contract closure gate (G0b Task 8 step 0) is held the same way: both drivers' build logs
+//! must state the gate's pass (`gate_verdicts_agree_on_every_shape`), their `--report contracts`
+//! censuses must be identical (`closure_reports_match_on_every_shape`), and their `--check`
+//! counts too (`checks_match_on_every_shape`).
+//!
 //! Runner: the landing bar (`scripts/landing-run.sh`, which sets `AEON_DIR` and
 //! `SIGIL_STRICT_GATE`); the nightly source lane lists it in `SOURCE_GATES`. Without `AEON_DIR`
 //! it skips loudly, and under `SIGIL_STRICT_GATE=1` a missing reference is a failure.
@@ -40,6 +45,9 @@ struct Row {
     rom: String,
     lst: String,
     export: String,
+    gate: String,
+    report: String,
+    check: String,
     verdict: String,
 }
 
@@ -67,6 +75,9 @@ fn parse_row(line: &str) -> Row {
         rom: get("rom"),
         lst: get("lst"),
         export: get("export"),
+        gate: get("gate"),
+        report: get("report"),
+        check: get("check"),
         verdict: if did_not_run {
             "DID NOT RUN".into()
         } else if line.ends_with(" MATCH (declared delta)") {
@@ -184,4 +195,19 @@ fn listings_match_on_every_shape() {
 #[test]
 fn exports_match_on_every_shape() {
     hold("export", "MATCH(declared-delta)", |x| &x.export);
+}
+
+#[test]
+fn gate_verdicts_agree_on_every_shape() {
+    hold("gate", "AGREE(passed)", |x| &x.gate);
+}
+
+#[test]
+fn closure_reports_match_on_every_shape() {
+    hold("report", "MATCH", |x| &x.report);
+}
+
+#[test]
+fn checks_match_on_every_shape() {
+    hold("check", "MATCH", |x| &x.check);
 }

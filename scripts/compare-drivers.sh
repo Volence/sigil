@@ -24,17 +24,35 @@
 #   * the shape's NAME: the game-as-data driver names a shape by its `[shapes.*]` row (the
 #     row is checked to exist in the copy's game.toml), the legacy one by its flag/label;
 #   * the description files the game-as-data driver reads: `games/<g>/game.toml` and
-#     `<engine.root>/engine.toml` are rows of its listing's read set.
+#     `<engine.root>/engine.toml` are rows of its listing's read set, and so (G0b Task 8)
+#     are the files its contract closure gate reads its frozen rows from, where the legacy
+#     driver's live in Sigil's source: the `baseline` file engine.toml names, the one the
+#     game's game.toml names, and, because the closure analyses every scanned module until
+#     Task 9, each OTHER `games/*/game.toml` and the `baseline` file it names.
 # The job transforms the LEGACY listing and export into the artifacts the new driver must
-# write (DIGEST-SHAPE `target=` -> the row name; exactly those two DIGEST-READ rows, crc and
-# size from the copy's own files, inserted in digest order; DIGEST-AGGREGATE recomputed;
+# write (DIGEST-SHAPE `target=` -> the row name; exactly those DIGEST-READ rows, each file
+# named from the copy's own descriptions, crc and size from the copy's own files, inserted
+# in digest order; DIGEST-AGGREGATE recomputed;
 # export `shape.shape` -> the row name, everything else untouched) and compares those with
 # the new artifacts BYTE FOR BYTE. Nothing is removed from the new side, so an extra read,
 # a missing one, or a wrong name is a DIFFERS. A passing column prints
 # `MATCH(declared-delta)` and a passing row `MATCH (declared delta)`, never a bare MATCH.
 #
+# THE CONTRACT GATE, THE CLOSURE REPORT AND THE CHECK (G0b Task 8 step 0). Both drivers run
+# the closure gate before they build; each states a pass on stderr (`contract closure gate:
+# passed (`), so a log without it is a gate that did not run. Per shape the job also runs
+# `--report contracts` and `--check` with both drivers:
+#   gate=AGREE(passed)  both logs carry the pass line (AGREE(refused): both refused, the
+#                       red-first shape; DIFFERS(<legacy>/<project>) otherwise);
+#   report=MATCH        the two closure censuses are identical below their two header lines
+#                       (the label line names the shape each driver's way; the define line
+#                       must hold the same set);
+#   check=MATCH         both checks exit 0 and their `checked:` counts are identical.
+# `SIGIL_CONTRACTS` is removed from every run, so the opt-out can never fake a pass.
+#
 # Output: one row per shape,
-#   SHAPE <name> game=<g> shape=<s> rom=<v> lst=<v> export=<v> sha=<legacy>/<project> <VERDICT>
+#   SHAPE <name> game=<g> shape=<s> rom=<v> lst=<v> export=<v> gate=<v> report=<v> check=<v>
+#         sha=<legacy>/<project> <VERDICT>
 # with VERDICT `MATCH (declared delta)`, DIFFERS, or DID NOT RUN (a build failed or an
 # artifact is missing), then `SHAPES <n>/<total> MATCH` and `COMPARE_DRIVERS_END rc=<rc>`.
 # rc 0 = every shape matches; 1 = a shape DIFFERS; 2 = a shape DID NOT RUN or the job could
@@ -125,10 +143,17 @@ for side in legacy project; do
 done
 mkdir -p "$WORK/out" "$WORK/res" "$WORK/logs"
 
-compare() { # name game shape -> prints the row; exit 0 MATCH (declared delta), 1 DIFFERS
-  python3 -I - "$WORK/res/$1" "$1" "$2" "$3" "$WORK/project" <<'PY'
+gate_of() { # log -> passed | refused | skipped | absent
+  if grep -q '^contract closure gate: passed (' "$1"; then echo passed
+  elif grep -q '^error: contract closure gate FAILED' "$1"; then echo refused
+  elif grep -q 'contract closure gate SKIPPED' "$1"; then echo skipped
+  else echo absent; fi
+}
+
+compare() { # name game shape gate report check -> prints the row; exit 0 MATCH (declared delta), 1 DIFFERS
+  python3 -I - "$WORK/res/$1" "$1" "$2" "$3" "$WORK/project" "$4" "$5" "$6" <<'PY'
 import hashlib, json, sys, zlib, os, difflib, tomllib
-res, name, game, shape, ptree = sys.argv[1:6]
+res, name, game, shape, ptree, gate, report, check = sys.argv[1:9]
 L = lambda f: open(os.path.join(res, "legacy", f), "rb").read()
 P = lambda f: open(os.path.join(res, "project", f), "rb").read()
 rom_l, rom_p = L(name + ".bin"), P(name + ".bin")
@@ -144,7 +169,13 @@ problems = []
 g = tomllib.load(open(os.path.join(ptree, "games", game, "game.toml"), "rb"))
 if shape not in g.get("shapes", {}):
     problems.append(f"pairing: games/{game}/game.toml declares no [shapes.{shape}] row")
-descs = [f"games/{game}/game.toml", f"{g['engine']['root']}/engine.toml"]
+eroot = g["engine"]["root"]
+e = tomllib.load(open(os.path.join(ptree, eroot, "engine.toml"), "rb"))
+descs = [f"games/{game}/game.toml", f"{eroot}/engine.toml", f"{eroot}/{e['baseline']}", f"games/{game}/{g['baseline']}"]
+for other in sorted(os.listdir(os.path.join(ptree, "games"))):
+    op = os.path.join(ptree, "games", other, "game.toml")
+    if other != game and os.path.isfile(op):
+        descs += [f"games/{other}/game.toml", f"games/{other}/{tomllib.load(open(op, 'rb'))['baseline']}"]
 
 # THE DECLARED DELTA (proxy ruling, G0B-COMPARE-IDENTITY-NAMES option a). The OLD artifacts
 # are transformed into the artifacts the new driver must write, and those are compared to
@@ -199,11 +230,11 @@ except ValueError as err:
     want_exp = None; problems.append(f"export: cannot apply the declared delta: {err}")
 lst_ok = want_lst is not None and want_lst == lst_p
 exp_ok = want_exp is not None and want_exp == exp_p
-ok = rom_ok and lst_ok and exp_ok and not problems
+ok = rom_ok and lst_ok and exp_ok and gate == "AGREE(passed)" and report == "MATCH" and check == "MATCH" and not problems
 D = "MATCH(declared-delta)"
 col = lambda good, tag: tag if good else "DIFFERS"
 print(f"SHAPE {name} game={game} shape={shape} rom={col(rom_ok, 'MATCH')} lst={col(lst_ok, D)} export={col(exp_ok, D)} "
-      f"sha={sha_l[:16]}/{sha_p[:16]} {'MATCH (declared delta)' if ok else 'DIFFERS'}")
+      f"gate={gate} report={report} check={check} sha={sha_l[:16]}/{sha_p[:16]} {'MATCH (declared delta)' if ok else 'DIFFERS'}")
 for pr in problems:
     print("    " + pr)
 if ok:
@@ -236,14 +267,42 @@ for row in "${ROWS[@]}"; do
   total=$((total + 1))
   mkdir -p "$WORK/res/$name/legacy" "$WORK/res/$name/project"
   # shellcheck disable=SC2086
-  ( cd "$WORK/out" && env -u AEON_DIR "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags \
+  ( cd "$WORK/out" && env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags \
       -o "$name.bin" --emit-lst "$name.lst" ) > "$WORK/logs/$name.legacy.log" 2>&1
   lrc=$?
   mv "$WORK/out/$name".* "$WORK/res/$name/legacy/" 2>/dev/null
-  ( cd "$WORK/out" && env -u AEON_DIR "$SIGIL" build --project "$WORK/project/games/$game" --shape "$shape" \
+  ( cd "$WORK/out" && env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --project "$WORK/project/games/$game" --shape "$shape" \
       -o "$name.bin" --emit-lst "$name.lst" ) > "$WORK/logs/$name.project.log" 2>&1
   prc=$?
   mv "$WORK/out/$name".* "$WORK/res/$name/project/" 2>/dev/null
+  gl=$(gate_of "$WORK/logs/$name.legacy.log") gp=$(gate_of "$WORK/logs/$name.project.log")
+  if [ "$gl" = "$gp" ] && { [ "$gl" = passed ] || [ "$gl" = refused ]; }; then gate="AGREE($gl)"; else gate="DIFFERS($gl/$gp)"; fi
+  # The closure census and the check, each driver its own way.
+  # shellcheck disable=SC2086
+  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags --report contracts \
+      > "$WORK/res/$name/legacy/report.txt" 2> "$WORK/logs/$name.legacy.report.log"
+  lrr=$?
+  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --project "$WORK/project/games/$game" --shape "$shape" --report contracts \
+      > "$WORK/res/$name/project/report.txt" 2> "$WORK/logs/$name.project.report.log"
+  prr=$?
+  report=DIFFERS
+  if [ $lrr = 0 ] && [ $prr = 0 ] && [ -s "$WORK/res/$name/legacy/report.txt" ] \
+     && cmp -s <(tail -n +3 "$WORK/res/$name/legacy/report.txt") <(tail -n +3 "$WORK/res/$name/project/report.txt") \
+     && [ "$(sed -n 2p "$WORK/res/$name/legacy/report.txt" | tr ' ' '\n' | sort)" = "$(sed -n 2p "$WORK/res/$name/project/report.txt" | tr ' ' '\n' | sort)" ]; then
+    report=MATCH
+  elif [ $lrr != 0 ] || [ $prr != 0 ]; then report="DID-NOT-RUN($lrr/$prr)"; fi
+  # shellcheck disable=SC2086
+  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --legacy --aeon "$WORK/legacy" $flags --check \
+      > "$WORK/res/$name/legacy/check.txt" 2> "$WORK/logs/$name.legacy.check.log"
+  lcr=$?
+  env -u AEON_DIR -u SIGIL_CONTRACTS "$SIGIL" build --project "$WORK/project/games/$game" --shape "$shape" --check \
+      > "$WORK/res/$name/project/check.txt" 2> "$WORK/logs/$name.project.check.log"
+  pcr=$?
+  counts() { grep '^checked: ' "$1" | sed 's/^checked: [^:]*: //'; }
+  check=DIFFERS
+  if [ $lcr != 0 ] || [ $pcr != 0 ]; then check="DID-NOT-RUN($lcr/$pcr)"
+  elif [ -n "$(counts "$WORK/res/$name/legacy/check.txt")" ] \
+     && [ "$(counts "$WORK/res/$name/legacy/check.txt")" = "$(counts "$WORK/res/$name/project/check.txt")" ]; then check=MATCH; fi
   missing=""
   for side in legacy project; do
     for ext in bin lst build.json; do
@@ -251,14 +310,14 @@ for row in "${ROWS[@]}"; do
     done
   done
   if [ $lrc != 0 ] || [ $prc != 0 ] || [ -n "$missing" ]; then
-    echo "SHAPE $name game=$game shape=$shape legacy-rc=$lrc project-rc=$prc missing:${missing:- none} DID NOT RUN"
+    echo "SHAPE $name game=$game shape=$shape legacy-rc=$lrc project-rc=$prc gate=$gate missing:${missing:- none} DID NOT RUN"
     for side in legacy project; do
       tail -n 6 "$WORK/logs/$name.$side.log" | sed "s/^/    $side: /"
     done
     dnr=$((dnr + 1))
     continue
   fi
-  if compare "$name" "$game" "$shape"; then match=$((match + 1)); else differ=$((differ + 1)); fi
+  if compare "$name" "$game" "$shape" "$gate" "$report" "$check"; then match=$((match + 1)); else differ=$((differ + 1)); fi
 done
 
 [ "$total" -gt 0 ] || die "--only '$ONLY' selects no shape"

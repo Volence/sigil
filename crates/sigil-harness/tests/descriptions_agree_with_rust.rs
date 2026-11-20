@@ -28,7 +28,7 @@
 //! shapes` (M computed), and a category that compared nothing is a failure.
 
 use sigil_build::describe::{
-    load_baseline, load_engine, load_game, resolve_shape, BaselineDesc, EngineDesc, GameDesc, GateRule, PlaceIn,
+    load_engine, load_game, resolve_shape, EngineDesc, GameDesc, GateRule, PlaceIn,
     ResolvedShape, DERIVED_DEFINES,
 };
 use sigil_harness::contract_baseline as cb;
@@ -255,7 +255,6 @@ fn shipped_from_source() -> BTreeSet<(String, String)> {
 struct GameSide {
     dir_rel: PathBuf,
     desc: GameDesc,
-    baseline: BaselineDesc,
 }
 
 /// The driver's own matcher (G0b QUEUE 7b: this file used an exact-or-single-`*` stand-in
@@ -365,7 +364,6 @@ fn descriptions_agree_with_rust() {
     // ── the descriptions ──
     let engine_dir = aeon.join("engine");
     let engine = load_engine(&engine_dir.join("engine.toml")).unwrap_or_else(|e| panic!("engine.toml: {e}"));
-    let engine_base = load_baseline(&engine_dir.join(&engine.baseline)).unwrap_or_else(|e| panic!("engine baseline: {e}"));
 
     // Every game the tree describes, so a description game with no Rust row is caught too.
     let mut described: BTreeSet<String> = BTreeSet::new();
@@ -381,11 +379,9 @@ fn descriptions_agree_with_rust() {
     for g in &games {
         let dir_rel = PathBuf::from("games").join(g);
         let desc = load_game(&aeon.join(&dir_rel).join("game.toml")).unwrap_or_else(|e| panic!("games/{g}/game.toml: {e}"));
-        let baseline =
-            load_baseline(&aeon.join(&dir_rel).join(&desc.baseline)).unwrap_or_else(|e| panic!("games/{g} baseline: {e}"));
         t.check("game", desc.id == *g, || format!("games/{g}/game.toml has id `{}`", desc.id));
         t.check("game", norm(&desc.engine.root) == "engine", || format!("games/{g}: engine root `{}`, the Rust reads `engine/`", desc.engine.root.display()));
-        sides.insert(g.clone(), GameSide { dir_rel, desc, baseline });
+        sides.insert(g.clone(), GameSide { dir_rel, desc });
     }
 
     // ── shapes: a bijection by name, per game ──
@@ -528,22 +524,17 @@ fn descriptions_agree_with_rust() {
             t.check("align", r == Some(a.align), || format!("{at}: align `{}` Rust {r:?} vs description {:#x}", a.label, a.align));
         }
 
-        // baseline: Rust's per-shape gate vs the union of the description files.
-        // UNTIL TASK 9 (sigil docs/QUEUE.md G0B-DESCRIBE-TASK2-RESIDUE item 3): today's
-        // closure analyses the WHOLE aeon corpus on every shape, so a demo shape's gate is
-        // engine + sonic4 + demo rows. The Task 9 two-root corpus removes this union, and
-        // demo then compares against engine + demo alone, like every other game.
-        let mut files: Vec<&BaselineDesc> = vec![&engine_base, &side.baseline];
-        if g == "demo" {
-            files.insert(1, &sides["sonic4"].baseline);
-        }
-        let z80: Vec<(String, String)> = files.iter().flat_map(|b| b.z80_out_unverified.clone()).collect();
-        let out: Vec<(String, String)> = files.iter().flat_map(|b| b.out_unverified.clone()).collect();
-        let inout: Vec<(String, String)> = files.iter().flat_map(|b| b.inout_unverified.clone()).collect();
-        let mut d1c: Vec<(String, String, String)> = files.iter().flat_map(|b| b.d1c.clone()).collect();
-        if f.debug {
-            d1c.extend(files.iter().flat_map(|b| b.d1c_debug.clone()));
-        }
+        // baseline: Rust's per-shape gate vs the rows the game-as-data gate assembles from
+        // the description files (`sigil_build::baseline::closure_baseline`, the function
+        // `sigil build --project`'s gate calls; G0b Task 8). Until Task 9 the closure
+        // analyses the WHOLE aeon corpus on every shape, so that function adds every other
+        // game's own-source rows (sigil docs/QUEUE.md G0B-DESCRIBE-TASK2-RESIDUE item 3);
+        // this compares its result, not a union restated here.
+        let project = sigil_build::driver::load_project(&aeon.join(&side.dir_rel), &|_| None)
+            .unwrap_or_else(|e| panic!("{at}: load the project: {e}"));
+        let gb = sigil_build::baseline::closure_baseline(&project, &shape, &manifest)
+            .unwrap_or_else(|e| panic!("{at}: closure baseline: {e}"));
+        let (z80, out, inout, d1c) = (gb.z80_out_unverified, gb.out_unverified, gb.inout_unverified, gb.d1c);
         let rust_d1c: Vec<(String, String, String)> = cb::d1c_baseline(p.debug, cb::is_demo_family(p))
             .into_iter()
             .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))

@@ -503,14 +503,26 @@ struct EmpSide {
     program: crate::harvest::EmpProgram,
 }
 
-fn build_emp(
+/// The `.emp` program a shape lowers, ready to lower: the scanned manifest with the
+/// helper imports rewritten and the synthetic entry pushed, and what the build reports
+/// against it.
+struct PreparedEmp {
+    manifest: resolve::manifest::Manifest,
+    mdiags: Vec<sigil_span::Diagnostic>,
+    removed: Vec<(usize, sigil_span::Diagnostic)>,
+    registry: Vec<ModuleSpec>,
+    source: sigil_span::SourceId,
+    entry_id: &'static str,
+    lopts: LowerOptions,
+}
+
+fn prepare_emp(
     p: &Project,
-    shape: &ResolvedShape,
     gate_shape: &ResolvedShape,
     order: &[String],
     defines: &[(String, i128)],
     opts: &BuildOptions<'_>,
-) -> Result<EmpSide, BuildError> {
+) -> Result<PreparedEmp, BuildError> {
     let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(&p.checkout);
     if let Some(e) = mdiags.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("manifest scan: {e:?}")));
@@ -547,6 +559,17 @@ fn build_emp(
     }
     let source = push_synthetic(&mut manifest, entry_id, &src, &p.checkout)?;
     let lopts = lower_options(p, defines);
+    Ok(PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts })
+}
+
+fn build_emp(
+    p: &Project,
+    gate_shape: &ResolvedShape,
+    order: &[String],
+    defines: &[(String, i128)],
+    opts: &BuildOptions<'_>,
+) -> Result<EmpSide, BuildError> {
+    let PreparedEmp { manifest, mdiags, removed, registry, source, entry_id, lopts } = prepare_emp(p, gate_shape, order, defines, opts)?;
     let root = p.checkout.clone();
     let embed = move |_: &str| Some(root.clone());
     let resolve::BuiltProgram { mut sections, link_asserts, comptime_guards, diags: mut bdiags, lowered, symbols, layouts, expansions } =
@@ -575,7 +598,6 @@ fn build_emp(
     let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
     let pdiags: Vec<sigil_span::Diagnostic> = Vec::new();
     let warnings = collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
-    let _ = shape;
     Ok(EmpSide {
         program: crate::harvest::EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols, layouts },
     })
@@ -607,31 +629,50 @@ pub fn build(project: &Path, shape: &str, opts: &BuildOptions<'_>) -> Result<Bui
 /// caller's, when one is in force for this checkout, otherwise a private build directory
 /// removed when the build returns.
 pub fn build_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<BuildOutput, BuildError> {
-    crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated))
+    match crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated, Run::Build))? {
+        Outcome::Built(out) => Ok(*out),
+        Outcome::Checked(_) => unreachable!("Run::Build returns Outcome::Built"),
+    }
 }
 
-fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, generated: &Path) -> Result<BuildOutput, BuildError> {
-    let shape = describe::resolve_shape(&p.game, shape_name)?;
+/// What `sigil build --project ... --check` reports: the guard census of a resolve that
+/// stopped before the link, and the warn tier it raised.
+pub struct CheckOutput {
+    pub guards: crate::guards::GuardCensus,
+    pub warnings: Vec<BuildWarning>,
+}
+
+/// Decide every `ensure` and `LinkAssert` of `shape_name` against the final
+/// post-relaxation placement, then stop: [`build_project`]'s pipeline step for step
+/// (the sound artifacts into the generated root for a sound-on shape, the residual AS,
+/// the `.emp` lowering, the walk, `resolve_layout`, the link-assert tally, the drift
+/// verdict, the inapplicable allowlist, the census) and nothing after it: no link, no
+/// listing, no appendix, no checksum, no ROM. The profile-driven driver's `--check`
+/// (sigil-harness `native::check_chained`) is the same cut of its own pipeline.
+pub fn check_project(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<CheckOutput, BuildError> {
+    match crate::build_dir::with_generated_root(&p.checkout, |generated| build_project_in(p, shape_name, opts, generated, Run::Check))? {
+        Outcome::Checked(out) => Ok(out),
+        Outcome::Built(_) => unreachable!("Run::Check returns Outcome::Checked"),
+    }
+}
+
+/// How far [`build_project_in`] runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Run {
+    Build,
+    Check,
+}
+
+enum Outcome {
+    Built(Box<BuildOutput>),
+    Checked(CheckOutput),
+}
+
+fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, generated: &Path, run: Run) -> Result<Outcome, BuildError> {
+    let Plan { shape, defines, gate_shape, map, pmap } = plan(p, shape_name, opts)?;
     let sound = shape.features.sound;
     let debug = shape.features.debug;
     let map_path = p.map_path();
-    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
-    let defines = merged_defines(p, &shape, &map_src)?;
-    let gate_shape = ResolvedShape { defines: defines.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(), ..shape.clone() };
-
-    // ── Placement facts. ──
-    let base_pmap = crate::map_placement::load_placement_map(&map_src).map_err(|e| ctx(format!("placement {}: {e}", map_path.display())))?;
-    let map = sigil_link::load_map(&map_src).map_err(|e| ctx(format!("load {}: {e}", map_path.display())))?;
-    let map = crate::map_placement::map_for_shape(&map, &base_pmap, sound);
-    let mut pmap: PlacementMap = match &opts.anchor_overlay {
-        Some(ov) => base_pmap.with_overlay(ov).map_err(ctx)?,
-        None => base_pmap.clone(),
-    };
-    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap, sound);
-    let map = crate::map_placement::bank_windows_for_shape(&map, &pmap, sound).map_err(ctx)?;
-    if let Some(fp) = &shape.fixture_placement {
-        relocate_rows(&mut pmap.order, &fp.relocate, &p.engine.fault_island_heads)?;
-    }
     let mut pins: Vec<AnchorPin> = Vec::new();
     for a in pmap.anchors_for(sound) {
         let holds = a.holds.clone().ok_or_else(|| {
@@ -654,7 +695,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let seeds = entry_seeds(p)?;
     let crate::harvest::AsSide { module: as_module, warnings: mut as_warnings, sources: as_map } =
         assemble_as(p, &shape, &defines, (&seeds[0], &seeds[2]))?;
-    let EmpSide { program } = build_emp(p, &shape, &gate_shape, &pmap.order, &defines, opts)?;
+    let EmpSide { program } = build_emp(p, &gate_shape, &pmap.order, &defines, opts)?;
     let crate::harvest::EmpProgram { sections: emp_sections, link_asserts, comptime_guards, mut warnings, sources, registry, symbols: emp_symbols, layouts: emp_layouts } = program;
     let as_symbols = sigil_frontend_as::export_side::AsSymbols::from_sections(&as_module.sections);
     let as_code = as_module.named_code_marks();
@@ -676,7 +717,10 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     warnings.extend(collect_warnings_located(&|s| sources.locate(s), &[&adiags], None));
     let inapplicable = crate::guards::declared_chain_drift_verdict(&adiags, &|s| sources.locate(s)).map_err(ctx)?;
     crate::guards::enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &[]).map_err(ctx)?;
-    crate::guards::GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable).map_err(ctx)?;
+    let census = crate::guards::GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable).map_err(ctx)?;
+    if run == Run::Check {
+        return Ok(Outcome::Checked(CheckOutput { guards: census, warnings }));
+    }
 
     // ── Link, check, emit. ──
     let mut listing = crate::emit::listing_from_resolved(&resolved, &stubs);
@@ -720,7 +764,80 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
         rom
     };
     let export_inputs = ExportInputs { sections: resolved, locator: Box::new(sources), side, z80_windows };
-    Ok(BuildOutput { rom: full, assembled_len, listing, export_inputs, warnings, registry, checkout: p.checkout.clone(), defines, debug })
+    Ok(Outcome::Built(Box::new(BuildOutput {
+        rom: full,
+        assembled_len,
+        listing,
+        export_inputs,
+        warnings,
+        registry,
+        checkout: p.checkout.clone(),
+        defines,
+        debug,
+    })))
+}
+
+/// A shape's inputs before any front end runs: the resolved shape, its define
+/// environment (and the shape the gate rules evaluate, carrying it), and the placement
+/// facts (the linker map for the shape, and the placement map with any anchor overlay
+/// and fixture relocation applied).
+struct Plan {
+    shape: ResolvedShape,
+    defines: Vec<(String, i128)>,
+    gate_shape: ResolvedShape,
+    map: sigil_ir::map::MemoryMap,
+    pmap: PlacementMap,
+}
+
+fn plan(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<Plan, BuildError> {
+    let shape = describe::resolve_shape(&p.game, shape_name)?;
+    let sound = shape.features.sound;
+    let map_path = p.map_path();
+    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
+    let defines = merged_defines(p, &shape, &map_src)?;
+    let gate_shape = ResolvedShape { defines: defines.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(), ..shape.clone() };
+
+    // ── Placement facts. ──
+    let base_pmap = crate::map_placement::load_placement_map(&map_src).map_err(|e| ctx(format!("placement {}: {e}", map_path.display())))?;
+    let map = sigil_link::load_map(&map_src).map_err(|e| ctx(format!("load {}: {e}", map_path.display())))?;
+    let map = crate::map_placement::map_for_shape(&map, &base_pmap, sound);
+    let mut pmap: PlacementMap = match &opts.anchor_overlay {
+        Some(ov) => base_pmap.with_overlay(ov).map_err(ctx)?,
+        None => base_pmap.clone(),
+    };
+    let map = crate::map_placement::move_bank_regions(&map, &base_pmap, &pmap, sound);
+    let map = crate::map_placement::bank_windows_for_shape(&map, &pmap, sound).map_err(ctx)?;
+    if let Some(fp) = &shape.fixture_placement {
+        relocate_rows(&mut pmap.order, &fp.relocate, &p.engine.fault_island_heads)?;
+    }
+    Ok(Plan { shape, defines, gate_shape, map, pmap })
+}
+
+/// `sigil build --project ... --report name-env` (A4): the name environment of the
+/// program `shape_name` lowers, over the same prepared program the build lowers (the
+/// placed modules, the helper rewrite, the synthetic entry). Nothing is emitted: the
+/// generated root is a fresh, empty one, so an `embed` of a generated artifact fails
+/// loudly rather than reading a stale tree copy (the profile-driven report's rule).
+pub fn name_env_report(
+    p: &Project,
+    shape_name: &str,
+    opts: &BuildOptions<'_>,
+) -> Result<(Vec<resolve::hygiene::NameEnvRow>, Vec<sigil_span::Diagnostic>), BuildError> {
+    crate::build_dir::with_generated_root(&p.checkout, |_| {
+        let Plan { defines, gate_shape, pmap, .. } = plan(p, shape_name, opts)?;
+        let PreparedEmp { manifest, entry_id, lopts, .. } = prepare_emp(p, &gate_shape, &pmap.order, &defines, opts)?;
+        Ok(resolve::name_env_report(&manifest, entry_id, None, &lopts))
+    })
+}
+
+/// The shape's define environment as the build uses it ([`merged_defines`] over the
+/// game's map), for the reports and the contract closure gate that run beside a build.
+pub fn shape_defines(p: &Project, shape_name: &str) -> Result<(ResolvedShape, Vec<(String, i128)>), BuildError> {
+    let shape = describe::resolve_shape(&p.game, shape_name)?;
+    let map_path = p.map_path();
+    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
+    let defines = merged_defines(p, &shape, &map_src)?;
+    Ok((shape, defines))
 }
 
 /// Move the `relocate` rows (a fixture shape's growable sections) to just before the

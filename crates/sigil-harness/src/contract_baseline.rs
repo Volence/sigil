@@ -365,15 +365,84 @@ fn diff_multiset(got: Vec<String>, want: Vec<String>) -> BaselineDiff {
     }
 }
 
+/// The frozen rows ONE shape's closure gate diffs against, whoever supplies them.
+///
+/// Two suppliers, one diff. The profile-driven driver takes the constants above
+/// ([`ShapeBaseline::for_profile`]); the game-as-data driver (G0b) reads the
+/// `baseline.toml` files its engine and game descriptions name and unions them
+/// (sigil-cli `project_gate_subject`). Either way the gate calls the SAME diff
+/// methods below, so the two drivers cannot grow two meanings of "moved against the
+/// baseline".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShapeBaseline {
+    /// `[proc.out-unverified]` for Z80 procs: `(proc, unit)`.
+    pub z80_out_unverified: Vec<(String, String)>,
+    /// `[proc.out-unverified]` for 68000 procs: `(proc, register)`.
+    pub out_unverified: Vec<(String, String)>,
+    /// `[proc.inout-unverified]`: `(proc, register)`.
+    pub inout_unverified: Vec<(String, String)>,
+    /// `[call.live-clobbered]` for this shape, its family rows already added:
+    /// `(caller, callee, register)`, a multiset.
+    pub d1c: Vec<(String, String, String)>,
+    /// Where an adjudicated row is written, named by [`adjudication_message_in`]:
+    /// this file for the constants, the description files for a game-as-data shape.
+    pub home: String,
+}
+
+fn owned2(rows: &[(&str, &str)]) -> Vec<(String, String)> {
+    rows.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+}
+
+impl ShapeBaseline {
+    /// Where the constants live: the `home` of [`ShapeBaseline::for_profile`].
+    pub const CONSTANTS_HOME: &'static str = "crates/sigil-harness/src/contract_baseline.rs";
+
+    /// The constants' baseline for a profile-driven shape: both D1c family axes
+    /// derived from the profile ([`d1c_baseline`], [`is_demo_family`]).
+    pub fn for_profile(profile: &crate::native::GameProfile) -> ShapeBaseline {
+        ShapeBaseline {
+            z80_out_unverified: owned2(Z80_OUT_UNVERIFIED_BASELINE),
+            out_unverified: owned2(OUT_UNVERIFIED_BASELINE),
+            inout_unverified: owned2(INOUT_UNVERIFIED_BASELINE),
+            d1c: d1c_baseline(profile.debug, is_demo_family(profile))
+                .into_iter()
+                .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
+                .collect(),
+            home: Self::CONSTANTS_HOME.to_string(),
+        }
+    }
+
+    /// Diff `[proc.out-unverified]` (68000) firings.
+    pub fn diff_out_unverified(&self, got: &[(String, String)]) -> BaselineDiff {
+        diff_pairs(got, &self.out_unverified, "out")
+    }
+
+    /// Diff `[proc.out-unverified]` (Z80) firings: their OWN rows, never folded into
+    /// the 68000 multiset, so a Z80 row and a 68k row cannot stand in for each other.
+    pub fn diff_z80_out_unverified(&self, got: &[(String, String)]) -> BaselineDiff {
+        diff_pairs(got, &self.z80_out_unverified, "out")
+    }
+
+    /// Diff `[proc.inout-unverified]` firings.
+    pub fn diff_inout_unverified(&self, got: &[(String, String)]) -> BaselineDiff {
+        diff_pairs(got, &self.inout_unverified, "inout")
+    }
+
+    /// Diff `[call.live-clobbered]` (D1c) firings.
+    pub fn diff_d1c(&self, got: &[(String, String, String)]) -> BaselineDiff {
+        let key = |(p, c, r): &(String, String, String)| format!("{p} @ {c} :: {r}");
+        diff_multiset(got.iter().map(key).collect(), self.d1c.iter().map(key).collect())
+    }
+}
+
+fn diff_pairs(got: &[(String, String)], want: &[(String, String)], facet: &str) -> BaselineDiff {
+    let key = |(p, r): &(String, String)| format!("{p} :: {facet}({r})");
+    diff_multiset(got.iter().map(key).collect(), want.iter().map(key).collect())
+}
+
 /// Diff the corpus's `[proc.out-unverified]` firings against the frozen baseline.
 pub fn diff_out_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_multiset(
-        got.iter().map(|(p, r)| format!("{p} :: out({r})")).collect(),
-        OUT_UNVERIFIED_BASELINE
-            .iter()
-            .map(|(p, r)| format!("{p} :: out({r})"))
-            .collect(),
-    )
+    diff_pairs(got, &owned2(OUT_UNVERIFIED_BASELINE), "out")
 }
 
 /// Diff the corpus's Z80 `[proc.out-unverified]` firings against the frozen Z80
@@ -381,41 +450,29 @@ pub fn diff_out_unverified(got: &[(String, String)]) -> BaselineDiff {
 /// [`diff_out_unverified`], so a Z80 row and a 68k row can never masquerade for
 /// each other in a multiset that spans both key spaces.
 pub fn diff_z80_out_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_multiset(
-        got.iter().map(|(p, u)| format!("{p} :: out({u})")).collect(),
-        Z80_OUT_UNVERIFIED_BASELINE
-            .iter()
-            .map(|(p, u)| format!("{p} :: out({u})"))
-            .collect(),
-    )
+    diff_pairs(got, &owned2(Z80_OUT_UNVERIFIED_BASELINE), "out")
 }
 
 /// Diff the corpus's `[proc.inout-unverified]` firings against the frozen baseline.
 pub fn diff_inout_unverified(got: &[(String, String)]) -> BaselineDiff {
-    diff_multiset(
-        got.iter().map(|(p, r)| format!("{p} :: inout({r})")).collect(),
-        INOUT_UNVERIFIED_BASELINE
-            .iter()
-            .map(|(p, r)| format!("{p} :: inout({r})"))
-            .collect(),
-    )
+    diff_pairs(got, &owned2(INOUT_UNVERIFIED_BASELINE), "inout")
 }
 
 /// Diff the corpus's `[call.live-clobbered]` firings against the frozen baseline
 /// for that shape's family.
 pub fn diff_d1c(got: &[(String, String, String)], profile: &crate::native::GameProfile) -> BaselineDiff {
-    diff_multiset(
-        got.iter().map(|(p, c, r)| format!("{p} @ {c} :: {r}")).collect(),
-        d1c_baseline(profile.debug, is_demo_family(profile))
-            .iter()
-            .map(|(p, c, r)| format!("{p} @ {c} :: {r}"))
-            .collect(),
-    )
+    ShapeBaseline::for_profile(profile).diff_d1c(got)
 }
 
 /// The adjudication instruction every gate prints on a mismatch. One wording, so
 /// the build gate and the CI gate cannot drift into telling different stories.
 pub fn adjudication_message(family: &str, d: &BaselineDiff) -> String {
+    adjudication_message_in(family, d, ShapeBaseline::CONSTANTS_HOME)
+}
+
+/// [`adjudication_message`], naming `home` as where the baseline is updated (a
+/// game-as-data shape's rows live in its descriptions' `baseline.toml` files).
+pub fn adjudication_message_in(family: &str, d: &BaselineDiff, home: &str) -> String {
     format!(
         "{family} moved against the frozen baseline.\n  \
          NEW firings (a real violation, or an analysis that just got sharper): {:?}\n  \
@@ -423,7 +480,7 @@ pub fn adjudication_message(family: &str, d: &BaselineDiff) -> String {
          destructive direction: the same closure feeds find_dead_saves, so a dropped \
          row can mean a load-bearing save is now reported dead): {:?}\n  \
          If the change is intended, adjudicate each row and update the baseline in \
-         crates/sigil-harness/src/contract_baseline.rs in the SAME commit.",
+         {home} in the SAME commit.",
         d.added, d.removed
     )
 }

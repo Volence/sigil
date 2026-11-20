@@ -110,12 +110,20 @@ pub struct RootsInput<'a> {
     pub map_name: &'a str,
 }
 
+/// Is module `id` in a game's scope: under `engine.` or under the game's own prefix
+/// (`games.sonic4`)? The one scope rule for the candidates a shape may place
+/// ([`derive_roots`], [`gate_scan`]), and the test of which scanned modules belong to
+/// some OTHER game when the closure baseline is assembled ([`crate::baseline`]). Task 9's
+/// two-root corpus replaces the prefix test with the description's roots.
+pub fn in_candidate_scope(id: &str, game_prefix: &str) -> bool {
+    id.starts_with("engine.") || id.strip_prefix(game_prefix).is_some_and(|rest| rest.starts_with('.'))
+}
+
 /// The module roots `input.shape` places, one [`ModuleSpec`] per declared section, in
 /// `order` order with the terminus last.
 pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildError> {
     let RootsInput { manifest, order, game_prefix, rules, shape, seeds, terminus, map_name } = *input;
-    let game_scope = format!("{game_prefix}.");
-    let in_scope = |id: &str| id.starts_with("engine.") || id.starts_with(&game_scope);
+    let in_scope = |id: &str| in_candidate_scope(id, game_prefix);
 
     let mut by_label: HashMap<String, Vec<usize>> = HashMap::new();
     let mut by_section: HashMap<String, Vec<usize>> = HashMap::new();
@@ -254,8 +262,7 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
 /// Every module the closed gate is asked about for `order` (what an aeon description's
 /// `[[gate]]` rows must cover): the in-scope candidates of every row, and the terminus.
 pub fn gate_scan(manifest: &Manifest, order: &[String], game_prefix: &str, terminus: &str) -> Vec<ModuleId> {
-    let game_scope = format!("{game_prefix}.");
-    let in_scope = |id: &str| id.starts_with("engine.") || id.starts_with(&game_scope);
+    let in_scope = |id: &str| in_candidate_scope(id, game_prefix);
     let mut out: Vec<ModuleId> = Vec::new();
     let mut push = |id: &str| {
         if !out.iter().any(|o| o == id) {
