@@ -126,11 +126,11 @@ pub const SOUND_PLACEMENT_MAP_REL: &str = "games/sonic4/map.toml";
 /// in the emitters' shared precondition rather than in the resolver.
 ///
 /// A caller that names the tree on its own command line rather than through the
-/// environment declares it by setting `AEON_DIR` from that argument before it emits.
-/// Both such callers are the ones aeon's `build.sh` drives with `--aeon .`: the
-/// `emit_sound_blob` binary, and `sigil build`, whose native path reaches
-/// [`crate::native::ensure_generated`]. This precondition therefore holds for every
-/// writing process without the argv path becoming an exception to it.
+/// environment declares it by setting `AEON_DIR` from that argument before it emits:
+/// the `emit_sound_blob` binary, which aeon's `build.sh` drives with `--aeon .
+/// --out-dir engine/sound/generated`. `sigil build` no longer writes into the tree at all
+/// (G0b Task 6): its seams write into the build's own directory, which
+/// [`require_reference_tree_for`] does not ask to be named.
 pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
     // Through the published predicate rather than a private read of the variable, so the
     // gate that asserts this precondition is in force asserts THIS function rather than

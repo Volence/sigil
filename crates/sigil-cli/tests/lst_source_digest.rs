@@ -254,10 +254,25 @@ fn compile_interposer(dir: &Path) -> PathBuf {
     so
 }
 
+/// The file a build-directory path names in the tree: a read of
+/// `<tmp>/sigil-build-*/generated/<rest>` (the build's generated root, G0b Task 6) is the
+/// file the source embeds as `engine/sound/generated/<rest>`, which is where the digest
+/// names it. The build removes its directory when it ends, so these paths are matched
+/// as logged, never canonicalized.
+fn generated_mount_of(aeon: &Path, logged: &Path) -> Option<PathBuf> {
+    let parts: Vec<_> = logged.components().collect();
+    let at = parts.windows(2).position(|w| {
+        w[0].as_os_str().to_string_lossy().starts_with("sigil-build-") && w[1].as_os_str() == "generated"
+    })?;
+    let rest: PathBuf = parts[at + 2..].iter().collect();
+    Some(aeon.join(sigil_build::build_dir::GENERATED_MOUNT).join(rest))
+}
+
 /// What the kernel was asked to open read-only, and to spawn, excluding the system
 /// directories every process reads (the loader, locale, `/proc`) and files gone by now
-/// (the appendix pass's own temporaries).
-fn observed(log: &str) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
+/// (the appendix pass's own temporaries), except the build's generated root, whose
+/// reads are kept at their mount path ([`generated_mount_of`]).
+fn observed(aeon: &Path, log: &str) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
     const O_ACCMODE: i64 = 0o3;
     const O_DIRECTORY: i64 = 0o200000;
     const SYSTEM: &[&str] = &["/proc/", "/sys/", "/dev/", "/etc/", "/usr/", "/lib/", "/lib64/", "/run/"];
@@ -265,6 +280,13 @@ fn observed(log: &str) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
     for line in log.lines() {
         let f: Vec<&str> = line.splitn(4, '\t').collect();
         let [tag, _pid, flags, path] = f[..] else { panic!("malformed interposer line {line:?}") };
+        if let Some(mounted) = generated_mount_of(aeon, Path::new(path)) {
+            let flags: i64 = flags.parse().expect("numeric flags");
+            if tag == "open" && flags & O_ACCMODE == 0 && flags & O_DIRECTORY == 0 {
+                reads.insert(mounted);
+            }
+            continue;
+        }
         let Ok(real) = std::fs::canonicalize(path) else { continue };
         if SYSTEM.iter().any(|s| real.to_string_lossy().starts_with(s)) {
             continue;
@@ -292,15 +314,25 @@ fn every_file_a_build_opens_is_a_digest_row_and_every_row_was_opened() {
     let dir = fresh_dir("witness");
     let interposer = compile_interposer(&dir);
     let aeon = aeon.canonicalize().expect("canonical aeon");
+    let mut generated_rows = 0;
     for (shape, args) in SHAPES {
         let log = dir.join(format!("{shape}.openlog"));
         let built = build(&aeon, &dir, shape, args, &[("LD_PRELOAD", &interposer), ("SIGIL_OPEN_LOG", &log)])
             .unwrap_or_else(|e| panic!("{e}"));
         let d = digest(&built.lst);
-        let rows: BTreeSet<PathBuf> =
-            d.reads.iter().map(|r| std::fs::canonicalize(resolve(&aeon, r)).expect("a row's file exists")).collect();
+        // A generated row names a file in the build's own directory, gone once the build
+        // ends, at its mount path in the tree; it is compared at that path, as logged.
+        let rows: BTreeSet<PathBuf> = d
+            .reads
+            .iter()
+            .map(|r| match r.origin {
+                DigestOrigin::Generated => resolve(&aeon, r),
+                _ => std::fs::canonicalize(resolve(&aeon, r)).expect("a row's file exists"),
+            })
+            .collect();
+        generated_rows += d.reads.iter().filter(|r| r.origin == DigestOrigin::Generated).count();
         let text = std::fs::read_to_string(&log).expect("the interposer wrote no log, so it never loaded");
-        let (reads, execs) = observed(&text);
+        let (reads, execs) = observed(&aeon, &text);
         let seen: BTreeSet<PathBuf> = reads.union(&execs).cloned().collect();
 
         let blind: Vec<&PathBuf> = rows.difference(&seen).collect();
@@ -324,6 +356,9 @@ fn every_file_a_build_opens_is_a_digest_row_and_every_row_was_opened() {
         );
         eprintln!("{shape}: {} rows, the kernel saw the same {} files", rows.len(), seen.len());
     }
+    // The sound-on shapes read the build's generated root; a run with no generated row
+    // compared nothing in that half.
+    assert!(generated_rows > 0, "no shape had a generated row, so the build-directory half of this check measured nothing");
 }
 
 // ---------------------------------------------------------------------------
