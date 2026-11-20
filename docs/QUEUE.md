@@ -2619,8 +2619,9 @@ until its row is removed.
   spellings, unchanged. Respelling them means editing the aeon generators' templates (`ojz_block_gen.py`, `bg_emit`,
   `effects_gen`, `smps_import`) and regenerating the committed tree, and the 12 `art/` reads need a decision about
   where shared art lives (a root of its own, or under `game/`); that is the G0c item above, not a cutover step. The
-  cutover is byte-identical with the fallback in place (`SHAPES 10/10 MATCH`, every build.sh ROM equal to the
-  comparison job's).
+  cutover is byte-identical with the fallback in place (`SHAPES 10/10 MATCH`; seven build.sh ROMs equal the
+  comparison job's for their shape, and `STRESS_ART=1`'s, which build.sh assembles from a throwaway re-bake the job
+  does not do, equals the same command's ROM at the pre-cutover aeon 334dba80: `50e852c5...`).
 
 ## G0B-DIGEST-OUT-OF-TREE-ROOTS
 
