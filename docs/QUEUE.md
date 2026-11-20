@@ -2570,6 +2570,15 @@ until its row is removed.
 ## G0B-TASK9A-RESIDUE
 
 - state: open 2026-11-20 (found in G0b Task 9a); item 2 CLOSED 2026-11-20 (G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **Task 9 review minor M6 (`import_check::seam_roots` hardcodes `sonic4_profile`) — left booked at Task 10, with the
+  reason.** The cutover path DOES run through it: every sound-on `--project` sonic4 build lowers the seam-1/seam-2
+  modules, whose standalone import check resolves among `seam_roots`. For sonic4 it names exactly the build's roots
+  (`engine/` and `games/sonic4/`), so the answer is right. It is wrong only for a sound-on game other than sonic4, and
+  for such a game the whole seam path is wrong, not just this function: seam 1's file specs and seam 2's
+  `SOUND_IDS_REL` read sonic4's files by fixed path, and the `Seams` trait (`sigil-build/src/driver.rs`) hands the
+  harness only the checkout. Threading the build's roots into `seam_roots` alone would make one of those facts
+  game-relative and leave the rest fixed, which reads as agnostic and is not. Taken with the seams' removal (aeon
+  DEFERRED_WORK G0C-SOUND-SEAMS, G0c). Today no sound-on game but sonic4 exists (demo and Cherub are sound-off).
 - **Item 2 closed (G0b Task 9):** candidate scope is root membership (`roots::in_candidate_scope` asks
   `ParsedModule::root`), the build scans exactly the closure's roots, and `check_placed_in_analysed` refuses a placed
   module outside them by name ([gate.placed-not-analysed], red-first unit test). One rule. Consequence measured:
@@ -2605,6 +2614,13 @@ until its row is removed.
   `smps_import`), 12 `art/...` at the aeon root, 2 `games/sonic4/test/...`. Respell each as `game/...` (or move
   the shared `art/` under a root) and the generators with them, then delete the tree fallback. A G0c item
   (the generators are aeon's).
+- **G0b Task 10 (the sonic4 cutover) keeps the fallback.** Every sonic4 `--project` build (build.sh's release, debug,
+  config-a, config-b and stress rows) meets it: recounted at aeon `feat/g0b-descriptions` 644fd722, the same 68 + 12 + 2
+  spellings, unchanged. Respelling them means editing the aeon generators' templates (`ojz_block_gen.py`, `bg_emit`,
+  `effects_gen`, `smps_import`) and regenerating the committed tree, and the 12 `art/` reads need a decision about
+  where shared art lives (a root of its own, or under `game/`); that is the G0c item above, not a cutover step. The
+  cutover is byte-identical with the fallback in place (`SHAPES 10/10 MATCH`, every build.sh ROM equal to the
+  comparison job's).
 
 ## G0B-DIGEST-OUT-OF-TREE-ROOTS
 
@@ -2614,6 +2630,20 @@ until its row is removed.
   such a row (both games are in the tree); the first is Cherub (Task 13). The G0a EXPORT has no equivalent yet: its
   `files` roots are computed against the aeon tree, so an out-of-tree game's export placement is Task 13's to
   settle (the listing grammar is ready, FORMAT unchanged).
+
+## G0B-ORACLE-PIN-DRIFT
+
+- state: open 2026-11-20 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
+- oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
+  s4.trim.build.json}`) pin sigil `3f211b78`'s bytes. The walk merge (87b5c195) moved every shape's bytes, and from
+  then on the runner was red against every sigil on this branch (with c6725ab3 and the same aeon `99cb963d`: none of
+  the five ROMs reproduced), and nothing on sigil's side noticed: no sigil lane runs the oracle runner, and oracle's
+  default suite reads only the trimmed fixture, which never rebuilds. Found while re-pinning the shape names at Task
+  10, and re-pinned there in two commits on oracle `feat/g0b-shape-names` (the walk byte move first, with the
+  `pixels_to_coord(d3)` expansion's -$1E shift; then the `--project` names). The class stays open: a sigil change
+  that moves bytes should re-run the oracle runner (or a landing lane should, with the oracle checkout as an
+  optional reference like `ORACLE_DIR`), so the next drift is red the day it happens. Decide at the G0b final
+  landing (oracle's pins also need sigil's merged revision then).
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
@@ -2635,7 +2665,13 @@ until its row is removed.
     Task 10 is booked in aeon DEFERRED_WORK G0B-DEMO-CUTOVER-RESIDUE item 2, beside the six aeon tools that still
     build demo with `--game demo` (item 3).
   - **Oracle** re-pins `fixtures/g0a/s4.trim.build.json` and `crates/oracle-aether/tests/build_export_real.rs` at
-    Task 10 (the export's `shape.shape` becomes the row name).
+    Task 10 (the export's `shape.shape` becomes the row name). **DONE in Task 10** (oracle `feat/g0b-shape-names`):
+    `tools/g0a-real-exports.sh` builds the five shapes with `--project` from an aeon tree with descriptions, and the
+    trimmed fixture, `SHA256SUMS` and `EXPORTS.normalized` are re-pinned from that build. The pins were ALREADY stale
+    against sigil since the walk merge (87b5c195 moved every shape's bytes; oracle's pins are sigil 3f211b78's), so
+    the re-pin carries both: every changed key is classified in the Task 10 report.
+  - **aeon** dropped `gate_cut_shape`'s `(game, game)` spelling at Task 10 (aeon DEFERRED_WORK
+    G0B-DEMO-CUTOVER-RESIDUE, closed).
   - **Task 11** checks whether any golden pins a listing (the DIGEST-SHAPE `target=` and read rows change at cutover).
 - The text below is the finding as booked before the ruling.
 - The comparison job (`scripts/compare-drivers.sh`, `crates/sigil-cli/tests/driver_comparison.rs`) builds all 10
