@@ -1837,13 +1837,16 @@ pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`
 /// counting form, a jump/tail, or a return. None WRITE the data condition codes.
+/// `rtr` is deliberately absent: it LOADS the condition codes from the stack,
+/// so the flags the caller sees are the saved word's, not the ones computed
+/// before it (it falls to [`Flags::after`]'s clobber, ⊤).
 ///
 /// This asks a FLAG-WRITE question, not a control-flow one: its callers hold a
 /// bare mnemonic and no CFG, so there is no edge to read the answer off. The
 /// `b`-prefixed three-letter forms cover `bra` and every `bXX`; `jbra` is the one
 /// tail spelling that needs naming.
 fn is_branch_or_return(mnem: &str) -> bool {
-    matches!(mnem, "rts" | "rte" | "rtr" | "rtd" | "jmp" | "jra" | "jbra")
+    matches!(mnem, "rts" | "rte" | "rtd" | "jmp" | "jra" | "jbra")
         || (mnem.starts_with('b') && mnem.len() == 3)
         || mnem.starts_with("db")
 }

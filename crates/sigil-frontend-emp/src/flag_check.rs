@@ -1873,8 +1873,9 @@ mod zero_model_tests {
         assert!(checked > 60, "the sweep checked only {checked} spellings");
     }
 
-    /// The `.emp` words and the extend-family spellings the ISA enum lacks have a
-    /// carry role, and a word nothing recognizes has none.
+    /// The `.emp` words and the extend family (`.emp` spells all five since A11,
+    /// so they reach the ISA enum's arms) have a carry role, and a word nothing
+    /// recognizes has none.
     #[test]
     fn the_emp_words_have_a_carry_role_and_an_unknown_word_has_none() {
         use FlagRole::*;

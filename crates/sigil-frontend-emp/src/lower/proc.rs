@@ -2834,6 +2834,15 @@ fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Optio
             saved = false;
             continue;
         }
+        // `rtr` pops the saved word back into the condition codes and returns:
+        // inside a bracket it IS the restore (read statically, like the
+        // `move.w (sp)+, sr` spelling above: the save is taken to be the word on
+        // top). Outside one it pops a word nobody saved, and the `Writes` arm
+        // below refuses it.
+        if mnemonic == "rtr" && saved {
+            saved = false;
+            continue;
+        }
         match ccr_effect(mnemonic) {
             CcrEffect::Transparent => {}
             CcrEffect::Returns => {
@@ -2890,7 +2899,8 @@ enum CcrEffect {
     /// target's, which the slice cannot see.
     Leaves,
     /// Writes (or may write) CCR: every data operation, any call (the
-    /// callee's flags are unknown), and the CCR-popping returns `rtr`/`rte`.
+    /// callee's flags are unknown), and the CCR-popping returns `rtr`/`rte`
+    /// (an `rtr` that closes a bracket is its restore, read before this).
     Writes,
 }
 

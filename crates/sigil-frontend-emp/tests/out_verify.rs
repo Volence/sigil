@@ -1128,3 +1128,24 @@ fn falls_into_credit_does_not_reach_an_rts_on_another_path() {
          must not discharge it"
     );
 }
+
+/// `rtr` LOADS the condition codes from the stack, so the flags computed before
+/// it are not the ones the caller sees. A body that makes `eq` false (`moveq #1`
+/// clears Z) and then returns through `rtr` without producing `d0` must still owe
+/// `out(d0 if eq)`: the saved word may well have Z set.
+#[test]
+fn rtr_does_not_carry_the_computed_flags_to_the_caller() {
+    let s = status_cond(
+        "module m\n\
+         proc P () clobbers(d1) out(d0 if eq) {\n\
+             move.w  sr, -(sp)\n\
+             moveq   #1, d1\n\
+             rtr\n\
+         }\n",
+        "P",
+        Reg::D0,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "the cc at `rtr` is the saved word's, unknown → Unverified, got {s:?}");
+}

@@ -69,7 +69,9 @@ fn a_size_suffix_the_instruction_lacks_is_refused() {
     for line in ["rtr.w", "rtr.l"] {
         let e = emp(line).unwrap_err();
         assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
-        assert!(asl(&line.replace("\n    ", "\n\t")).is_err(), "AS route accepts `{line}`");
+        let a = asl(line).unwrap_err();
+        let want = format!("`{line}` is refused, as asl refuses it");
+        assert!(a.iter().any(|m| m.contains(&want)), "AS route, `{line}`: {a:?}");
     }
 }
 

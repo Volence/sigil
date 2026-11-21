@@ -89,3 +89,47 @@ fn movem_from_a_pc_relative_source_writes_its_list() {
     assert!(!has(&d, "[proc.clobber-undeclared] `P` writes `d0`"), "{d:?}");
     assert_eq!(diags("clobbers(d0-d1)", ".t:\n    movem.l .t(pc,d0.w), d0-d1\n    rts"), []);
 }
+
+/// `rtr` replaces the condition codes with the saved word: the flags computed
+/// before it say nothing about the return. The reviewer's two probes must read
+/// the same, because at the return both have flags the checker cannot see.
+#[test]
+fn rtr_replaces_the_condition_codes_a_conditional_out_reads() {
+    let header = "clobbers(d1) out(d0 if eq)";
+    let probe = |third: &str| diags(header, &format!("    move.w sr, -(sp)\n    moveq #5, d0\n    {third}\n    rtr"));
+    let known_ne = probe("moveq #1, d1");
+    let unknown = probe("tst.w d1");
+    assert_eq!(unknown, [], "flags unknown before `rtr`");
+    assert_eq!(known_ne, unknown, "a `moveq` before `rtr` must not classify the return");
+}
+
+/// `rtr` IS the restore of a `move.w sr, -(sp)` save: it pops that word back
+/// into the condition codes. The idiom keeps `preserves(sr.ccr)` and bare
+/// `preserves(sr)`; a body that saves and drops the word unrestored does not.
+#[test]
+fn rtr_restores_the_saved_condition_codes() {
+    let idiom = "    move.w sr, -(sp)\n    moveq #1, d1\n    rtr";
+    assert_eq!(diags("clobbers(d1) preserves(sr.ccr)", idiom), [], "the `rtr` idiom under preserves(sr.ccr)");
+    assert_eq!(diags("clobbers(d1) preserves(sr)", idiom), [], "the `rtr` idiom under preserves(sr)");
+    // Control: the saved word is discarded and the proc returns unrestored.
+    let dropped = "    move.w sr, -(sp)\n    moveq #1, d1\n    addq.l #2, sp\n    rts";
+    let d = diags("clobbers(d1) preserves(sr.ccr)", dropped);
+    assert!(
+        errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")
+            && m.contains("`rts` returns between the save and the restore")),
+        "{d:?}"
+    );
+    // Control: `rtr` with no save pops a word nobody saved.
+    let d = diags("clobbers(d1) preserves(sr.ccr)", "    moveq #1, d1\n    rtr");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "{d:?}");
+}
+
+/// Each of the five extended / decimal instructions is SEEN writing its
+/// destination: under `clobbers()` every one is charged with `d1`.
+#[test]
+fn each_new_arithmetic_word_is_charged_with_its_destination() {
+    for line in ["abcd d0, d1", "sbcd d0, d1", "nbcd d1", "negx.w d1", "subx.w d0, d1"] {
+        let d = diags("clobbers()", &format!("    {line}\n    rts"));
+        assert!(has(&d, "[proc.clobber-undeclared] `P` writes `d1`"), "`{line}`: {d:?}");
+    }
+}
