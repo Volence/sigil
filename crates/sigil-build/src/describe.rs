@@ -379,7 +379,9 @@ pub struct EngineDesc {
     pub release_fault: String,
     #[serde(default)]
     pub gate: Vec<GateRule>,
-    /// Labels the driver reads from every build's layout.
+    /// Labels every build on the engine must define: after the layout resolves, a name here
+    /// that no section labels is refused by name ([`crate::driver::check_required_labels`],
+    /// `[engine.required-label]`).
     pub required_labels: Vec<String>,
     /// Added by G0b Task 9a: comptime constants the ENGINE's own sources name by bare name and
     /// every game must declare (a `pub const` in the game's sources), with no engine default.

@@ -160,3 +160,37 @@ fn every_shipped_sonic4_shape_builds_as_its_descriptions_say() {
 fn every_shipped_demo_shape_builds_as_its_descriptions_say() {
     run_game("demo");
 }
+
+/// G0b final review A-I2/D-I2: `engine.toml`'s `required_labels` is enforced by the driver.
+/// The live demo project, with one label added to the requirement that no build defines, is
+/// refused by `--check` (the check stops after the layout resolves, where the requirement is
+/// read) naming the label and the engine description. CONTROL: the same project unmodified
+/// checks clean, so the refusal is the planted label's and nothing else's.
+#[test]
+fn a_required_label_no_build_defines_is_refused_by_name() {
+    let Some(aeon) = test_support::reference_tree(&["engine/engine.toml", "games/demo/game.toml"]) else {
+        return;
+    };
+    let env = |k: &str| std::env::var_os(k);
+    let seams = HarnessSeams;
+    let opts = BuildOptions {
+        extra_entries: Vec::new(),
+        anchor_overlay: None,
+        layout_pass: sigil_frontend_emp::export_side::LayoutPass::Off,
+        seams: &seams,
+        env: &env,
+        generated: None,
+    };
+    let mut p = driver::load_project(&aeon.join("games/demo"), &env).unwrap_or_else(|e| panic!("{e}"));
+    assert!(!p.engine.required_labels.is_empty(), "UNMEASURABLE: the engine requires no label");
+    driver::check_project(&p, "release", &opts).unwrap_or_else(|e| panic!("CONTROL: the unmodified project must check clean: {e}"));
+    p.engine.required_labels.push("G0bNoSuchRequiredLabel".into());
+    let err = match driver::check_project(&p, "release", &opts) {
+        Ok(_) => panic!("a required label no build defines must be refused"),
+        Err(e) => e.to_string(),
+    };
+    assert!(
+        err.contains("[engine.required-label]") && err.contains("`G0bNoSuchRequiredLabel`") && err.contains("engine/engine.toml"),
+        "{err}"
+    );
+}

@@ -410,6 +410,32 @@ pub fn check_required_consts(p: &Project, manifest: &resolve::manifest::Manifest
     )))
 }
 
+/// Refuse a build whose resolved layout defines no label of a name the engine description's
+/// `required_labels` lists (G0b final review A-I2/D-I2: the key was required, documented as
+/// read by the driver, and read by nothing). Checked on the resolved layout, before the link,
+/// by both `sigil build` and `--check`; the refusal names each missing label, the game and
+/// shape, and the description file that declares the requirement.
+pub fn check_required_labels(p: &Project, shape: &str, resolved: &[Section]) -> Result<(), BuildError> {
+    let missing: Vec<&str> = p
+        .engine
+        .required_labels
+        .iter()
+        .map(String::as_str)
+        .filter(|want| !resolved.iter().any(|s| s.labels.iter().any(|l| l.name == *want)))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(BuildError::Desc(format!(
+        "[engine.required-label] game `{}` ({}) shape `{shape}` defines no label named {}; {} \
+         `required_labels` requires every build on this engine to provide it",
+        p.game.id,
+        p.game_path.display(),
+        missing.iter().map(|l| format!("`{l}`")).collect::<Vec<_>>().join(", "),
+        p.engine_path.display(),
+    )))
+}
+
 /// Read `project` (a game directory holding `game.toml`, or the file) and find its engine.
 /// A game that does not declare every constant the engine's `required_consts` names is
 /// refused here ([`check_required_consts`]), so every `--project` run (build, check, each
@@ -1135,6 +1161,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let stubs = SymbolTable::new();
     let resolved = sigil_link::resolve_layout_owned(all, &stubs, true)
         .map_err(|d| ctx(crate::guards::render_declared_chain("resolve_layout", &d, &sources)))?;
+    check_required_labels(p, shape_name, &resolved)?;
     let (adiags, tally) = sigil_link::check_link_asserts_tallied(&resolved, &stubs, &link_asserts);
     warnings.extend(collect_warnings_located(&|s| sources.locate(s), &[&adiags], None));
     let inapplicable = crate::guards::declared_chain_drift_verdict(&adiags, &|s| sources.locate(s)).map_err(ctx)?;
@@ -1539,6 +1566,35 @@ mod tests {
         assert!(defines(&redecl, "release", "").unwrap_err().to_string().contains("[define.redeclared]"));
         assert!(defines(&p, "release", "[defines]\nRINGS = 2\n").unwrap_err().to_string().contains("[define.redeclared]"));
         // (A game `[defines]` row naming a derived define is refused by the reader, describe.rs.)
+    }
+
+    /// G0b final review A-I2: every `required_labels` name must be a label of the resolved
+    /// layout; a missing one is refused naming the label, the game, the shape and engine.toml.
+    #[test]
+    fn a_required_label_the_layout_lacks_is_refused_by_name() {
+        let p = project(GAME, &ENGINE.replace("required_labels = []", "required_labels = [\"EndOfRom\", \"ObjCodeBase\"]"));
+        let sec = |label: &str| {
+            Section {
+                name: "text".into(),
+                cpu: Cpu::M68000,
+                vma_base: None,
+                lma: 0,
+                space: sigil_ir::AddressSpace::Image,
+                labels: vec![sigil_ir::Label { name: label.into(), offset: 0 }],
+                fragments: Vec::new(),
+                placement: sigil_ir::SectionPlacement::Chained,
+                reserved_span: 0,
+                group: None,
+                bank: None,
+                equ_syms: Vec::new(),
+            }
+        };
+        check_required_labels(&p, "release", &[sec("Boot"), sec("EndOfRom"), sec("ObjCodeBase")]).expect("both labels defined");
+        let err = check_required_labels(&p, "release", &[sec("Boot"), sec("EndOfRom")]).expect_err("ObjCodeBase is missing").to_string();
+        for want in ["[engine.required-label]", "game `g`", "shape `release`", "`ObjCodeBase`", "engine/engine.toml `required_labels`"] {
+            assert!(err.contains(want), "names {want}: {err}");
+        }
+        assert!(!err.contains("`EndOfRom`"), "only the missing label: {err}");
     }
 
     #[test]
