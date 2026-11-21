@@ -96,9 +96,9 @@ fn scan(root: &Path, game: &str) -> Manifest {
     m
 }
 
-fn derive(m: &Manifest, order: &[String], prefix: &str, sh: &ResolvedShape, rules: &[GateRule], map: &str) -> Result<Vec<ModuleSpec>, String> {
+fn derive(m: &Manifest, order: &[String], sh: &ResolvedShape, rules: &[GateRule], map: &str) -> Result<Vec<ModuleSpec>, String> {
     let homes = sigil_build::gating::GateHomes::default();
-    derive_roots(&RootsInput { manifest: m, order, game_prefix: prefix, rules, homes: &homes, shape: sh, seeds: &[], terminus: TERMINUS, map_name: map })
+    derive_roots(&RootsInput { manifest: m, order, rules, homes: &homes, shape: sh, seeds: &[], terminus: TERMINUS, map_name: map })
         .map_err(|e| e.to_string())
 }
 
@@ -148,7 +148,7 @@ fn every_row_kind_resolves_to_its_module_in_map_order() {
     let m = scan(&root, "sonic4");
     let r = rules(&[]);
     let order = rows(&["GameHeader", "Alpha_Private", "TwinHead", "section:beta", "TwinTail"]);
-    let got = derive(&m, &order, "games.sonic4", &plain(), &r, "map").unwrap();
+    let got = derive(&m, &order, &plain(), &r, "map").unwrap();
     assert_eq!(
         ids(&got),
         vec!["games.sonic4.header", "engine.alpha", "engine.twin", "games.sonic4.beta", TERMINUS],
@@ -158,10 +158,10 @@ fn every_row_kind_resolves_to_its_module_in_map_order() {
     assert_eq!(twin, vec!["twin_head", "twin_tail"]);
     // The demo game's twin is the demo header, never sonic4's.
     let dm = scan(&root, "demo");
-    let demo = derive(&dm, &rows(&["GameHeader"]), "games.demo", &plain(), &r, "map").unwrap();
+    let demo = derive(&dm, &rows(&["GameHeader"]), &plain(), &r, "map").unwrap();
     assert_eq!(ids(&demo), vec!["games.demo.header", TERMINUS]);
     // A compiler-minted label names its module between the first two `$`.
-    let minted = derive(&m, &rows(&["__align$games.sonic4.beta$0"]), "games.sonic4", &plain(), &r, "map").unwrap();
+    let minted = derive(&m, &rows(&["__align$games.sonic4.beta$0"]), &plain(), &r, "map").unwrap();
     assert_eq!(ids(&minted), vec!["games.sonic4.beta", TERMINUS]);
 }
 
@@ -173,9 +173,9 @@ fn a_map_without_a_row_derives_the_smaller_list_with_the_file_still_present() {
     let m = scan(&root, "sonic4");
     let r = rules(&[]);
     let full = rows(&["GameHeader", "Alpha_Private", "TwinHead", "section:beta"]);
-    let before = derive(&m, &full, "games.sonic4", &plain(), &r, "map").unwrap();
+    let before = derive(&m, &full, &plain(), &r, "map").unwrap();
     let without: Vec<String> = full.iter().filter(|r| *r != "section:beta").cloned().collect();
-    let after = derive(&m, &without, "games.sonic4", &plain(), &r, "map").unwrap();
+    let after = derive(&m, &without, &plain(), &r, "map").unwrap();
     assert!(root.join("games/sonic4/beta.emp").exists(), "control: the file stays");
     let expected: Vec<ModuleSpec> = before.iter().filter(|s| s.module_id != "games.sonic4.beta").cloned().collect();
     assert_eq!(after, expected);
@@ -186,7 +186,7 @@ fn a_map_without_a_row_derives_the_smaller_list_with_the_file_still_present() {
 fn a_row_no_module_defines_is_refused_by_name() {
     let root = mini_tree("orphan", &base_files());
     let m = scan(&root, "sonic4");
-    let e = derive(&m, &rows(&["GameHeader", "ObjDef_Gone"]), "games.sonic4", &plain(), &rules(&[]), "games/sonic4/map.toml")
+    let e = derive(&m, &rows(&["GameHeader", "ObjDef_Gone"]), &plain(), &rules(&[]), "games/sonic4/map.toml")
         .unwrap_err();
     assert!(e.contains("[map.order-orphan]"), "{e}");
     assert!(e.contains("ObjDef_Gone"), "must name the row: {e}");
@@ -202,14 +202,14 @@ fn a_missing_or_gated_out_terminus_is_refused() {
     let order = rows(&["GameHeader"]);
     let files: Vec<(&str, &str)> = base_files().into_iter().filter(|(p, _)| *p != "engine/epilogue.emp").collect();
     let m = scan(&mini_tree("no_terminus", &files), "sonic4");
-    let e = derive(&m, &order, "games.sonic4", &plain(), &rules(&[]), "map").unwrap_err();
+    let e = derive(&m, &order, &plain(), &rules(&[]), "map").unwrap_err();
     assert!(e.contains("[map.no-terminus]") && e.contains(&format!("`{TERMINUS}`")), "{e}");
     let m = scan(&mini_tree("terminus_dropped", &base_files()), "sonic4");
     // CONTROL: the same scan with the terminus placed derives.
-    derive(&m, &order, "games.sonic4", &plain(), &rules(&[]), "map").unwrap();
+    derive(&m, &order, &plain(), &rules(&[]), "map").unwrap();
     let mut gated: Vec<GateRule> = rules(&[]).into_iter().filter(|r| r.modules != TERMINUS).collect();
     gated.push(rule(TERMINUS, PlaceIn::Shapes(vec![])));
-    let e = derive(&m, &order, "games.sonic4", &plain(), &gated, "map").unwrap_err();
+    let e = derive(&m, &order, &plain(), &gated, "map").unwrap_err();
     assert!(e.contains("[gate.terminus-dropped]") && e.contains("shape `release`"), "{e}");
 }
 
@@ -226,9 +226,9 @@ fn a_shape_gate_filters_the_derived_list() {
     let m = scan(&root, "sonic4");
     let r = rules(&[("engine.compression_selftest", PlaceIn::Feature(FeatureExpr::Debug))]);
     let order = rows(&["GameHeader", "CompressionSelfTest"]);
-    let plain_roots = derive(&m, &order, "games.sonic4", &plain(), &r, "map").unwrap();
+    let plain_roots = derive(&m, &order, &plain(), &r, "map").unwrap();
     assert!(!ids(&plain_roots).contains(&"engine.compression_selftest".to_string()), "{plain_roots:?}");
-    let dbg = derive(&m, &order, "games.sonic4", &shape(true, true), &r, "map").unwrap();
+    let dbg = derive(&m, &order, &shape(true, true), &r, "map").unwrap();
     assert!(ids(&dbg).contains(&"engine.compression_selftest".to_string()), "{dbg:?}");
 }
 
@@ -249,8 +249,8 @@ fn the_song_bank_is_sound_on_only_under_both_ids() {
     let m = scan(&root, "sonic4");
     let r = rules(&[("games.sonic4.mt_bank*", PlaceIn::Feature(FeatureExpr::Sound))]);
     let order = rows(&["GameHeader", "MtBankHead", "MtBankBlobHead"]);
-    let off = ids(&derive(&m, &order, "games.sonic4", &shape(false, false), &r, "map").unwrap());
-    let on = ids(&derive(&m, &order, "games.sonic4", &plain(), &r, "map").unwrap());
+    let off = ids(&derive(&m, &order, &shape(false, false), &r, "map").unwrap());
+    let on = ids(&derive(&m, &order, &plain(), &r, "map").unwrap());
     for id in ["games.sonic4.mt_bank", "games.sonic4.mt_bank_blob"] {
         assert!(!off.contains(&id.to_string()), "a sound-off shape must not root `{id}`: {off:?}");
         assert!(on.contains(&id.to_string()), "a sound-on shape must root `{id}`: {on:?}");
@@ -268,7 +268,7 @@ fn a_duplicate_label_is_settled_by_the_use_graph_or_refused() {
     let m = scan(&unreached, "sonic4");
     let r = rules(&[]);
     let order = rows(&["GameHeader", "Solid_Init"]);
-    let e = derive(&m, &order, "games.sonic4", &plain(), &r, "map").unwrap_err();
+    let e = derive(&m, &order, &plain(), &r, "map").unwrap_err();
     assert!(e.contains("[map.order-ambiguous]"), "{e}");
     assert!(e.contains("games.sonic4.solid") && e.contains("games.sonic4.solid_copy"), "{e}");
 
@@ -276,7 +276,7 @@ fn a_duplicate_label_is_settled_by_the_use_graph_or_refused() {
     let reached = mini_tree("dup_reached", &files);
     let m = scan(&reached, "sonic4");
     let order = rows(&["GameHeader", "User", "Solid_Init"]);
-    let got = derive(&m, &order, "games.sonic4", &plain(), &r, "map").unwrap();
+    let got = derive(&m, &order, &plain(), &r, "map").unwrap();
     assert_eq!(ids(&got), vec!["games.sonic4.header", "games.sonic4.user", "games.sonic4.solid", TERMINUS]);
 }
 

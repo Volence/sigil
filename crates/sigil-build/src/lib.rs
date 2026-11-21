@@ -3,30 +3,28 @@
 //! A game is described by `games/<id>/game.toml`, the engine it builds on by
 //! aeon's `engine/engine.toml`, and each names a `baseline.toml` with its
 //! contract-closure baseline rows. [`describe`] holds those formats and their
-//! loaders. The driver that reads them arrives in later G0b tasks; until then
-//! the descriptions are inert and the old driver in sigil-harness ignores them.
+//! loaders; [`driver`] builds every shape from them (`sigil build --project`).
 //!
-//! The game-independent half of that old driver lives here already (G0b Task 4):
-//! [`diag`], [`place`], [`map_placement`], [`guards`], [`emit`], [`appendix`] and
-//! [`harvest`], moved unchanged and re-exported by sigil-harness at their old
-//! paths. This crate never depends on sigil-harness (`tests/no_harness_edge.rs`).
+//! The game-independent build code lives here too (G0b Task 4): [`diag`], [`place`],
+//! [`map_placement`], [`guards`], [`emit`], [`appendix`] and [`harvest`]. This crate
+//! never depends on sigil-harness (`tests/no_harness_edge.rs`).
 
 pub mod describe;
 
 /// Section base alignment: the 68000 evenness default and the declared `[[align]]` rows.
 pub mod align;
 
-/// The new driver's packing walk: anchors from the map, no frozen size table.
+/// The driver's packing walk: anchors from the map, no frozen size table.
 pub mod walk;
 
 /// Closed module gating: every placed module matches exactly one `[[gate]]` rule.
 pub mod gating;
 
-/// The new driver's module roots: the map's `order` through the closed gate.
+/// The driver's module roots: the map's `order` through the closed gate.
 pub mod roots;
 
 /// The game-as-data build driver (G0b Task 5): a ROM from a game description, a shape
-/// name and the engine description, beside the old profile-driven driver.
+/// name and the engine description.
 pub mod driver;
 
 /// The contract-closure baseline a game-as-data shape is gated on, from its descriptions.

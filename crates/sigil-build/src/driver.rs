@@ -539,12 +539,10 @@ pub fn define_origin(p: &Project, shape: &ResolvedShape, key: &str) -> String {
         }
         cur = s.extends.as_deref();
     }
-    match declared_by {
-        Some(desc) if overrider.is_some() => {
-            format!("{} [shapes.{}] (overriding {desc} [defines])", p.game_path.display(), overrider.unwrap_or_default())
-        }
-        Some(desc) => format!("{desc} [defines]"),
-        None => format!("{} [defines]", p.map_path().display()),
+    match (declared_by, overrider) {
+        (Some(desc), Some(name)) => format!("{} [shapes.{name}] (overriding {desc} [defines])", p.game_path.display()),
+        (Some(desc), None) => format!("{desc} [defines]"),
+        (None, _) => format!("{} [defines]", p.map_path().display()),
     }
 }
 
@@ -908,7 +906,6 @@ fn derive_registry(
     let registry = crate::roots::derive_roots(&crate::roots::RootsInput {
         manifest,
         order,
-        game_prefix: p.game_prefix(),
         rules: &rules,
         homes: &homes,
         shape: gate_shape,
@@ -1008,8 +1005,7 @@ fn build_emp(
         return Err(ctx(format!("place_sections: {e:?}")));
     }
     let index = resolve::manifest::SourceIndex::with_expansions(&manifest, &expansions);
-    let pdiags: Vec<sigil_span::Diagnostic> = Vec::new();
-    let warnings = collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
+    let warnings = collect_warnings(&index, &[&mdiags, &bdiags, &place_diags], Some(source));
     Ok(EmpSide {
         program: crate::harvest::EmpProgram { sections, link_asserts, comptime_guards, warnings, sources: index, registry, symbols, layouts },
     })

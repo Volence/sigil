@@ -103,8 +103,6 @@ fn use_closure(manifest: &Manifest, seeds: &[usize]) -> HashSet<usize> {
 pub struct RootsInput<'a> {
     pub manifest: &'a Manifest,
     pub order: &'a [String],
-    /// The game's module prefix (`games.sonic4`).
-    pub game_prefix: &'a str,
     /// Engine rules then game rules, in that order (rule indices in errors count across both).
     pub rules: &'a [GateRule],
     /// The description files the rules come from, so a refusal names where a rule goes.
@@ -127,7 +125,7 @@ pub fn in_candidate_scope(pm: &sigil_frontend_emp::resolve::manifest::ParsedModu
 /// The module roots `input.shape` places, one [`ModuleSpec`] per declared section, in
 /// `order` order with the terminus last.
 pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildError> {
-    let RootsInput { manifest, order, game_prefix, rules, homes, shape, seeds, terminus, map_name } = *input;
+    let RootsInput { manifest, order, rules, homes, shape, seeds, terminus, map_name } = *input;
     let in_scope = |id: &str| manifest.by_id.get(id).is_some_and(|&i| in_candidate_scope(&manifest.modules[i]));
 
     let mut by_label: HashMap<String, Vec<usize>> = HashMap::new();
@@ -215,7 +213,7 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
     if !orphans.is_empty() {
         return Err(BuildError::Context(format!(
             "[map.order-orphan] {} `order` row(s) in `{map_name}` name nothing a module under \
-             `engine.*` or `{game_prefix}.*` defines:\n  - {}",
+             the build's scan roots (the engine and the game) defines:\n  - {}",
             orphans.len(),
             orphans.join("\n  - ")
         )));
@@ -268,38 +266,3 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
         .collect())
 }
 
-/// Every module the closed gate is asked about for `order` (what an aeon description's
-/// `[[gate]]` rows must cover): the in-scope candidates of every row, and the terminus.
-pub fn gate_scan(manifest: &Manifest, order: &[String], terminus: &str) -> Vec<ModuleId> {
-    let mut out: Vec<ModuleId> = Vec::new();
-    let mut push = |id: &str| {
-        if !out.iter().any(|o| o == id) {
-            out.push(id.to_string());
-        }
-    };
-    let mut labels_of: Vec<(usize, Vec<String>, Vec<String>)> = Vec::new();
-    for (i, pm) in manifest.modules.iter().enumerate() {
-        if in_candidate_scope(pm) {
-            let mut l = Vec::new();
-            item_labels(&pm.file.items, &mut l);
-            labels_of.push((i, l, declared_sections(&pm.file)));
-        }
-    }
-    for row in order {
-        for (i, labels, secs) in &labels_of {
-            let id = manifest.modules[*i].id.as_str();
-            let hit = if let Some(sec) = section_row(row) {
-                secs.iter().any(|s| s == sec)
-            } else if let Some(owner) = minted_owner(row) {
-                owner == id
-            } else {
-                labels.iter().any(|l| l == row)
-            };
-            if hit {
-                push(id);
-            }
-        }
-    }
-    push(terminus);
-    out
-}

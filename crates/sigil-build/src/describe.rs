@@ -522,6 +522,9 @@ pub enum DescError {
     DerivedDefine { place: String, name: String },
     /// A reference to a shape the file does not declare (`where`, `name`).
     UndeclaredShape { place: String, name: String },
+    /// An engine `[[gate]]` row names shapes: shapes belong to a game, so the engine may gate
+    /// only by feature or `all`.
+    EngineGateNamesShape { modules: String, name: String },
     BadAlign { label: String, align: u32 },
     /// The engine checkout could not be found (or a variable naming it is wrong).
     EngineNotFound(String),
@@ -547,6 +550,11 @@ impl fmt::Display for DescError {
             DescError::UndeclaredShape { place, name } => {
                 write!(f, "{place}: names shape `{name}`, which is not declared")
             }
+            DescError::EngineGateNamesShape { modules, name } => write!(
+                f,
+                "engine gate `{modules}`: names shape `{name}`, but shapes belong to a game; an engine rule \
+                 gates by feature or `all`"
+            ),
             DescError::BadAlign { label, align } => {
                 write!(f, "align row `{label}`: {align} is not a power of two above 1")
             }
@@ -662,7 +670,7 @@ pub fn load_engine(path: &Path) -> Result<EngineDesc, DescError> {
         if let PlaceIn::Shapes(names) = &rule.place_in {
             // The engine knows no game's shape names; only a feature or `all` can gate here.
             if let Some(n) = names.first() {
-                return Err(DescError::UndeclaredShape { place: format!("engine gate `{}`", rule.modules), name: n.clone() });
+                return Err(DescError::EngineGateNamesShape { modules: rule.modules.clone(), name: n.clone() });
             }
         }
     }
