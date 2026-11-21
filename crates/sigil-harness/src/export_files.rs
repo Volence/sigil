@@ -174,14 +174,16 @@ fn place_path(roots: &ExportRoots<'_>, path: &Path) -> Result<Placed, String> {
     let lang = lang_of(path);
     // The longest root directory holding the path owns it. The engine checkout competes
     // too: when it is nested in a root (an engine tree copied under the sigil checkout)
-    // and holds the path, the root does not own it; it is the checkout's unrooted read.
+    // and holds the path, the root does not own it; it is the checkout's unrooted read. A
+    // root EQUAL to the checkout (a game repository carrying the engine beneath it) owns
+    // what it holds (G0b final review B-I2).
     let under_checkout = path.starts_with(roots.checkout).then(|| roots.checkout.components().count());
     let owner = roots
         .dirs()
         .into_iter()
         .filter(|(_, d)| path.starts_with(d))
         .max_by_key(|(_, d)| d.components().count())
-        .filter(|(_, d)| under_checkout.is_none_or(|c| d.components().count() > c));
+        .filter(|(_, d)| under_checkout.is_none_or(|c| d.components().count() >= c));
     if let Some((root, dir)) = owner {
         let rel = path.strip_prefix(dir).expect("filtered on starts_with");
         if root == RootName::Engine {
@@ -408,6 +410,21 @@ mod tests {
             .map(|f| (f.root, f.path))
             .collect();
         assert_eq!(got, vec![(RootName::Engine, "sub/e.emp".to_string()), (RootName::Game, "g.emp".to_string())]);
+    }
+
+    /// G0b final review B-I2: a game repository that carries the engine beneath it
+    /// (`game.toml` at the top, `engine/` next to it) has its game directory EQUAL to the
+    /// engine checkout (`load_project` finds the engine from the game directory itself). The
+    /// game root, as long as the checkout, owns the game's sources; every one used to be
+    /// refused as "under no export root" while naming the very directory holding it.
+    #[test]
+    fn a_game_directory_that_is_the_engine_checkout_owns_its_sources() {
+        let roots = SourceRoots::new("/g/engine", "/g");
+        let er = ExportRoots { roots: &roots, checkout: Path::new("/g"), sigil: Path::new("/s") };
+        let snap = Snapshot { reads: vec![read("/g/src/x.emp"), read("/g/engine/vdp.emp"), read("/g/game_root.asm")], ..Default::default() };
+        let e = export_files(&er, &snap).unwrap_or_else(|e| panic!("{e}"));
+        let got: Vec<(RootName, &str)> = e.files.iter().map(|f| (f.root, f.path.as_str())).collect();
+        assert_eq!(got, vec![(RootName::Engine, "vdp.emp"), (RootName::Game, "game_root.asm"), (RootName::Game, "src/x.emp")]);
     }
 
     /// An engine checkout INSIDE the sigil checkout (a test copy under the target dir, as
