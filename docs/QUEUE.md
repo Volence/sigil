@@ -1925,16 +1925,20 @@ proven equal to the AS route's legal spelling); each is one named EXCLUSIONS row
 `crates/sigil-cli/tests/support/frontend_diff.rs`, so closing a gap fails `every_exclusion_is_used`
 until its row is removed.
 
-- `emp-requires-a-size-suffix` (375): no default size for shifts/rotates on memory, `move`/`andi`/`ori`/
-  `eori` to sr/ccr, `bchg`, `exg`, `addx`. `btst`/`bset`/`bclr` default to `.b` but `bchg` does not
-  (`m68k_default_size`), an inconsistency.
-- `emp-lacks-mnemonic` (161): `abcd`, `sbcd`, `nbcd`, `negx`, `subx`, `chk`, `stop`, `link`, `unlk`.
-- `emp-lacks-sr-ccr-form` (70): `move <ea>,ccr`, `eori #,ccr`, `andi`/`ori`/`eori #,sr` (see `EMP-USP-CCR-SURFACE`).
+- Re-measured 2026-11-22 at `fcba640e` (A11 Task 12) from the differential's printed table
+  (`cargo test --release -p sigil-cli --test frontend_differential -- --nocapture`: n=155292, same=5207,
+  refuse=149345, excluded=740, disagree=0). A11 removed three rows: `emp-lacks-mnemonic` (161: `abcd`, `sbcd`,
+  `nbcd`, `negx`, `subx`, `chk`, `stop`, `link`, `unlk` now assemble), `emp-lacks-sr-ccr-form` (70: `move <ea>,ccr`,
+  `eori #,ccr`, `andi`/`ori`/`eori #,sr` now assemble) and `emp-lacks-usp` (4: the two `usp` moves now assemble).
+  The table's `bit-number-past-width` (186) is a deliberate `.emp` refusal (A1), not a gap of this row.
+- `emp-requires-a-size-suffix` (393; was 375): no default size for shifts/rotates on memory, `move`/`andi`/`ori`/
+  `eori` to sr/ccr, the `usp` moves, `bchg`, `addx`, and now `subx` and `negx` (A11 gave them no default, plan Open
+  question 8, so their unsized spellings joined this row). `exg` left it (A11 Task 2: bare `exg` assembles).
+  `btst`/`bset`/`bclr` default to `.b` but `bchg` does not (`m68k_default_size`), an inconsistency.
 - `emp-no-implicit-variant` (119): `add`/`sub <ea>,An` (asl: `adda`/`suba`), `eor #imm,Dn` (asl: `eori`).
-- `emp-label-operand-gap` (45): a label as a straight-line operand, beside another extension word, or as a
-  `movem` pc-relative source. The last refuses with `internal: a PC-relative operand reached the generic
-  operand mapper`, an internal message reaching the author; it should be a located refusal.
-- `emp-lacks-usp` (4): `.emp` refuses `move usp` (`[operand.usp-unsupported]`); exposing it is `EMP-USP-CCR-SURFACE`.
+- `emp-label-operand-gap` (33; was 45): a label as a straight-line operand, or a symbolic absolute beside another
+  extension word (`move` and `movem`). The `movem` PC-relative source closed in A11 Task 5 (it assembles; the
+  `internal: a PC-relative operand reached the generic operand mapper` message is gone).
 - `branch-b-suffix` (3): `bra.b` (asl: `.s`).
 - `unsized-branch-aeon-pin` (3): the AS route refuses an unsized branch by Aeon policy; asl relaxes it and
   `.emp` assembles the short form. A policy split between the two routes, not a defect of either.
@@ -3081,6 +3085,20 @@ until its row is removed.
   - **M9** `crates/sigil-cli/src/main.rs` prints the gated-refusal header and FAILED line with a hardcoded
     `[proc.sr-undeclared]` while `GATED_WARNING_IDS` is a list; a second id would print under the wrong name.
 
+## STEP0-A11-INSTRUCTION-SET
+
+- state: built, awaiting landing 2026-11-22 (A11, branch `parcel/a11-complete-instruction-set` @ `fcba640e`; the
+  final review, its fix wave and the strict landing run follow)  size: `M`  project: `STEP0-A11`
+- `.emp` assembles every 68000 instruction the shared encoder accepts: the 12 mnemonics (`abcd`, `sbcd`, `nbcd`,
+  `negx`, `subx`, `rtr`, `link`, `unlk`, `stop`, `reset`, `chk`, `trapv`), bare `exg`, the two `usp` moves, the five
+  sr/ccr forms and `movem` from a PC-relative source; a Z80 `ld` with a 16-bit `(nn)` takes a link-time symbol. Two
+  walks (`emp_isa_walk_m68k`, no exception list; `emp_isa_walk_z80`, `SYM_REFUSED` = `in mem` / `out mem`) keep the
+  set from drifting. Each new word has a golden vector on three sides and a test of what the checks say about it.
+- Proof at `fcba640e`: `SHAPES 7/7 IDENTICAL` to `55c6ec32`, the three fixture rows SAME, four aeon builds exit 0
+  (`emp_expect_fail: OK — 56/56`), the touched crates' suites 438 suites / 4612 passed / 0 failed / 4 ignored.
+  Strict landing run pending. Evidence in `docs/superpowers/notes/2026-11-22-a11-complete-instruction-set.md`.
+  Merge, push and the card's Progress line are the overseer's.
+
 ## ISA-Z80-DEAD-MNEMONICS
 
 - state: open 2026-11-22 (A11 Task 1, found by the Z80 walk)  size: `S`  project: `STEP0-A11`
@@ -3100,6 +3118,11 @@ until its row is removed.
   spellings assemble). The port of `in`/`out` is one byte, so these are not 16-bit address fields and stay out of A11
   (plan: "Not here: a symbolic 8-bit Z80 operand"). The walk's `SYM_REFUSED` carries `in mem` / `out mem` until this
   row decides them. Needs a link-time 8-bit fixup with a range check, not a truncation.
+- Since A11 Task 11 (re-probed at `fcba640e`, `q` a proc later in the file): all five (`in a, (q)`, `out (q), a`,
+  `ld a, q`, `cp q`, `rst q`) refuse with the one message `[lower.z80-unsupported] a symbolic operand is only
+  supported as the 16-bit immediate of ... or as the 16-bit address of ld r, (Label) / ld (Label), r`; the
+  `unknown name` / `got poison` pair above is gone. Still a refusal, never a truncation
+  (`a11_z80_mem_sym.rs` `a_symbolic_port_is_refused_not_truncated`).
 
 ## EMP-IMM-REGISTER-WORD
 
@@ -3136,8 +3159,11 @@ until its row is removed.
   callee is not proven to preserve `aN`) makes the matching `unlk` give up: the path's depth is unknown and
   `preserves(aN)` is unverifiable. The per-file stack check has no callee contracts (`ClobberAll`), so ANY call inside
   a frame counts as such a write, and after that `unlk` the path is not judged (a push left below the frame goes
-  unreported; a frame still open at the return is reported). Decide whether the stack check reads the closure's
-  verified callee effects.
+  unreported; a frame still open at the return is reported). The stack check runs BEFORE the closure exists, so it
+  cannot read the closure's verified callee effects as things stand. To keep the `link` / `jsr` / `unlk` true
+  positive, either give it the same-file declared contracts (`preserves.rs` `check_stack_balance` hard-codes
+  `ClobberAll`; its caller `check_stack_balance` in `lower/proc.rs` already holds the whole `ast::File`), or move the
+  check after the closure. Decide which.
 
 ## EMP-LINK-UNSIGNED-DISPLACEMENT: UNSIGNED HALF CLOSED IN BRANCH 2026-11-22 (batch D fix round 1)
 
@@ -3177,3 +3203,31 @@ until its row is removed.
   table by family, so a new mnemonic gets no row unless someone adds one.
 - Decide whether to price the remaining fixed rows, and whether a family sweep (every `ALL_FAMILY_NAMES` entry
   either priced or on a named refusal list) guards the table.
+
+## EMP-ROXL-SYMBOLIC-COUNT-MESSAGE
+
+- state: open 2026-11-22 (A11 plan measurement, booked by Task 12)  size: `S`  project: `STEP0-A11`
+- `roxl.w #Sym, d1` and `roxr.w #Sym, d1` (also with `#extern("Sym")`) are refused with the encoder's untagged
+  `unsupported form: Roxl immediate count must be 1..=8, got 0` (the zero placeholder leaking), where `lsl` / `asl` /
+  `rol` and the rest say `[lower.imm-link] this instruction embeds its immediate in the opcode word ...` (re-probed at
+  `fcba640e`). Cause: `Roxl` / `Roxr` are missing from the opcode-embedded-immediate list in `lower/code.rs` (the
+  `matches!(m, M68kMnemonic::Addq | ... | M68kMnemonic::Ror)` before that message). A refusal either way, no byte;
+  adding the two names gives the named message.
+
+## EMP-CCR-BRACKET-LINEAR
+
+- state: open 2026-11-22 (A11 final-task booking of a task-review finding)  size: `S`  project: `STEP0-A11`
+- The saved-flags bracket check (`lower/proc.rs` `ccr_bracket_refusal`, behind `preserves(sr.ccr)` and the bare
+  `preserves(sr)` advisory) is a linear walk with one `saved` flag, not a path walk. So `move.w sr, -(sp)` /
+  `beq .x` / `rtr` / `.x: rts` is accepted under `preserves(sr.ccr)` though `.x` returns with the word still pushed;
+  the `move.w (sp)+, sr` / `rts` spelling has the same hole (probed at `fcba640e`). The stack check still reports
+  that path (`[stack.unbalanced] ... 2 bytes`), so the program is refused today, but the flags verdict itself is
+  wrong. Decide whether the bracket walk runs per path on the shared `Cfg`.
+
+## EMP-RTR-STACK-UNDERFLOW
+
+- state: open 2026-11-22 (A11 final-task booking of a task-review finding)  size: `S`  project: `STEP0-A11`
+- An `rtr` with nothing pushed (a proc whose body is just `rtr`) builds with no diagnostic: the stack model pops a
+  word that was never pushed and does not report the underflow (probed at `fcba640e`). Under `preserves(sr.ccr)`
+  the bracket walk refuses it (an `rtr` outside a bracket is a flag write); under any other contract nothing does.
+  Decide whether a pop below the entry value is `[stack.unbalanced]`.

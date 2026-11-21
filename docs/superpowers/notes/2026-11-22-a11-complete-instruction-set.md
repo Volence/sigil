@@ -1,6 +1,6 @@
 ---
 kind: note
-description: "A11 parcel note: base binary, BN on itself, the plan's baseline tables, and every task's RF transcript."
+description: "A11 parcel note: base binary, BN on itself, the plan's baseline tables, every task's RF transcript, the parcel as built, and the Task 12 whole-parcel proof (landing run pending)."
 ---
 # A11 Complete the instruction set: parcel note
 
@@ -1697,3 +1697,170 @@ normalised, are byte-identical per shape:
 
 (Summary line, plain: `161 warnings, proc.clobber-undeclared 63, module.unreachable 59, proc.undeclared-fallthrough 21,
 module.path-mismatch 15, import.no-names 2, proc.out-unwritten 1`, both binaries.)
+
+## The parcel as built (plain summary, Task 12)
+
+What `.emp` can write after A11 that it could not at `55c6ec32`, and what the checks make of each word. Where
+this differs from what the plan predicted, the difference is named.
+
+- **Twelve mnemonics.** `abcd`, `sbcd`, `nbcd`, `negx`, `subx` (Task 2), `rtr` (Task 3), `link`, `unlk`
+  (Task 6), `stop` (Task 7), `reset` (Task 8), `chk`, `trapv` (Task 9). Bare `exg` assembles (Task 2). Every
+  one is checked byte for byte against the shared encoder and the AS route (`emp_a11_golden.rs`). A size
+  suffix the instruction does not have (`rtr.w`, `unlk.l`, `link.l`, `stop.w`, `reset.w`, `trapv.w`, `chk.l`,
+  `chk.b`) is refused as `[lower.size-suffix]`, as the AS route and asl refuse it. `subx` / `negx` / `chk`
+  get no default size (plan Open questions 7, 8).
+- **The `usp` moves** `move.l aN, usp` / `move.l usp, aN` (Task 4). `usp` anywhere else is still the named
+  refusal `[operand.usp-unsupported]`, never a symbol. Added in fix round C (not in the plan): the two moves
+  are flag-inert (a flag result computed before one survives it, for conditional outs and for
+  `preserves(sr.ccr)`), and `movem.l usp(pc), ...` is refused by name rather than read as a label.
+- **The status-register forms** `move <ea>, ccr`, `eori #, ccr` (Task 5) and `ori` / `andi` / `eori #, sr`,
+  `stop #imm` (Task 7). The ccr forms are flag writes, not mask writes. Every sr form, `stop` included, is an
+  undeclared mask write (`[proc.sr-undeclared]`) unless the proc declares `clobbers(sr)`; `stop` cannot hide
+  behind `preserves(sr)`, and the gated build refuses it. What a mask VALUE means is review B's Q7, not here.
+- **`movem` from a PC-relative source** (Task 5): the one refused form the card did not list (plan Open
+  question 9). It assembles; the `internal:` message that used to reach the author is gone.
+- **`rtr`** ends a proc and pops the word `move.w sr, -(sp)` pushed, so the idiom is balanced. Added in fix
+  round B (not in the plan): `rtr` and `rte` REPLACE the condition codes the caller sees, so a conditional out
+  computed before them is not carried to the caller (`out_verify`); and inside a `move.w sr, -(sp)` bracket
+  `rtr` closes the bracket, as `move.w (sp)+, sr` does.
+- **`link` / `unlk`**: the stack model pairs them (a closed frame is balanced, a frame open at a return is
+  `[stack.unbalanced]`), and both charge the frame register. Added in fix round D (not in the plan): `link`'s
+  displacement is read as the signed extension word (`#$FFF8` is -8, as the 68000 reads it; a value outside
+  the word gives up instead of adding a second error), and a write of the frame register inside its own frame
+  (any write the register model knows, or a call not proven to preserve it) unpairs the `unlk`: that path's
+  depth is then unknown and is not judged.
+- **`reset`, `chk`, `trapv`** are plain instructions to the checks: no call edge (plan Open question 5; booked
+  `EMP-EXCEPTION-EDGE`). `chk` reads its operands and leaves the flags undefined; `trapv` falls through with
+  the flags it found. `stop` is not a terminator (it resumes). Words that used to be free are now mnemonics:
+  a comptime function named after one is refused by `[name.shadows-mnemonic]`; consts and labels are unaffected.
+- **Cycles** (Task 10): `exg` and A11's fixed-cost instructions have rows from the user's manual (Tables 8-6,
+  8-11, 8-12); `chk`, `trapv`, `stop` are `Unmodeled` on purpose. Remaining gaps booked `ISA-CYCLE-TABLE-GAPS`.
+- **Z80 `(nn)`** (Task 11): every `ld` with a 16-bit address field takes a link-time symbol (a `Value16Le`
+  fixup; out of range is a link error, never a truncation). `in a, (Sym)` / `out (Sym), a` (a one-byte port)
+  stay refused by name, and so does a bank-masked `(bankid(q))`. Added in the task (not in the brief's code):
+  a single Z80 register name in parentheses (`(b)`, `(c)`, `(a)`, ...) is refused on the symbol path, so a
+  proc named `b` beside `ld a, (b)` is not read as its address.
+- **The two walks.** `emp_isa_walk_m68k` demands every family of the shared 68000 table and fails if `.emp`
+  refuses any form the encoder accepts. Its `KNOWN_REFUSED` table, which began with 80 rows in 20 families,
+  was emptied task by task and removed in Task 9: the walk has no exception list. `emp_isa_walk_z80` does the
+  same for the Z80 and also replaces every 16-bit field by a link-time symbol; its `SYM_REFUSED` keeps exactly
+  `in mem` and `out mem` (the one-byte port; plan: no symbolic 8-bit Z80 operand). Its one other pin is the
+  two dead enum variants `LdIA` / `LdRA` (booked `ISA-Z80-DEAD-MNEMONICS`).
+- `sigil-isa` changed only in `instr_cycles` (Task 10); the AS front end did not change.
+
+## Task 12: whole-parcel proof (tip fcba640e)
+
+**Candidate.** `df -h /`: 225G free. `CARGO_TARGET_DIR=.target-land cargo build --release --locked -p sigil-cli
+-p sigil-harness --bins`; `sigil --version` names `fcba640e`, `tree: clean at capture`.
+
+**BN, the seven shipped shapes** (`scripts/step0_shapes_cmp.sh`, base `.a11-base-55c6ec32/sigil`):
+```
+SHAPE plain 142a39b9/850262 142a39b9/850262 SAME
+SHAPE debug 20acdb67/870606 20acdb67/870606 SAME
+SHAPE demo 4587df52/99980 4587df52/99980 SAME
+SHAPE demo_debug 37d66535/106981 37d66535/106981 SAME
+SHAPE config_a 2ce7438f/870972 2ce7438f/870972 SAME
+SHAPE config_b 128361b3/617715 128361b3/617715 SAME
+SHAPE lean f6b07847/798198 f6b07847/798198 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+**The three fixture rows** (a `cp -a` copy of the reference tree, `.git` link and `__pycache__` removed; deleted):
+```
+FIXTURE config-a-keystones-flipped SAME   (2ce7438f/870972)
+FIXTURE stress-evict SAME                 (e5098655/870606)
+FIXTURE stress-art SAME                   (d7b4acab/921722)
+```
+No `COULD NOT RUN`.
+
+**Aeon with the candidate** (a second copy of the reference tree outside every checkout, `SIGIL_BUILD` /
+`SIGIL_EMIT` = `.target-land/release/{sigil,emit_sound_blob}`, `NO_LINT` and `FAST` unset; no `NO_LINT` /
+`FAST` line in any log; copy deleted):
+```
+./build.sh              exit 0   emp_expect_fail: OK — 56/56 cases (54 comptime + 2 link)
+DEBUG=1 ./build.sh      exit 0   emp_expect_fail: OK — 56/56 cases (54 comptime + 2 link)
+./build.sh demo         exit 0   emp_expect_fail: OK — 56/56 cases (54 comptime + 2 link)
+DEBUG=1 ./build.sh demo exit 0   emp_expect_fail: OK — 56/56 cases (54 comptime + 2 link)
+```
+(aeon's own pytest lane in each: `4264 passed, 2 skipped, 43 deselected`.)
+
+**The strict landing run: pending, runs after the final review's fix wave** (controller ruling: a whole-branch
+review and one fix wave follow Task 12 and would invalidate it). Its expected count as Step 6 computes it at
+`fcba640e`: `git diff 55c6ec32..HEAD -- crates | grep -c '^+#\[test\]'` = 57, `grep -c '^-#\[test\]'` = 0, so
+**57 added** (to be recomputed on the final tip). Two things the later run must know:
+- Step 6's grep counts only `#[test]` at column 0. The same diff adds 6 more INDENTED `#[test]` (unit tests in
+  `mod tests` blocks: `grep -cE '^\+[[:space:]]+#\[test\]'` = 6), which the landing run's suite will count:
+  the observed total should be the baseline + 63, not + 57, unless something else differs.
+- Master has moved past `10dcf37a` WITH code: sigil master `573930be` carries 6 commits, among them
+  `6490452c`, `8d9390fd`, `7500a887` (`crates/sigil-frontend-emp/src/context.rs`, `z80_bus.rs`; 8 new indented
+  unit tests, `walker_tests`). Step 6 then says to rebase first and use the count that landing recorded; no
+  landing count newer than A10's 6217 is recorded on master (`docs/QUEUE.md` and the step A piece 1 note were
+  read), so the baseline for the later run is the overseer's call.
+
+**Whole-tree evidence in place of the landing run** (controller ruling 2): the full suite of every crate the
+parcel touched, `--no-fail-fast`, `CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-a11/.target-land`,
+`AEON_DIR` / `ORACLE_DIR` set, no `NO_LINT` / `FAST`; totals are every `test result:` line summed:
+
+| crate | suites | passed | failed | ignored |
+|---|---|---|---|---|
+| `sigil-frontend-emp` | 149 | 2907 | 0 | 0 |
+| `sigil-harness` | 70 | 524 | 0 | 2 |
+| `sigil-cli` | 203 | 1029 | 0 | 2 |
+| `sigil-isa` | 16 | 152 | 0 | 0 |
+| **total** | **438** | **4612** | **0** | **4** |
+
+Every crate exited 0. The four ignored are pre-existing and named by their own reasons (`secondary_pin_classes_match_the_hand_typed_baseline`
+RETIRED by Wave-B B-0; `measure_real_sound_tables_z80_through_seam2` needs `SEAM2_REGION_AEON`;
+`measure_the_tree_named_by_env` and `sigil_diff_reports_byte_identity` measure another tree); they are the
+landing run's usual 4 ignored. No `skip:` line in any log. `cargo clippy --workspace --all-targets -- -D warnings`
+exit 0 (no code edit in Task 12).
+
+**The two walks, final** (from the `sigil-harness` run above):
+```
+     Running tests/emp_isa_walk_m68k.rs
+test the_walk_can_see_a_refusal ... ok
+test the_walk_demands_every_family_of_the_shared_table ... ok
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+     Running tests/emp_isa_walk_z80.rs
+test the_walk_can_see_a_refusal ... ok
+test the_walk_demands_every_z80_mnemonic ... ok
+test every_16_bit_z80_field_takes_a_link_time_symbol ... ok
+test emp_assembles_every_z80_instruction_the_shared_encoder_accepts ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+```
+`emp_assembles_every_68000_instruction_the_shared_encoder_accepts` passing means `.emp` assembles all 1527
+distinct 68000 instructions the encoder accepts (no exception list); the Z80 walk, all 538, and every 16-bit
+field but the one-byte port of `in` / `out` with a symbol.
+
+**The differential, re-measured** (`frontend_differential -- --nocapture`, 7 passed): `TOTAL n=155292 same=5207
+refuse=149345 excluded=740 disagree=0`; exclusions `bit-number-past-width` 186, `emp-requires-a-size-suffix` 393,
+`emp-no-implicit-variant` 119, `emp-label-operand-gap` 33, `branch-b-suffix` 3, `unsized-branch-aeon-pin` 3,
+`sized-swap` 3. `EMP-FRONTEND-DIFF-GAPS` rewritten to these.
+
+**Per task: golden test, check test, RF transcript** (golden tests in `crates/sigil-harness/tests/emp_a11_golden.rs`,
+check tests in `crates/sigil-frontend-emp/tests/a11_checks.rs` unless named otherwise):
+
+| Task | Golden | Check | RF transcript |
+|---|---|---|---|
+| 1 walks | (the walks are the test) `emp_isa_walk_m68k`, `emp_isa_walk_z80` | `the_walk_can_see_a_refusal` (both) | "Task 1: the two walks" |
+| 2 arithmetic, `exg` | `the_extended_and_decimal_arithmetic_assembles`, `exg_assembles_with_and_without_its_suffix` | `the_new_arithmetic_writes_its_destination_register`, `each_new_arithmetic_word_is_charged_with_its_destination` | "Task 2", "Batch B fix round 1" |
+| 3 `rtr` | `rtr_assembles`, `a_size_suffix_the_instruction_lacks_is_refused` | `rtr_ends_a_proc_and_pops_the_saved_ccr_word`, `rtr_replaces_the_condition_codes_a_conditional_out_reads`, `rtr_restores_the_saved_condition_codes`; `out_verify.rs` `rtr_` / `rte_does_not_carry_the_computed_flags_to_the_caller` | "Task 3", "Batch B fix round 1" |
+| 4 `usp` moves | `the_usp_moves_assemble` | `usp_is_an_operand_of_the_two_moves_only`, `a_flag_result_survives_a_usp_move`, `a_conditional_out_reads_the_flags_through_a_usp_move`, `preserves_ccr_holds_across_a_usp_move`; `usp_reserved.rs` | "Task 4", "Batch C fix round 1" |
+| 5 ccr, `movem` pc | `the_ccr_forms_assemble`, `movem_loads_from_a_pc_relative_source`, `movem_to_a_pc_relative_destination_is_refused` | `the_ccr_writes_are_flag_writes_not_mask_writes`, `movem_from_a_pc_relative_source_writes_its_list` | "Task 5" |
+| 6 `link` / `unlk` | `link_and_unlk_assemble` | `a_frame_is_balanced_only_when_it_is_closed`, `a_frame_op_leaves_the_condition_codes_alone`, `a_link_displacement_is_its_signed_word`, `writing_the_frame_register_inside_its_frame_unpairs_the_unlk` | "Task 6", "Batch D fix round 1" |
+| 7 `stop`, sr immediates | `stop_and_the_sr_immediates_assemble` | `every_sr_write_form_is_an_undeclared_mask_write`, `stop_cannot_hide_behind_preserves_sr`, `the_sr_writes_reach_the_flags_as_their_immediate_says`; `sigil-cli` `sr_undeclared_gate.rs` `a_stop_stops_the_gated_build` | "Task 7" |
+| 8 `reset` | `reset_assembles` | `reset_leaves_registers_flags_and_flow_alone` | "Task 8" |
+| 9 `chk` / `trapv` | `chk_and_trapv_assemble`, `chk_assembles_with_distinct_registers_in_every_field` | `chk_trapv_and_reset_are_plain_instructions_to_the_checks`, `chk_reads_its_operands_and_leaves_the_flags_undefined`, `trapv_falls_through_with_the_flags_it_found`, `a_const_or_label_named_after_a_new_mnemonic_is_still_a_name` | "Task 9" |
+| 10 cycles | `sigil-isa` `a11_rows_match_tables_8_6_8_11_and_8_12` | `sigil-isa` `the_trapping_and_waiting_instructions_are_unmodeled`; `sigil-frontend-emp` units `off_table_forms_refuse`, `an_off_table_68k_op_is_unknown` (moved off `link`) | "Task 10" |
+| 11 Z80 `(nn)` | `a11_z80_mem_sym.rs` `a_forward_label_is_a_z80_memory_operand`, `three_sides_agree_on_a_link_time_address_with_two_distinct_bytes` | `a_symbolic_port_is_refused_not_truncated`, `a_register_name_is_not_a_link_time_address`, `the_neighbouring_spellings_stay_named_refusals`; walk `every_16_bit_z80_field_takes_a_link_time_symbol` | "Task 11" |
+
+**QUEUE.** Every booked row checked present and re-read against the tree (`ISA-Z80-DEAD-MNEMONICS`,
+`EMP-Z80-SYMBOLIC-BYTE-OPERAND` (its message was stale after Task 11: a line added with the current one),
+`EMP-IMM-REGISTER-WORD`, `EMP-USP-CCR-SURFACE` (closed), `EMP-LINK-UNSIGNED-DISPLACEMENT`, `EMP-LINK-FRAME-BOUNDS`
+(its last paragraph corrected: the stack check runs before the closure exists), `EMP-EXCEPTION-EDGE`,
+`ISA-CYCLE-TABLE-GAPS`). Added: `EMP-ROXL-SYMBOLIC-COUNT-MESSAGE` (re-probed: `roxl.w` / `roxr.w #Sym, d1` say
+`unsupported form: Roxl immediate count must be 1..=8, got 0`), `EMP-CCR-BRACKET-LINEAR` and
+`EMP-RTR-STACK-UNDERFLOW` (task-review findings, probed at `fcba640e`), and `STEP0-A11-INSTRUCTION-SET`
+(built, awaiting landing). `EMP-FRONTEND-DIFF-GAPS` rewritten with the counts above.
