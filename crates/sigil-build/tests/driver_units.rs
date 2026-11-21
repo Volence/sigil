@@ -27,10 +27,9 @@ use sigil_build::diag::render as diag_render;
 use sigil_build::map_placement;
 pub use sigil_ir::{Fragment, Section};
 
-/// The inapplicable-guard allowlist the game-as-data driver enforces: `build_project_in`
-/// passes `&[]` to `enforce_inapplicable_allowlist_against` (it was `native.rs`'s
-/// `STAGE1_INAPPLICABLE_GUARDS`, already empty, before Task 11).
-pub const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
+/// The inapplicable-guard allowlist the game-as-data driver enforces, its own constant
+/// (`driver::INAPPLICABLE_GUARDS`; `native.rs`'s `STAGE1_INAPPLICABLE_GUARDS` before Task 11).
+pub use sigil_build::driver::INAPPLICABLE_GUARDS as STAGE1_INAPPLICABLE_GUARDS;
 
 #[cfg(test)]
 mod allowlist_tests {

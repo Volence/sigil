@@ -459,6 +459,61 @@ pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> R
 /// Refused: a description that declares a derived name; a game define that redeclares an
 /// engine one; a shape override of a name neither description declares (a typo there
 /// would otherwise mint a define silently); a map row that redeclares any earlier one.
+/// The inapplicable-guard allowlist every build enforces
+/// (`guards::enforce_inapplicable_allowlist_against`): `(guard, reason)` rows for drift
+/// guards that may fold to Poison. Empty since the bg/camera flip; a non-empty row is a
+/// reviewed exception, and a stale row is refused.
+pub const INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
+
+/// The game's placement map, read for shape `shape_name`. A game homes its map
+/// `[defines]` rows there, so an ABSENT file is a missing config, not an empty one.
+fn read_map(map_path: &Path, shape_name: &str) -> Result<String, BuildError> {
+    sigil_span::read_set::read_to_string(map_path).map_err(|e| {
+        ctx(format!(
+            "shape `{shape_name}`: read the game's placement map {}: {e}. A game supplies the file \
+             (an empty one declares no rows)",
+            map_path.display()
+        ))
+    })
+}
+
+/// Which description declared the define `key` of `shape`'s env, as a phrase a diagnostic
+/// can paste in: the same precedence [`merged_defines`] applies (a derived name is the
+/// features', a shape override wins over the description that declared the default, and
+/// a name no description declares is the map's `[defines]` row).
+pub fn define_origin(p: &Project, shape: &ResolvedShape, key: &str) -> String {
+    let derived = ["SOUND_DRIVER_ENABLED", "DEBUG", "CRASH_REPORT"];
+    if derived.contains(&key) {
+        return format!("the features of {} [shapes.{}]", p.game_path.display(), shape.name);
+    }
+    let declared_by = if p.engine.defines.contains_key(key) {
+        Some(p.engine_path.display().to_string())
+    } else if p.game.defines.contains_key(key) {
+        Some(p.game_path.display().to_string())
+    } else {
+        None
+    };
+    // The nearest shape on the `extends` chain that sets `key` (`ResolvedShape::defines`
+    // has already folded the game's defaults in, so it cannot say who overrode what).
+    let mut overrider = None;
+    let mut cur = Some(shape.name.as_str());
+    while let Some(name) = cur {
+        let Some(s) = p.game.shapes.get(name) else { break };
+        if s.defines.contains_key(key) {
+            overrider = Some(name);
+            break;
+        }
+        cur = s.extends.as_deref();
+    }
+    match declared_by {
+        Some(desc) if overrider.is_some() => {
+            format!("{} [shapes.{}] (overriding {desc} [defines])", p.game_path.display(), overrider.unwrap_or_default())
+        }
+        Some(desc) => format!("{desc} [defines]"),
+        None => format!("{} [defines]", p.map_path().display()),
+    }
+}
+
 pub fn merged_defines(p: &Project, shape: &ResolvedShape, map_src: &str) -> Result<Vec<(String, i128)>, BuildError> {
     let f = shape.features;
     let derived: [(&str, i64); 3] =
@@ -509,9 +564,11 @@ pub fn merged_defines(p: &Project, shape: &ResolvedShape, map_src: &str) -> Resu
     let mut env: Vec<(String, i128)> = order.iter().map(|k| (k.clone(), out[k.as_str()] as i128)).collect();
     let origin = p.map_path().display().to_string();
     for (k, v) in crate::game_defines::parse_game_defines(map_src, &origin).map_err(ctx)? {
-        if env.iter().any(|(e, _)| *e == k) {
+        if let Some((_, old)) = env.iter().find(|(e, _)| *e == k) {
             return Err(BuildError::Desc(format!(
-                "[define.redeclared] {origin} [defines] declares `{k}`, which the descriptions already declare"
+                "[define.redeclared] {origin} [defines] declares `{k}` = {v}, which the descriptions already \
+                 declare (= {old}, {}); one name has one origin, so delete one of the two rows",
+                define_origin(p, shape, &k)
             )));
         }
         env.push((k, v));
@@ -548,8 +605,32 @@ fn pub_consts(p: &Project, path: &Path, seed: &[(String, i128)], what: &str) -> 
 /// constants module and the `VdpShadow` twin's `<prefix>_len`).
 fn engine_constants(p: &Project, defines: &[(String, i128)], twins: &[(String, i64)]) -> Result<Vec<(String, i64)>, BuildError> {
     let vals = pub_consts(p, &p.engine_dir.join(&p.engine.constants), defines, "engine constants")?;
-    let twin_names: std::collections::HashSet<&str> = twins.iter().map(|(n, _)| n.as_str()).collect();
-    Ok(vals.into_iter().filter(|(n, _)| !twin_names.contains(n.as_str())).collect())
+    without_twin_names(vals, twins, &p.engine_dir.join(&p.engine.constants))
+}
+
+/// The engine constants less the names a struct twin also produces (the twin's value is
+/// the one the AS side receives). Two spellings of one name are one fact only when they
+/// agree: a constant whose value differs from the twin's is refused naming both, never
+/// dropped silently (G0b Task 11 fix 1).
+fn without_twin_names(vals: Vec<(String, i64)>, twins: &[(String, i64)], constants: &Path) -> Result<Vec<(String, i64)>, BuildError> {
+    let twin: std::collections::HashMap<&str, i64> = twins.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+    let mut faults = Vec::new();
+    let mut out = Vec::new();
+    for (n, v) in vals {
+        match twin.get(n.as_str()) {
+            Some(t) if *t == v => {}
+            Some(t) => faults.push(format!("`{n}` = {v:#x} in {} but the struct twin lays it out as {t:#x}", constants.display())),
+            None => out.push((n, v)),
+        }
+    }
+    if faults.is_empty() {
+        Ok(out)
+    } else {
+        Err(BuildError::Desc(format!(
+            "[engine.constant-vs-twin] an engine constant a struct twin also produces disagrees with it: {}",
+            faults.join("; ")
+        )))
+    }
 }
 
 /// The engine structs' field offsets, under the AS spelling `<prefix>_<field>` and
@@ -1037,7 +1118,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let (adiags, tally) = sigil_link::check_link_asserts_tallied(&resolved, &stubs, &link_asserts);
     warnings.extend(collect_warnings_located(&|s| sources.locate(s), &[&adiags], None));
     let inapplicable = crate::guards::declared_chain_drift_verdict(&adiags, &|s| sources.locate(s)).map_err(ctx)?;
-    crate::guards::enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &[]).map_err(ctx)?;
+    crate::guards::enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, INAPPLICABLE_GUARDS).map_err(ctx)?;
     let census = crate::guards::GuardCensus::from_verdict(comptime_guards, &tally, &inapplicable).map_err(ctx)?;
     if run == Run::Check {
         return Ok(Outcome::Checked(CheckOutput { guards: census, warnings }));
@@ -1045,7 +1126,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
 
     // ── Link, check, emit. ──
     let mut listing = crate::emit::listing_from_resolved(&resolved, &stubs);
-    let define_rows = crate::game_defines::define_listing_rows(&defines, &[], &listing, &map_path.display().to_string()).map_err(ctx)?;
+    let define_rows = crate::game_defines::define_listing_rows_from(&defines, &listing, &|k| define_origin(p, &shape, k)).map_err(ctx)?;
     listing.extend(define_rows.iter().cloned());
     let z80_windows = crate::emit::z80_windows(&map, &resolved).map_err(ctx)?;
     let linked = sigil_link::link(&resolved, &stubs).map_err(|d| ctx(crate::guards::render_declared_chain("link", &d, &sources)))?;
@@ -1112,7 +1193,7 @@ fn plan(p: &Project, shape_name: &str, opts: &BuildOptions<'_>) -> Result<Plan, 
     let shape = describe::resolve_shape(&p.game, shape_name)?;
     let sound = shape.features.sound;
     let map_path = p.map_path();
-    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
+    let map_src = read_map(&map_path, shape_name)?;
     let defines = merged_defines(p, &shape, &map_src)?;
     let gate_shape = ResolvedShape { defines: defines.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(), ..shape.clone() };
 
@@ -1152,7 +1233,7 @@ pub fn name_env_report(
 pub fn shape_defines(p: &Project, shape_name: &str) -> Result<(ResolvedShape, Vec<(String, i128)>), BuildError> {
     let shape = describe::resolve_shape(&p.game, shape_name)?;
     let map_path = p.map_path();
-    let map_src = sigil_span::read_set::read_to_string(&map_path).map_err(|e| ctx(format!("read {}: {e}", map_path.display())))?;
+    let map_src = read_map(&map_path, shape_name)?;
     let defines = merged_defines(p, &shape, &map_src)?;
     Ok((shape, defines))
 }
@@ -1359,6 +1440,44 @@ mod tests {
         let none = project(GAME, &ENGINE.replace("as_feature_defines = [", "unused = [").replace("unused = [\n            { name = \"SND_ON\", when = \"sound\" },\n            { name = \"ISLAND\", when = \"debug || crash_report\" },\n            { name = \"KEYS\", when = \"HOTKEYS\" },\n        ]\n", ""));
         assert!(none.engine.as_feature_defines.is_empty(), "an engine whose AS tests no feature declares none");
         assert!(as_feature_defines(&none, &rs.features, &[]).unwrap().is_empty());
+    }
+
+    /// An engine constant a struct twin also produces is the twin's when the two agree, and
+    /// refused naming both when they do not (G0b Task 11 fix 1: it was dropped either way).
+    #[test]
+    fn an_engine_constant_that_disagrees_with_its_twin_is_refused() {
+        let twins = [("VDP_Shadow_len".to_string(), 0x18), ("Sst_len".to_string(), 0x40)];
+        let consts = |v: i64| vec![("VDP_Shadow_len".to_string(), v), ("RINGS".to_string(), 16)];
+        let ok = without_twin_names(consts(0x18), &twins, Path::new("engine/constants.emp")).expect("agreeing twin");
+        assert_eq!(ok, [("RINGS".to_string(), 16)], "the agreeing name is the twin's");
+        let err = without_twin_names(consts(0x1A), &twins, Path::new("engine/constants.emp"))
+            .expect_err("a disagreeing twin must be refused")
+            .to_string();
+        assert!(
+            err.contains("[engine.constant-vs-twin]") && err.contains("`VDP_Shadow_len` = 0x1a") && err.contains("0x18")
+                && err.contains("engine/constants.emp"),
+            "names the constant, both values and the file: {err}"
+        );
+    }
+
+    /// A define's origin names the description that declared it (G0b Task 11 fix 1: the
+    /// build passed no built-in list, so every define read as the map's `[defines]`): the
+    /// features for a derived name, the engine's or game's `[defines]` for a default, the
+    /// nearest `[shapes.<row>]` on the `extends` chain for an override, the map otherwise.
+    #[test]
+    fn a_define_origin_names_the_description_that_declared_it() {
+        let p = project(GAME, ENGINE);
+        let release = describe::resolve_shape(&p.game, "release").unwrap();
+        let keys = describe::resolve_shape(&p.game, "keys").unwrap();
+        assert_eq!(define_origin(&p, &release, "DEBUG"), "the features of games/g/game.toml [shapes.release]");
+        assert_eq!(define_origin(&p, &release, "HOTKEYS"), "engine/engine.toml [defines]");
+        assert_eq!(define_origin(&p, &release, "RINGS"), "games/g/game.toml [defines]");
+        assert_eq!(
+            define_origin(&p, &keys, "HOTKEYS"),
+            "games/g/game.toml [shapes.keys] (overriding engine/engine.toml [defines])"
+        );
+        assert_eq!(define_origin(&p, &keys, "RINGS"), "games/g/game.toml [shapes.keys] (overriding games/g/game.toml [defines])");
+        assert_eq!(define_origin(&p, &release, "MAP_ONLY"), "games/g/map.toml [defines]");
     }
 
     /// `struct_tail_equates` rows (G0b Task 11; `SST_interact` was a literal) must name a

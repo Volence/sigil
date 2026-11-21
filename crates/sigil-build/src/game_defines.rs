@@ -339,6 +339,18 @@ pub fn define_listing_rows(
     published: &[sigil_link::ListingSymbol],
     map_origin: &str,
 ) -> Result<Vec<sigil_link::ListingSymbol>, String> {
+    define_listing_rows_from(defines, published, &|key| define_origin(key, builtin, map_origin))
+}
+
+/// [`define_listing_rows`] with each define's origin phrase supplied by the caller: the
+/// game-as-data driver knows which description declared each row (the shape's features,
+/// `engine.toml` / `game.toml` `[defines]`, a `[shapes.<row>]` override, or the map's
+/// `[defines]`), which a built-in table cannot say.
+pub fn define_listing_rows_from(
+    defines: &[(String, i128)],
+    published: &[sigil_link::ListingSymbol],
+    origin: &dyn Fn(&str) -> String,
+) -> Result<Vec<sigil_link::ListingSymbol>, String> {
     use std::collections::HashMap;
 
     let by_name: HashMap<&str, &sigil_link::ListingSymbol> =
@@ -370,7 +382,7 @@ pub fn define_listing_rows(
                  worth\", so one name must have one origin, sigil will not silently \
                  pick either row. Delete the define, or rename one of the two \
                  declarations",
-                define_origin(key, builtin, map_origin),
+                origin(key),
                 published_origin(sym),
             ));
             continue;
@@ -380,7 +392,7 @@ pub fn define_listing_rows(
                 "define `{key}` = {value} (declared by {}) does not fit the `.lst` \
                  equate word: a listing value is 32 bits, and a truncated row would \
                  read as a real answer. Narrow the declaration",
-                define_origin(key, builtin, map_origin),
+                origin(key),
             ));
             continue;
         }

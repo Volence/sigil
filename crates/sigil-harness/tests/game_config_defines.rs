@@ -35,11 +35,16 @@ fn release(tmp: &tempfile::TempDir) -> Result<Vec<(String, i128)>, String> {
     shapes::shape_defines(tmp.path(), &shapes::Shape::new("g", "release"))
 }
 
-/// The rows the descriptions alone state for `release` (the merge over an empty map).
-fn described(tmp: &tempfile::TempDir) -> Vec<(String, i128)> {
-    let p = shapes::Shape::new("g", "release").project(tmp.path()).expect("project");
-    let shape = sigil_build::describe::resolve_shape(&p.game, "release").expect("shape");
-    driver::merged_defines(&p, &shape, "").expect("described rows")
+/// The rows the fixture's descriptions state for `release`, pinned: the three the shape's
+/// features derive (`debug = false, crash_report = true, sound = false`), then the
+/// engine's `MAX_RING_BUFFER = 128` (`project_with_map`). Pinned rather than recomputed
+/// with `merged_defines`, so a merge that dropped or reordered a row cannot pass by
+/// comparing the merge with itself.
+const DESCRIBED: &[(&str, i128)] =
+    &[("SOUND_DRIVER_ENABLED", 0), ("DEBUG", 0), ("CRASH_REPORT", 1), ("MAX_RING_BUFFER", 128)];
+
+fn described() -> Vec<(String, i128)> {
+    DESCRIBED.iter().map(|(k, v)| (k.to_string(), *v)).collect()
 }
 
 fn as_pairs(defines: &[(String, i128)]) -> Vec<(&str, i128)> {
@@ -54,7 +59,7 @@ fn a_game_declared_row_reaches_the_shape_define_env() {
     let merged = release(&tmp).expect("shape defines");
     let pairs = as_pairs(&merged);
     assert!(pairs.contains(&("SCANLINE_CAPS", 20)), "game row missing: {pairs:?}");
-    let builtin = described(&tmp);
+    let builtin = described();
     for (k, v) in &builtin {
         assert!(pairs.contains(&(k.as_str(), *v)), "described row ({k}, {v}) lost in the merge: {pairs:?}");
     }
@@ -70,7 +75,9 @@ fn a_game_row_shadowing_a_builtin_is_a_loud_error_naming_both_sources() {
     let err = release(&tmp).expect_err("shadowing a described row must fail");
     assert!(err.contains("MAX_RING_BUFFER"), "error must name the key: {err}");
     assert!(err.contains("map.toml"), "error must name the game-config source: {err}");
-    assert!(err.contains("descriptions already declare"), "error must name the described source: {err}");
+    assert!(err.contains("descriptions already"), "error must say the descriptions declare it: {err}");
+    assert!(err.contains("engine/engine.toml [defines]"), "error must name the described source file: {err}");
+    assert!(err.contains("= 64") && err.contains("= 128"), "error names both values: {err}");
 }
 
 #[test]
@@ -87,7 +94,7 @@ fn a_map_without_a_defines_table_yields_exactly_the_builtin_rows() {
     // The byte-neutral default: region/placement keys only. The merged env must equal
     // the described rows verbatim.
     let tmp = project_with_map("fill = 0x00\n[[region]]\nname = \"rom\"\nlma_base = 0\nsize = 0x400000\nkind = \"rom\"\n");
-    assert_eq!(release(&tmp).expect("shape defines"), described(&tmp));
+    assert_eq!(release(&tmp).expect("shape defines"), described());
 }
 
 #[test]
@@ -100,6 +107,8 @@ fn a_tree_with_no_game_map_fails_naming_the_file() {
     let err = release(&tmp).expect_err("a shape must not walk without its game config");
     assert!(err.contains("games/g"), "error must name the game: {err}");
     assert!(err.contains("map.toml"), "error must name the missing FILE: {err}");
+    assert!(err.contains("shape `release`"), "error must name the shape: {err}");
+    assert!(err.contains("supplies the file"), "error must tell a synthetic tree what to do about it: {err}");
 }
 
 #[test]
@@ -107,7 +116,7 @@ fn an_empty_game_map_file_is_enough_to_walk() {
     // The other arm of the same rule: a synthetic tree opts in by SUPPLYING the file.
     // An empty one declares no game rows and the merge is exactly the described rows.
     let tmp = project_with_map("");
-    assert_eq!(release(&tmp).expect("shape defines"), described(&tmp));
+    assert_eq!(release(&tmp).expect("shape defines"), described());
 }
 
 #[test]

@@ -398,9 +398,9 @@ fn a_residual_as_equate_named_like_a_define_refuses_the_build_naming_both_origin
     };
     assert!(err.contains(key), "the refusal does not name the define: {err}");
     assert!(
-        err.contains("games/demo/map.toml [defines]"),
-        "the refusal does not name the DEFINE's origin (demo declares it in its map's \
-         [defines]; the profile-driven driver named its own native.rs literal): {err}"
+        err.contains("games/demo/game.toml [defines]"),
+        "the refusal does not name the DEFINE's origin (demo declares MAX_RING_BUFFER in \
+         its game.toml [defines], not in its map): {err}"
     );
     assert!(
         err.contains("the program's own equate") && err.contains("$00000005"),
