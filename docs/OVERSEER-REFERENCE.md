@@ -937,6 +937,11 @@ below requires zero `skip:` lines and this is not a missing reference.
     runner's scratch logs (`gates.log`, the per-shape build logs) are copied into the span
     under `----- ORACLE G0A SCRATCH LOG <name>` before the scratch is removed. Read them; do not
     re-pin pins that did not move. (QUEUE `ORACLE-G0A-RUNNER-BUILD-EXIT` asks Oracle for exit 2.)
+    **A landing run with any untracked or modified file in the sigil checkout makes every export
+    say `"tree": "clean-sources"`, so the lane goes RED on all five exports while all five ROMs
+    match** (measured 2026-11-21: an untracked `.superpowers/` folder did it). That signature,
+    ROMs OK, every export FAILED, and a 4-line diff in `tool.tree`, means "clean the tree and
+    re-run", never "re-pin" (QUEUE `LANDING-ORACLE-LANE-PROVENANCE`).
   - Controls: `crates/sigil-harness/tests/landing_verdict.rs`, the `oracle export lane` block
     (run mode against a stub runner: OK, RED, three COULD NOT RUN shapes, the refusal, the
     opt-out, DIRTY, and the `--verdict-only` readings).

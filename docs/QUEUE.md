@@ -2683,6 +2683,35 @@ until its row is removed.
   copied into the landing log), but the runner's own exit code still conflates the two. Also for oracle: the runner's
   `cargo test` runs without `--locked`, so a stale `Cargo.lock` in the checkout could be rewritten (dirtying it).
 
+## ORACLE-G0A-NORMALISE-TOOL-TREE
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  owner: **oracle** (oracle is read-only from sigil)
+- every `empyrean.build` export records `tool.tree`, the build-time state of the sigil checkout that compiled the
+  binary (`clean`, `clean-sources`, `dirty`, `unknown`; `crates/sigil-cli/src/tree_class.rs`, written by
+  `crates/sigil-link/src/export/inputs.rs`). Oracle's `tools/g0a-real-exports.sh` normaliser blanks `tool.revision`
+  and `inputsSha256` but not `tool.tree`, so its pins say `"clean"` and any landing built in a checkout with an
+  untracked or modified file is RED on all five exports with all five ROMs OK. Measured at sigil 601be264: a 4-line
+  diff, `"tree": "clean"` -> `"clean-sources"`, nothing else; master 573930be built clean reproduces every pin. The
+  normaliser should blank `tool.tree` as it blanks the revision (or pin it on purpose and say so).
+
+## LANDING-ORACLE-LANE-PROVENANCE
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  project: `G0B-GAME-AS-DATA`
+- the lane's RED text names two causes (sigil moved bytes; the aeon reference differs) and misses a third: build
+  provenance, the export's `tool.tree` saying `clean-sources` because the sigil tree that built the binary was not
+  clean. The RED text should name it (signature: ROMs OK, every export FAILED, only `tool.tree` differs: clean the
+  tree and re-run, never re-pin), and the lane should warn or refuse up front when the sigil tree is not clean
+  (the stamp already records `sigil branch … (DIRTY)`).
+
+## LANDING-ORACLE-LANE-STALE-BINARY
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  project: `G0B-GAME-AS-DATA`
+- the lane hands the runner `SIGIL_BUILD_RESOLVED`, which the preflight builds only when absent. A full run's strict
+  span rebuilds it before the lane, but a `--scoped -- -p sigil-span` run does not: fix round 1's scoped OK at
+  4518d037 used the d3440875 binary. The lane should make sure the binary was built from the current tip and tree
+  state (rebuild `sigil` itself, or compare the binary's own `--version` revision and tree against the stamp and
+  refuse a mismatch).
+
 ## LANDING-ORACLE-LANE-MINORS
 
 - state: open 2026-11-21 (oracle-lane review, fix round 1, the Minors not fixed in that round)  size: `S`
