@@ -691,3 +691,122 @@ committed rte HEAD (`"rte"` back in the list): `rte_does_not_carry_the_computed_
 TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2877 passed, 0 failed, 0 ignored;
 `frontend_differential` 7 passed; harness walk + golden + coverage 3 suites, 11 passed. Clippy clean.
 BN on both commits: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Batch C fix round 1: the usp moves and the flag checks (I1), `movem usp(pc)` (I2), minors (code commit 1d48a0b8)
+
+**I1.** `.emp` gives the checks the written word `move`, and `m68k_mnemonic` has no spelling that maps to
+`MoveToUsp`/`MoveFromUsp`, so there is no refined mnemonic to hand over. The operand carries the distinction
+instead. `out_verify::is_usp_move` is true for a `move` holding `CodeOperand::Usp`, which the lowering allows
+only in the two moves. It becomes a `Move => Untouched` arm in `carry_role` and `zero_role`, and it is added to
+`cc_inert_data_op`, which now takes the operands. That one allowlist feeds `cc_transparent` (the `out_verify`
+flag tracker, the `flag_check` guard walk) and `ccr_effect` (the `preserves(sr.ccr)` slice). `branch_const`'s
+separate copy of the allowlist gets the same clause.
+
+**I2 (ruling branch B).** An operand name reaches a symbol by more than one route: the immediate evaluator's label
+fallback (`fallback_label`, `#usp`) and the spelled PC-relative target (`map_pcrel_operand`,
+`scope.resolve_ref`, `lea usp(pc)`). The indirect spellings stop at `unknown name`. Since there is no single choke
+point, I fixed only the new `movem` path: a `PcRel`/`PcRelIdx` target named `usp` is refused with the Task 4 guard's text.
+`EMP-IMM-REGISTER-WORD` is rewritten from a probe of 31 spellings, run in the frontend_diff frame with `usp = $1234`:
+
+```
+move.l #usp, d0                => Ok([20, 3C, 00, 00, 12, 34, 4E, 75])
+move.l #usp+1, d0              => Ok([20, 3C, 00, 00, 12, 35, 4E, 75])
+lea usp(pc), a0                => Ok([41, FA, 12, 32, 4E, 75])
+jmp usp(pc)                    => Ok([4E, FA, 12, 32, 4E, 75])
+move.l usp(pc), d0             => Ok([20, 3A, 12, 32, 4E, 75])
+pea usp(pc)                    => Ok([48, 7A, 12, 32, 4E, 75])
+lea usp(pc,d0.w), a0           => Err(link: (d8,PC,Xn) displacement to `usp` out of range (4658))
+movem.l usp(pc), d0-d1         => Err(["[operand.usp-unsupported] ..."])
+movem.l usp(pc,d2.w), d0-d1    => Err(["[operand.usp-unsupported] ..."])
+lea (usp), a0 / -(usp) / (usp)+ / usp(a0) / 4(usp) / usp+0 / 0+usp / dc.l usp / dc.w usp
+                               => Err(["unknown name `usp`", "instruction dropped, ..."])
+data p: u32 = usp / *u8 = usp  => Err(["unknown name `usp`"])
+move.l (usp).w, d0 / (usp).l   => Err(["[operand.usp-unsupported] ... never a symbol ...", "instruction dropped, ..."])
+move.l usp, d0 / lea usp, a0 / jsr usp => Err(["[operand.usp-unsupported] ..."])
+move a0, usp                   => Err(["instruction needs an explicit size suffix (.b/.w/.l)"])
+move.l a0, usp / move.l usp, a0 => Ok([4E, 60, 4E, 75]) / Ok([4E, 68, 4E, 75])
+```
+
+**Minors.** The golden usp/ccr vectors now use distinct non-zero registers (`a3`/`a5` → `4E63`/`4E6D`;
+`move.w d3, ccr` → `44C3`). Both `movem` vectors are three-sided: `(d16,pc)` is `4CBA 0018 FFFA` and
+`(d8,pc,a2.w)` is `4CFB 0018 A0FA`, and the shared encoder agreed with both literals on the first run. A new pin covers
+the PC-relative `movem` destination (`illegal destination EA: (d...` on `.emp`, refused on the AS route). That
+pin and the register changes are test-only, on behaviour that already existed, so they have no red. The dead ccr
+alternative in the `emp-lacks-sr-ccr-form` predicate is removed, and FD is still green (7 passed). The stale
+`EMP-USP-CCR-SURFACE` line is corrected: it listed bare `move a0, usp` and said the ccr half was Task 5's.
+
+**RF step 1, red before implementing** (the four new tests, against tip 88112c25 plus the tests):
+
+```
+test a_flag_result_survives_a_usp_move ... FAILED
+test preserves_ccr_holds_across_a_usp_move ... FAILED
+test a_conditional_out_reads_the_flags_through_a_usp_move ... FAILED
+thread 'a_flag_result_survives_a_usp_move' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:163:13:
+assertion `left == right` failed: carry across `move.l a0, usp`: [FlagFiring { proc: "P", callee: "Queue", flag: "carry", ..., kind: Unused, name: None }]
+  left: true
+ right: false
+thread 'preserves_ccr_holds_across_a_usp_move' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:189:5:
+  left: [(true, "[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)` but the condition codes are not provably the caller's at return: `move` affects the condition codes outside the bracket (...)")]
+ right: []
+thread 'a_conditional_out_reads_the_flags_through_a_usp_move' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:181:5:
+flags across `move.l a0, usp`
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+test a_movem_pc_relative_source_named_usp_is_refused ... FAILED
+thread 'a_movem_pc_relative_source_named_usp_is_refused' panicked at crates/sigil-frontend-emp/tests/usp_reserved.rs:50:18:
+assembled to [4C, FA, 00, 03, 12, 30, 4E, 75]; expected a refusal:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out
+```
+
+The movem red is the bug itself: `movem.l usp(pc), d0-d1` linked against the outside `usp`, giving `4CFA 0003 1230`.
+
+**RF step 2, green.** `a11_checks` 11 passed, `usp_reserved` 7 passed, golden 8 passed.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each one; each restored with
+`git restore --source=HEAD -- <file>` and re-run green: a11_checks 11, usp_reserved 7).
+
+M1, the carry arm:
+```
+ crates/sigil-frontend-emp/src/flag_check.rs | 3 ---
+-        // MOVE USP (`move.l aN, usp` / `move.l usp, aN`, spelled `move`):
+-        // "Condition Codes: Not affected."
+-        Move if crate::out_verify::is_usp_move("move", ops) => Untouched,
+test a_flag_result_survives_a_usp_move ... FAILED
+assertion `left == right` failed: carry across `move.l a0, usp`: [FlagFiring { ..., flag: "carry", ..., kind: Unused, name: None }]
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+M1b, the zero arm:
+```
+ crates/sigil-frontend-emp/src/flag_check.rs | 1 -
+-        Move if crate::out_verify::is_usp_move("move", ops) => Untouched,
+test a_flag_result_survives_a_usp_move ... FAILED
+assertion `left == right` failed: zero across `move.l a0, usp`: [FlagFiring { ..., flag: "zero", ..., kind: Unused, name: None }]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out
+```
+
+M2, the shared allowlist clause:
+```
+ crates/sigil-frontend-emp/src/out_verify.rs | 2 +-
+-    ) || is_usp_move(mnem, ops)
++    )
+test preserves_ccr_holds_across_a_usp_move ... FAILED
+test a_conditional_out_reads_the_flags_through_a_usp_move ... FAILED
+  left: [(true, "[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)` but ... `move` affects the condition codes outside the bracket ...")]
+ right: []
+flags across `move.l a0, usp`
+test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+M3, the movem refusal:
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-            if target == "usp" {
++            if false {
+test a_movem_pc_relative_source_named_usp_is_refused ... FAILED
+thread 'a_movem_pc_relative_source_named_usp_is_refused' panicked at crates/sigil-frontend-emp/tests/usp_reserved.rs:50:18:
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2881 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 12 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
