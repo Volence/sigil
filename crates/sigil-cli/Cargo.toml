@@ -34,3 +34,10 @@ sigil-backend-m68k = { path = "../sigil-backend-m68k" }
 # The closure gate re-derives this binary's dependency graph from cargo at test
 # time and holds the banner to it.
 serde_json = { version = "1", features = ["preserve_order"] }
+# `tests/no_game_names.rs` parses every source file the driver links so its
+# `#[cfg(test)]` exclusion is structural (an item, not a line range) and its line
+# numbers are real (`span-locations`). Already in the lock through serde_derive;
+# dev-only, so no edge in the shipping binary's graph.
+syn = { version = "2", features = ["full", "visit-mut"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"

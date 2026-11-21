@@ -300,6 +300,8 @@ dependencies = [
 name = "sigil-cli"
 version = "0.1.0"
 dependencies = [
+ "proc-macro2",
+ "quote",
  "serde_json",
  "sigil-backend-m68k",
  "sigil-build",
@@ -310,6 +312,7 @@ dependencies = [
  "sigil-ir",
  "sigil-link",
  "sigil-span",
+ "syn",
  "tempfile",
 ]
 

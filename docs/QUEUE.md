@@ -2693,6 +2693,23 @@ until its row is removed.
      lint bar, so a LANDING would have caught them; the prep commits' per-commit evidence (tests + step0) did not
      run clippy, so each commit carried them silently. Per-commit evidence on a parcel should include the lint bar.
 
+## G0B-NO-GAME-NAMES-RESIDUE
+
+- state: open 2026-11-20 (found in G0b Task 12)  size: `S`  project: `G0B-GAME-AS-DATA`
+- The no-game-names gate (`crates/sigil-cli/tests/no_game_names.rs`) scans the module trees of `sigil-cli`'s
+  normal-dependency closure (15 crates, 162 files at Task 12). What it leaves open:
+  1. **Five allow-list rows, exit G0c.** The 12 sound-seam literals in `sigil-harness/src/seam2.rs` (4 rows) and
+     `seam1.rs` (1 row) stay until the sound seams go (owner Q3). Each row carries an exact hit count, so G0c's
+     removal turns each row stale (red) and the row must be deleted with the code.
+  2. **`sigil-harness` is both a library the driver links and the golden/test harness.** `test_support` (pub,
+     not `cfg(test)`, ~3000 lines) is in the driver's closure only because integration tests in two crates need
+     it; Task 12 moved its two game-naming pieces out by hand (a test-local const, a caller-named fixture game)
+     and moved `freeze_journal` beside the `refreeze` binary (compiled by `#[path]` there and in the
+     `freeze_step_gap` gate). A `test-support` cargo feature or a separate harness crate would make "not the
+     driver's code" structural instead of a convention the gate polices.
+  3. **Comments are not scanned.** 28 doc-comment game-id hits (and plain `//` comments) remain in the closure;
+     they are prose examples, not driver decisions. The gate prints the doc count, ungated.
+
 ## G0B-AS-FEATURE-DEFINES-INERT
 
 - state: open 2026-11-20 (found in G0b Task 11; controller ruling in fix round 1)  size: `S`  project: `G0B-GAME-AS-DATA`

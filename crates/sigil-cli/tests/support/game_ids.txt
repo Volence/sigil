@@ -1,0 +1,13 @@
+# The ids the no-game-names gate (tests/no_game_names.rs) scans for.
+#
+# GENERATED, not hand-written: every `game` row with an `aeon:` source is one aeon
+# `games/<dir>/game.toml`, its `id` field; every `engine` row is the `engine.suite_path`
+# those descriptions name. `tests/game_ids_fixture.rs` re-derives these rows from an aeon
+# tree (the A8 `AEON_DIR` guard) and fails, printing the rows to paste, when they disagree.
+# `cherub` is the one row not in aeon: Cherub, the minimal game G0b builds in its own repo.
+#
+# <kind> <id> <source>
+engine aeon aeon:games/*/game.toml#engine.suite_path
+game demo aeon:games/demo/game.toml
+game sonic4 aeon:games/sonic4/game.toml
+game cherub cherub-repo
