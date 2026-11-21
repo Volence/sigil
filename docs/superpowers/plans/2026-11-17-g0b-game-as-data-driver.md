@@ -20,7 +20,7 @@ description: "Empyrean v2 step 0, G0b: games and the engine described as TOML (g
 - **Not byte-changing through cutover.** The old driver keeps building the 7 shapes (s4, s4 debug, demo, demo debug, config A, config B, lean) byte-identical (`scripts/step0_shapes_cmp.sh`, `SHAPES 7/7 IDENTICAL`) at every commit. A byte that moves is a separate explained commit with its own proof, never folded into a task.
 - The descriptions hold only facts the Rust driver holds today. No per-zone scope, asset pipeline, shape count, capacity or engine/game contract change (anti-goal; step 4 decides those).
 - **No engine fact in a game's file.** If it is true for every game on Aeon it goes in `engine/engine.toml`.
-- **No port history in either format:** no frozen size tables, no AS definedness defines, no even-alignment rows, no seam name lists.
+- **No port history in either format:** no frozen size tables, no port per-file AS gate defines (the `SIGIL_EMP_*` family and the deleted `extra_as_defines`), no even-alignment rows, no seam name lists.
 - Closed inputs: unknown key → refused by name; a placed module matching no gating rule → refused by name; a module matching two rules → refused.
 - Root names are exactly `engine`, `game`, `generated` (shared with G0a's files table).
 - Sigil CI unchanged (owner Q2): the comparison job and agree-with-Rust test run in the landing bar; the Cherub gate runs in Cherub's own CI against pinned Sigil and aeon.
@@ -79,7 +79,7 @@ description: "Empyrean v2 step 0, G0b: games and the engine described as TOML (g
   - `pub struct AlignRow { pub label: String, pub align: u32 }`
   - `pub struct EngineDesc { pub format: u32, pub helpers: Vec<String> /* ordered */, pub ram_helpers: Vec<String>, pub struct_twins: Vec<(String, String)>, pub entry_seeds: Vec<String>, pub terminus: String, pub error_handler: String, pub release_fault: String, pub gate: Vec<GateRule>, pub required_labels: Vec<String>, pub sound: SoundDesc, pub baseline: PathBuf }`
   - `pub fn load_game(path: &Path) -> Result<GameDesc, DescError>`, `pub fn load_engine(path: &Path) -> Result<EngineDesc, DescError>`, `pub fn resolve_shape(g: &GameDesc, shape: &str) -> Result<ResolvedShape, DescError>` (flattens `extends`; `DescError::ExtendsCycle(Vec<String>)`)
-- `__MDDBG__` and `__DEBUG__` are derived from `crash_report` and `debug`, not fields.
+- `__MDDBG__` and `__DEBUG__` are not fields a game or shape sets: the driver derives them from the shape's features. The names and the feature rule are engine facts, stated in `engine.toml` `as_feature_defines` (with `SOUND_DRIVER_ENABLED`) in the gate rules' feature-expression form, and they go when the residual AS goes (builder call, amended in Task 11; proxy ruling, owner may override).
 - [ ] **Step 1:** Tests: `unknown_key_refused_by_name`, `extends_overrides_one_define`, `extends_cycle_refused`, `sonic4_game_toml_loads` (reads the aeon file via A8's reference guard), `engine_toml_loads`.
 - [ ] **Steps 2-5:** FAIL; implement; green; commit the crate in sigil and the six files in aeon (aeon files inert under the old driver: 7/7 unchanged).
 
@@ -147,7 +147,7 @@ description: "Empyrean v2 step 0, G0b: games and the engine described as TOML (g
 
 **Files (new repo `/home/volence/sonic_hacks/cherub`):** `game.toml`, `map.toml`, `vram.toml`, `game_root.asm` (residual, from demo's skeleton), `src/game.emp` (`implement Game`), `src/ram.emp`, `src/ship.emp` (one object: a ship moved by the pad), a scrolling background, `baseline.toml`, `.github/workflows/ci.yml` (checks out pinned Sigil and aeon), `README.md`.
 - Cherub is written against the public engine interface only: its source may `use engine.*` modules the engine marks `pub`, and nothing under `games/`. No sound (`features.sound = false`), crash report off or on as the engine allows without game code.
-- [ ] **Step 1:** The gate script `ci/build.sh`: build with a Sigil binary built from a sigil commit **older than Cherub's first commit** (recorded SHA in `ci/sigil.pin`), at a pinned aeon commit (`ci/aeon.pin`). Assert: build exit 0; G0a export validates and binds; headless Oracle boots it to a frame where the ship's position changes under a scripted pad input (frame hash differs between input on/off); BlastEm boots it (headless screenshot, non-blank).
+- [ ] **Step 1:** The gate script `ci/build.sh`: build with a Sigil binary built from a sigil commit **older than Cherub's first commit, or that commit plus fixes this gate itself found, each named in Cherub's README** (recorded SHA in `ci/sigil.pin`), at a pinned aeon commit (`ci/aeon.pin`). Assert: build exit 0; G0a export validates and binds; headless Oracle boots it to a frame where the ship's position changes under a scripted pad input (frame hash differs between input on/off); BlastEm boots it (headless screenshot, non-blank).
 - [ ] **Step 2:** Red first: before Task 11 and Task 9 the build fails (record the error). **Step 3:** green; Cherub's first commit on `main`, local only; the GitHub remote and push wait for the owner.
 - [ ] **Step 4:** Add `cherub` to `empyrean/contract/SUITE_PATHS.md`.
 

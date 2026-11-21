@@ -1,4 +1,107 @@
-# G0b: the game as data (Task 11 record)
+# G0b: the game as data
+
+Sigil builds every game on the Aeon engine from the game's `game.toml` and aeon's
+`engine/engine.toml` (`sigil build --project <game> --shape <row>`). No crate the driver links
+names a game (the no-game-names gate), and a second game, Cherub, builds from its own repo.
+This note is the parcel's landing record; the ledger it was kept in is deleted after landing,
+so every ruling is copied here, one line each. The Task 11 record (the retired comparison
+gates' last output) follows the parcel record unchanged.
+
+## What landed, task by task
+
+- Tasks 1-4: the description formats (`sigil-build::describe`, FORMAT 1, closed keys), the
+  agree-with-Rust test, `refreeze --repin-aeon` (T-REPIN), and the game-independent driver
+  code moved out of the harness into `sigil-build`.
+- Task 5: the game-as-data driver (`sigil_build::driver`) and `--project/--shape`; WALK
+  (packing measured in place, #210) landed on its own branch and merged at Task 7.
+- Tasks 6-9a: hermetic builds (a build writes only its own build directory), listing and
+  export through one writer, the comparison job, demo's cutover, two named source roots
+  (`engine`, `game`, plus `generated`).
+- Task 10: sonic4's cutover; aeon builds only through `--project`; oracle re-pinned to the
+  shape names (`feat/g0b-shape-names`).
+- Task 11: the profile-driven driver deleted in one commit (`sigil build --legacy`,
+  `--aeon/--game`, `GameProfile` and every table it read); engine facts moved to
+  `engine.toml` (`as_feature_defines`, helpers, appendix facts).
+- Task 12: the no-game-names gate (`crates/sigil-cli/tests/no_game_names.rs`): the driver's
+  normal-dependency closure, module tree followed as rustc does, `#[cfg(test)]` stripped
+  structurally; five allow rows, all G0c sound-seam facts.
+- Task 13 + 13a: Cherub, a minimal second game in its own repo (`/home/volence/sonic_hacks/cherub`),
+  built by a Sigil pinned at a fix commit, booted headless in Oracle, ROM sha256 `797d41b9...`;
+  export rows are root plus root-relative path for every game (`G0B-EXPORT-BY-ROOTS`; empyrean
+  §11.55, contract 1.0); the generated mount ratified.
+- Final review fix wave (2026-11-21): the four seats' Importants fixed or booked
+  (`required_labels` enforced as `[engine.required-label]`; anchor placement checks the held
+  section, not a gap inference; format read before the closed parse; the RAM report on an
+  out-of-tree game; the no-game-names counts made honest and CamelCase-aware); residue in
+  QUEUE `G0B-FINAL-REVIEW-RESIDUE` and aeon DEFERRED_WORK of the same name.
+
+## Rulings (from the ledger; one line each)
+
+- Base (proxy, Fable): the parcel stacked on G0a's tip, not master, to avoid a conflict-heavy rebase.
+- P1, revised at Task 2: description tests use the standard `AEON_DIR` guard, and G0b landing runs take a copy of
+  the `.aeon-g0b` tip (dropping `__pycache__`) as the reference; `AEON_G0B_DIR` dropped.
+- P2: aeon `feat/g0b-descriptions` stacked on aeon `feat/g0a-romsha256` (G0b needs its romSha256 harness).
+- P3: `df -h /` before every landing run; under 60 GB free is BLOCKED.
+- P4: Cherub's headless boot used oracle built from `feat/g0a-build-export` until G0a merged.
+- T3: the agree-with-Rust test counts resolved (game, shape) rows (10), not profile constructors.
+- M4 (Task 2): the sound labels stay in `engine.toml` `[sound]` (conditional on sound), commented as game-defined
+  labels the sound engine requires (G0c: `G0C-SOUND-SEAMS`).
+- SUITE_PATHS step 3: deferred to Task 5, which took steps 1, 2 and 4 (QUEUE G0B-DESCRIBE-TASK2-RESIDUE item 2).
+- `no_build_json_writes_none`: a G0a test-robustness bug fixed in G0b (the claim is "a build without -o writes no
+  sidecar").
+- Pairing gate (proxy, Fable; owner accepted 2026-11-19): `refreeze --freeze --repin-aeon`, built at T-REPIN and run
+  once, at landing.
+- Landing order (2026-11-19, amended by the final review D-I1): see `docs/OVERSEER-REFERENCE.md` "The G0b landing
+  order": empyrean first, aeon, sigil repin/attest/strict landing, oracle, Cherub.
+- Task 4: shared landing runs for small move commits accepted (each commit had its own 7/7).
+- Task 5 CLI: `--project/--shape` added beside the old grammar (later superseded at Task 10: no `--legacy` flip);
+  Task 5 owned the glob matcher and appendix facts from `engine.toml`.
+- WALK-IDENTITY (proxy, Fable): packing measured in place as its own parcel ahead of the cutover; no frozen labels,
+  no comparison normalisation; #209 attested as that branch's first commit.
+- `sigil-build` may depend on `sigil-frontend-as` (the driver assembles the residual AS side itself).
+- `cp -a` copies of `.aeon-g0b` drop `__pycache__` (later: never `cp -a` a worktree; `git clone --no-hardlinks`).
+- WALK player_climb: `end = section:player_climb`; the `end_measures = "allotment"` kind retired.
+- Task 6: "7/7 (old and new driver)" means old 7/7 plus new byte-neutral across the task; the global `AEON_DIR` write
+  removed.
+- WALK M1: deb2 appendix names differing only within shared-address groups accepted as the same name set.
+- The WALK merge is Task 7's step 0; after it the 7/7 base is sigil `87b5c195`.
+- COMPARE-IDENTITY-NAMES (proxy, Fable): a narrow declared delta (old side transformed, new side never stripped).
+- The contract gate, `--check` and `--report` on `--project` are Task 8's step 0.
+- Task 8: the DemoBox_Main alignment plant is the red-first in place of the plan's inert ObjCodeBase drop.
+- ENGINE-NAMES-GAME-CONST: `engine.toml` requires `SFXID_REV_LOOP` from every game (no default), demo declares it
+  feature-off; the "other games' rows" baseline rule deleted.
+- Task 9: the listing delta narrowing DIGEST-SCAN and READ rows to the build's roots accepted as declared.
+- Task 10: no `--legacy` flip (Task 11 deletes the old grammar); oracle re-pinned on `.oracle-g0b`
+  `feat/g0b-shape-names`; `gate_cut_shape`'s (game, game) spelling dropped; oracle e6c6fb78 (WALK byte move re-pin)
+  accepted.
+- Task 11: "one commit" is the deletion itself, preparatory moves first; its 7/7 is cross-driver; the "each green"
+  red window (87540c32..a265daf1) waived, no history rewrite (QUEUE G0B-TASK11-RESIDUE items 6-7).
+- Task 11 `as_feature_defines` (proxy, Fable): the three rows stay in `engine.toml` and go with the residual AS;
+  the anti-goal meant the port-gate defines (`SIGIL_EMP_*`, `extra_as_defines`).
+- Task 12: comments are not gated, on condition the printed count is honest (done in the fix wave);
+  `freeze_journal` moved beside the refreeze binary.
+- Task 13 Q1 (proxy, Fable): export rows are (root name, root-relative path) for every game; contract stays 1.0
+  with a dated amendment. Q2: Cherub re-pinned to the fix commit, history not rewritten, the README says so. Q3: only
+  friction item 6 fixed; the rest booked (aeon `G0B-SECOND-GAME-FRICTIONS`, sigil `G0B-BLIND-REFUSAL-UNNAMED`).
+- Task 13a: a fresh implementer; Task 13 and 13a reviewed together. I1: the generated mount ratified (contract text
+  states it; dropping it stays booked). Oracle 430509a1's two causes in one commit stand.
+- Final review: four parallel seats; seat D's tracked-files-only Cherub build accepted (the ROM reproduces).
+- Fix wave: every Important fixed except A-I3 (booked `G0C-SOUND-SEAM-GAME-IDENTITY`); `required_labels` enforced
+  rather than deleted; CamelCase fixed, output stems booked (5 hits, 3 of them the S4LZ codec); the aeon
+  description comments fixed in one commit though it moves export hashes; minors fixed or booked; the doc sync done
+  on the branches.
+
+## Booked for G0c and step 4
+
+- G0c (the sound seams' removal): `G0C-SOUND-SEAMS` (aeon), `G0C-SOUND-SEAM-GAME-IDENTITY`, the five no-game-names
+  allow rows, `LEGACY_SOUND_MOUNT` and the `[root.stale-generated]` refusal, `[sound]` naming game-defined labels
+  (aeon DEFERRED), `G0B-UNROOTED-TREE-READS` (aeon's generator spellings), Cherub's debug shape building from its
+  own repo.
+- Step 4 (the engine/game contract): aeon `G0B-SECOND-GAME-FRICTIONS` items 1, 3, 4, 5, 7, 8, 10; whether
+  `required_labels` and `required_consts` grow; per-zone scope; `entry_seeds` as named keys.
+- Landing-time: QUEUE `G0B-ORACLE-PIN-DRIFT`'s lane decision; the vendored `SOURCE` branch line.
+
+# Task 11 record
 
 Task 11 deleted Sigil's profile-driven build driver (`sigil build --legacy`, `--aeon`/`--game`,
 the `GameProfile` constructors and every table they read). This note keeps the last output of
