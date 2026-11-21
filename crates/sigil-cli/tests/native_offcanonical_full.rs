@@ -27,6 +27,12 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The golden directory (holds the frozen blobs + `provenance.toml`, the single source
 /// of the expected CRC/size/anchor — the hand-edited const surface is retired).
+/// The engine description's `convsym` (`engine.toml`, relative to the engine root).
+fn convsym(aeon: &std::path::Path) -> PathBuf {
+    let p = shapes::Shape::new("sonic4", "release").project(aeon).expect("project");
+    p.engine_dir.join(&p.engine.convsym)
+}
+
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden")
 }
@@ -110,7 +116,7 @@ fn run(t: &Target) {
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via the REAL
     // convsym consumer over the chained listing.
     let listing = shapes::build(&aeon, &t.profile).map(|b| b.listing).unwrap_or_else(|e| panic!("{e}"));
-    let resolved = native::convsym_resolve(&aeon, &listing).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = native::convsym_resolve(&convsym(&aeon), &listing).unwrap_or_else(|e| panic!("{e}"));
     let table = size_table(t.name);
     for name in t.load_bearing {
         let want = table
@@ -143,14 +149,14 @@ fn doctored_control(t: &Target) {
     let mut listing = shapes::build(&aeon, &t.profile).map(|b| b.listing).unwrap_or_else(|e| panic!("{e}"));
     let probe = t.load_bearing[0];
     let real = *size_table(t.name).get(probe).expect("probe in size table");
-    let base = native::convsym_resolve(&aeon, &listing).unwrap();
+    let base = native::convsym_resolve(&convsym(&aeon), &listing).unwrap();
     assert_eq!(base.get(probe), Some(&real), "{}: control undoctored `{probe}`", t.name);
     for s in listing.iter_mut() {
         if s.name == probe {
             s.value = 0x00BEEF;
         }
     }
-    let doctored = native::convsym_resolve(&aeon, &listing).unwrap();
+    let doctored = native::convsym_resolve(&convsym(&aeon), &listing).unwrap();
     assert_eq!(
         doctored.get(probe),
         Some(&0x00BEEF),

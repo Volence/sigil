@@ -19,27 +19,19 @@ pub const CONVSYM_FILTER: &str = "z[A-Z].+";
 /// the four-byte constant design §3.3 wrongly proposed (§S1.4 note).
 pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 
-/// The label the vendored MD Debugger v2.6 blob is emitted under
-/// (`engine/debug/error_handler.emp`). Present in BOTH canonical shapes since the
-/// crash-report ruling (owner-ruled 2026-08-04), so the blob-end guard below now binds
-/// the SHIPPED release ROM too — it is more load-bearing than it was, not less. The
-/// opt-in `lean` profile is the one shape that carries no island and no such label.
-pub const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
-
-/// The length, in bytes, of the vendored MD Debugger v2.6 blob — the opaque
-/// `dc.l` transliteration in `engine/debug/error_handler.emp`, NOT the whole island
-/// (that is the 0x15A of exception stubs + this 0xF56 blob = 0x10B0).
-///
-/// Load-bearing because the blob HARDCODES it: two PC-relative `lea`s baked into the
-/// vendored bytes (`dc.l $43FA090A` at blob+0x64A and `dc.l $47FA0872` at blob+0x6E2)
-/// both resolve to `ErrorHandlerBlob + 0xF56`, one byte past the blob's last byte, and
-/// each follows with `cmpi.w #$DEB2,(a1)+`. Upstream's contract is "convsym appends the
-/// symbol table immediately after me"; convsym appends at `EndOfRom`. So a shape that
-/// carries the blob must satisfy `EndOfRom == ErrorHandlerBlob + 0xF56`.
-pub const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
+// THE BLOB'S LABEL AND LENGTH are engine facts, read from the engine description
+// (`engine.toml` `error_handler_blob`, `error_handler_blob_len`; see `AppendixFacts::of`).
+// For Aeon: the vendored MD Debugger v2.6 blob (`engine/debug/error_handler.emp`) and
+// its 0xF56-byte length. The length is load-bearing because the blob HARDCODES it: two
+// PC-relative `lea`s baked into the vendored bytes both resolve to `<blob> + <len>`,
+// one byte past the blob's last byte, and each follows with `cmpi.w #$DEB2,(a1)+`.
+// Upstream's contract is "convsym appends the symbol table immediately after me";
+// convsym appends at `EndOfRom`. So a shape that carries the blob must satisfy
+// `EndOfRom == <blob> + <len>`. (Until G0b Task 11 this module held both as Rust
+// constants for the profile-driven driver.)
 
 /// HARD placement guard: for a shape that carries the MD Debugger blob, the deb2
-/// appendix MUST start at exactly `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, i.e. the
+/// appendix MUST start at exactly `<blob label> + <blob length>` (the engine description's), i.e. the
 /// error_handler island must be the LAST byte-emitting section. `appendix_start` is
 /// `EndOfRom` (the assembled image length; the ROM region is based at 0, the same
 /// identity the positive control below already relies on).
@@ -63,18 +55,9 @@ pub const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 /// exactly the shapes whose listings define its label — is
 /// `tests/error_handler_island_membership.rs`, because the `lean` shape never reaches
 /// this function (its callers skip the appendix entirely).
+///
+/// `blob_label` / `blob_len` are the engine description's ([`AppendixFacts`]).
 pub fn check_error_handler_is_last(
-    listing: &[sigil_link::ListingSymbol],
-    appendix_start: usize,
-    expect_island: bool,
-) -> Result<(), String> {
-    check_error_handler_is_last_with(ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN, listing, appendix_start, expect_island)
-}
-
-/// [`check_error_handler_is_last`] with the blob's label and length passed in: the new
-/// driver reads both from the engine description (`engine.toml` `error_handler_blob`,
-/// `error_handler_blob_len`) instead of this module's constants (G0b Task 5).
-pub fn check_error_handler_is_last_with(
     blob_label: &str,
     blob_len: u32,
     listing: &[sigil_link::ListingSymbol],
@@ -137,6 +120,27 @@ pub fn check_error_handler_is_last_with(
     ))
 }
 
+/// The engine facts the appendix reads: the MD Debugger blob's label and length, and the
+/// `convsym` binary, all from the engine description ([`AppendixFacts::of`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendixFacts<'a> {
+    pub blob_label: &'a str,
+    pub blob_len: u32,
+    pub convsym: std::path::PathBuf,
+}
+
+impl<'a> AppendixFacts<'a> {
+    /// The facts as the engine description states them: `error_handler_blob`,
+    /// `error_handler_blob_len`, and `convsym` relative to the engine root.
+    pub fn of(engine: &'a crate::describe::EngineDesc, engine_dir: &Path) -> AppendixFacts<'a> {
+        AppendixFacts {
+            blob_label: &engine.error_handler_blob,
+            blob_len: engine.error_handler_blob_len,
+            convsym: engine_dir.join(&engine.convsym),
+        }
+    }
+}
+
 /// Given the assembled ROM + listing, write both to a temp dir, run
 /// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
 /// Split out so the t24 doctored-listing negative control can feed a mutated set.
@@ -150,33 +154,6 @@ pub fn check_error_handler_is_last_with(
 /// shape and a silent runtime failure for every other, and this function cannot tell
 /// them apart from the listing.
 pub fn append_deb2_appendix(
-    aeon: &Path,
-    rom: &[u8],
-    listing: &[sigil_link::ListingSymbol],
-    debug: bool,
-    min_appendix: usize,
-    expect_island: bool,
-) -> Result<Vec<u8>, String> {
-    let facts = AppendixFacts {
-        blob_label: ERROR_HANDLER_BLOB_LABEL,
-        blob_len: ERROR_HANDLER_BLOB_LEN,
-        convsym: aeon.join("tools").join("convsym"),
-    };
-    append_deb2_appendix_with(&facts, rom, listing, debug, min_appendix, expect_island)
-}
-
-/// The engine facts the appendix reads: the MD Debugger blob's label and length, and the
-/// `convsym` binary. The old driver passes this module's constants and `<aeon>/tools/convsym`;
-/// the new driver passes the engine description's values (G0b Task 5).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppendixFacts<'a> {
-    pub blob_label: &'a str,
-    pub blob_len: u32,
-    pub convsym: std::path::PathBuf,
-}
-
-/// [`append_deb2_appendix`] with the engine facts passed in ([`AppendixFacts`]).
-pub fn append_deb2_appendix_with(
     facts: &AppendixFacts<'_>,
     rom: &[u8],
     listing: &[sigil_link::ListingSymbol],
@@ -186,7 +163,7 @@ pub fn append_deb2_appendix_with(
 ) -> Result<Vec<u8>, String> {
     // PLACEMENT PRECONDITION (checked BEFORE shelling convsym — the contract is about
     // where the appendix will land, so a violation is knowable from the layout alone).
-    check_error_handler_is_last_with(facts.blob_label, facts.blob_len, listing, rom.len(), expect_island)?;
+    check_error_handler_is_last(facts.blob_label, facts.blob_len, listing, rom.len(), expect_island)?;
 
     let convsym = facts.convsym.clone();
     if !convsym.exists() {
@@ -292,13 +269,12 @@ pub fn append_deb2_appendix_with(
 /// to resolve names→addresses. Returns the `HEXADDR: Name` map. A load-bearing
 /// symbol resolving to its known address here is proof the appendix carries it
 /// correctly; a doctored `.lst` address is detected (t24).
-pub fn convsym_resolve(aeon: &Path, listing: &[sigil_link::ListingSymbol]) -> Result<std::collections::HashMap<String, u32>, String> {
-    let convsym = aeon.join("tools/convsym");
+pub fn convsym_resolve(convsym: &Path, listing: &[sigil_link::ListingSymbol]) -> Result<std::collections::HashMap<String, u32>, String> {
     let dir = std::env::temp_dir().join(format!("sigil_s14_log_{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let lst = dir.join("resolve.lst");
     std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
-    let out = sigil_span::read_set::tool_command(&convsym)
+    let out = sigil_span::read_set::tool_command(convsym)
         .map_err(|e| format!("read convsym {}: {e}", convsym.display()))?
         .arg(&lst)
         .arg("-")

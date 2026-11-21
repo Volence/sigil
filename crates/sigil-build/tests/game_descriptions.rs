@@ -85,10 +85,9 @@ fn engine_toml_loads() {
     for id in [&e.terminus, &e.error_handler, &e.release_fault] {
         assert!(id.starts_with("engine."), "`{id}` is not an engine module id");
     }
-    // The blob label moved into this crate with the appendix (G0b Task 4), so it is
-    // linked, not read as harness text.
-    assert_eq!(e.error_handler_blob, sigil_build::appendix::ERROR_HANDLER_BLOB_LABEL);
-    assert_eq!(e.error_handler_blob_len, sigil_build::appendix::ERROR_HANDLER_BLOB_LEN);
+    // The blob's label and length are engine facts with no Rust spelling (G0b Task 11
+    // deleted the constants this used to compare against): the description must state both.
+    assert!(!e.error_handler_blob.is_empty() && e.error_handler_blob_len > 0, "the error-handler blob is not described");
     let engine_root = std::path::Path::new("engine");
     let convsym: std::path::PathBuf = engine_root.join(&e.convsym).components().fold(std::path::PathBuf::new(), |mut p, c| {
         match c {

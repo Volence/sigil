@@ -10,7 +10,6 @@
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test derived_layout
 //! ```
-use sigil_harness::native;
 use sigil_harness::shapes::{self, Shape};
 use sigil_harness::test_support::reference_tree_for_shape;
 
@@ -26,6 +25,9 @@ fn error_handler_is_the_last_emission(profile: Shape) {
     };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let layout = shapes::resolved_layout(&aeon, &profile).unwrap_or_else(|e| panic!("{e}"));
+    // The blob's label and length, as the engine description states them.
+    let p = profile.project(&aeon).unwrap_or_else(|e| panic!("{e}"));
+    let (blob_label, blob_len) = (p.engine.error_handler_blob.as_str(), p.engine.error_handler_blob_len);
 
     let mut blob: Option<(u32, u32)> = None; // (section base, blob offset)
     let mut end_of_rom: Option<u32> = None;
@@ -35,8 +37,8 @@ fn error_handler_is_the_last_emission(profile: Shape) {
             continue;
         }
         for l in &s.labels {
-            if l.name == native::ERROR_HANDLER_BLOB_LABEL {
-                assert!(blob.is_none(), "two `{}` labels", native::ERROR_HANDLER_BLOB_LABEL);
+            if l.name == blob_label {
+                assert!(blob.is_none(), "two `{}` labels", blob_label);
                 blob = Some((s.lma, l.offset));
             }
             if l.name == "EndOfRom" {
@@ -50,10 +52,10 @@ fn error_handler_is_the_last_emission(profile: Shape) {
     }
     // LOUD on unmeasurable: a shape without the blob or the terminus proves nothing.
     let (blob_base, blob_off) = blob.unwrap_or_else(|| {
-        panic!("`{}` is not in this shape's layout, the invariant cannot be measured", native::ERROR_HANDLER_BLOB_LABEL)
+        panic!("`{}` is not in this shape's layout, the invariant cannot be measured", blob_label)
     });
     let end_of_rom = end_of_rom.expect("`EndOfRom` is not in this shape's layout, the invariant cannot be measured");
-    let blob_end = blob_base + blob_off + native::ERROR_HANDLER_BLOB_LEN;
+    let blob_end = blob_base + blob_off + blob_len;
     assert_eq!(blob_end, end_of_rom, "blob end {blob_end:#x} != EndOfRom {end_of_rom:#x}");
     let last = emitters.iter().max_by_key(|(base, _, _)| *base).expect("no byte-emitting section");
     assert_eq!(last.0, blob_base, "the highest-based emitter is `{}` at {:#x}, not the error_handler island at {blob_base:#x}", last.2, last.0);

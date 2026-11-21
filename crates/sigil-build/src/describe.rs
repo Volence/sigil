@@ -387,11 +387,11 @@ pub struct EngineDesc {
     /// (`harvest_engine_struct_offsets`), relative to the engine root.
     pub types: PathBuf,
     /// Added by Task 2: the label the vendored MD Debugger blob is emitted under
-    /// (`ERROR_HANDLER_BLOB_LABEL`).
+    /// (read by `appendix::AppendixFacts::of`; no Rust spelling since G0b Task 11).
     pub error_handler_blob: String,
     /// Added by Task 5: the vendored MD Debugger blob's length in bytes; the deb2 appendix
     /// must start exactly at `error_handler_blob + error_handler_blob_len`
-    /// (`sigil_build::appendix::ERROR_HANDLER_BLOB_LEN`).
+    /// (read by `appendix::AppendixFacts::of`).
     pub error_handler_blob_len: u32,
     /// Added by Task 5: the `convsym` binary the deb2 appendix runs, relative to the engine
     /// root (it lives in the checkout's `tools/`, beside the engine).

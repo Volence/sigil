@@ -666,7 +666,17 @@ mod error_handler_placement_tests {
     //! two baked `lea` displacements point there. Negative probe = the historical bug
     //! (`Replay_OJZ_Fixture`, 0x140 B, placed between the blob and `EndOfRom`), which
     //! made every crash-screen line print `<unknown>` with no build-time signal.
-    use super::{check_error_handler_is_last, ERROR_HANDLER_BLOB_LEN};
+    /// This probe's blob facts (a shipped engine states them in `engine.toml`).
+    const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
+    const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
+
+    fn check_error_handler_is_last(
+        listing: &[sigil_link::ListingSymbol],
+        appendix_start: usize,
+        expect_island: bool,
+    ) -> Result<(), String> {
+        super::check_error_handler_is_last(ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN, listing, appendix_start, expect_island)
+    }
 
     fn sym(name: &str, value: u32) -> sigil_link::ListingSymbol {
         sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false, lma: None }

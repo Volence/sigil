@@ -230,6 +230,12 @@ fn sonic4(debug: bool) -> shapes::Shape {
     shapes::Shape::new("sonic4", if debug { "debug" } else { "release" })
 }
 
+/// The engine description's `convsym` (`engine.toml`, relative to the engine root).
+fn convsym(aeon: &std::path::Path) -> PathBuf {
+    let p = sonic4(false).project(aeon).expect("project");
+    p.engine_dir.join(&p.engine.convsym)
+}
+
 /// The game description's appendix floor (`game.toml` `appendix_floor`).
 fn appendix_floor(aeon: &std::path::Path) -> usize {
     sonic4(false).project(aeon).expect("project").game.appendix_floor as usize
@@ -296,7 +302,7 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     );
 
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via convsym.
-    let resolved = native::convsym_resolve(&aeon, &listing).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = native::convsym_resolve(&convsym(&aeon), &listing).unwrap_or_else(|e| panic!("{e}"));
     for (name, plain, dbg) in LOAD_BEARING {
         let want = if debug { *dbg } else { *plain };
         let got = resolved
@@ -346,7 +352,7 @@ fn deb2_appendix_negative_controls() {
     // plain-shape address, pin-sourced. The probe is BusError again, not ReleaseFault:
     // since the crash-report ruling this PLAIN build carries the island, and
     // ReleaseFault is absent from it entirely (it is the lean shape's handler).
-    let base = native::convsym_resolve(&aeon, &listing).unwrap();
+    let base = native::convsym_resolve(&convsym(&aeon), &listing).unwrap();
     assert_eq!(
         base.get("BusError"),
         Some(&pins::ERROR_HANDLER.plain_base),
@@ -359,7 +365,7 @@ fn deb2_appendix_negative_controls() {
             s.value = 0x00BEEF;
         }
     }
-    let doctored = native::convsym_resolve(&aeon, &listing).unwrap();
+    let doctored = native::convsym_resolve(&convsym(&aeon), &listing).unwrap();
     assert_eq!(
         doctored.get("BusError"),
         Some(&0x00BEEF),
@@ -382,8 +388,10 @@ fn deb2_appendix_negative_controls() {
     // `expect_island: false` — this synthetic three-symbol listing represents no shape
     // and defines no island label, so the blob-end precondition has no subject here and
     // must not pre-empt the size band this probe is aimed at.
+    let p = sonic4(false).project(&aeon).expect("project");
+    let facts = native::AppendixFacts::of(&p.engine, &p.engine_dir);
     let err =
-        native::append_deb2_appendix(&aeon, &dummy, &tiny, false, appendix_floor(&aeon), false)
+        native::append_deb2_appendix(&facts, &dummy, &tiny, false, appendix_floor(&aeon), false)
             .expect_err("collapsed listing must be rejected by the size-band presence control");
     assert!(
         err.contains("appendix size") && err.contains("band"),
@@ -394,6 +402,6 @@ fn deb2_appendix_negative_controls() {
     // so the silent-failure path (`2>/dev/null || true` producing an appendix-less
     // ROM) surfaces as a HARD error here, never a pass.
     let empty: Vec<sigil_link::ListingSymbol> = Vec::new();
-    native::append_deb2_appendix(&aeon, &dummy, &empty, false, appendix_floor(&aeon), false)
+    native::append_deb2_appendix(&facts, &dummy, &empty, false, appendix_floor(&aeon), false)
         .expect_err("empty listing must be rejected (convsym aborts on zero symbols)");
 }

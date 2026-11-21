@@ -1074,14 +1074,10 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let assembled_len = rom.len();
     let image = rom.clone();
     let full = if island {
-        let facts = crate::appendix::AppendixFacts {
-            blob_label: &p.engine.error_handler_blob,
-            blob_len: p.engine.error_handler_blob_len,
-            convsym: p.engine_dir.join(&p.engine.convsym),
-        };
-        crate::appendix::append_deb2_appendix_with(&facts, &rom, &listing, debug, p.game.appendix_floor as usize, true).map_err(ctx)?
+        let facts = crate::appendix::AppendixFacts::of(&p.engine, &p.engine_dir);
+        crate::appendix::append_deb2_appendix(&facts, &rom, &listing, debug, p.game.appendix_floor as usize, true).map_err(ctx)?
     } else {
-        crate::appendix::check_error_handler_is_last_with(&p.engine.error_handler_blob, p.engine.error_handler_blob_len, &listing, rom.len(), false)
+        crate::appendix::check_error_handler_is_last(&p.engine.error_handler_blob, p.engine.error_handler_blob_len, &listing, rom.len(), false)
             .map_err(ctx)?;
         rom
     };

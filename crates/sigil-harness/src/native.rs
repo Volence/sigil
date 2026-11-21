@@ -22,8 +22,7 @@ use crate::{seam1, seam2};
 // G0b Task 4: the game-independent driver code moved, unchanged, to `sigil-build`.
 // Re-exported here so every caller keeps its `native::` path.
 pub use sigil_build::appendix::{
-    append_deb2_appendix, check_error_handler_is_last, convsym_resolve, DEB2_MAGIC, ERROR_HANDLER_BLOB_LABEL,
-    ERROR_HANDLER_BLOB_LEN,
+    append_deb2_appendix, check_error_handler_is_last, convsym_resolve, AppendixFacts, DEB2_MAGIC,
 };
 pub use sigil_build::diag::{collect_warnings, BuildWarning, ChainSources};
 pub use sigil_build::emit::{assembled_anchor_crc, crc32, RomBuild};

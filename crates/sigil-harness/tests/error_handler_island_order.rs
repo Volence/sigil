@@ -26,7 +26,13 @@
 //! arms below meaningful: when the contracts HOLD, the call proceeds and fails on the
 //! missing tool instead, so a refuse-everything guard cannot satisfy this file.
 
-use sigil_harness::native::{self, ERROR_HANDLER_BLOB_LABEL, ERROR_HANDLER_BLOB_LEN};
+use sigil_harness::native::{self, AppendixFacts};
+
+/// The probe's own blob facts. A shipped engine states them in `engine.toml`
+/// (`error_handler_blob`, `error_handler_blob_len`); these synthetic listings name their
+/// own, so the guard is measured against what the probe declares, not against a tree.
+const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
+const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 
 /// The appendix size floor these synthetic listings are measured with. It is the probe's
 /// own parameter, not a fact read from a tree (a shipped game states its floor as
@@ -64,8 +70,13 @@ fn appendix_starting_at(
     expect_island: bool,
 ) -> Result<Vec<u8>, String> {
     let rom = vec![0u8; rom_len];
+    let facts = AppendixFacts {
+        blob_label: ERROR_HANDLER_BLOB_LABEL,
+        blob_len: ERROR_HANDLER_BLOB_LEN,
+        convsym: Path::new("/nonexistent-engine-tree-for-this-probe/tools/convsym").to_path_buf(),
+    };
     native::append_deb2_appendix(
-        Path::new("/nonexistent-engine-tree-for-this-probe"),
+        &facts,
         &rom,
         listing,
         false,

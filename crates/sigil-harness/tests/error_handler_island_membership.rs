@@ -2,7 +2,7 @@
 //! BUILDS DEFINE ITS BLOB LABEL — asserted per shape, in both directions.
 //!
 //! `native::check_error_handler_is_last` measures the deb2 appendix against
-//! `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, and it now refuses a shape that
+//! `error_handler_blob + error_handler_blob_len` (engine.toml), and it now refuses a shape that
 //! declares the island but produces no such label (see
 //! `error_handler_island_order.rs`). That closes the direction it can see. It cannot
 //! see the other one: the `lean` shape never reaches it — its callers return the
