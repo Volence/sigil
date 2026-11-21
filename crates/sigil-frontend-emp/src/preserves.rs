@@ -192,10 +192,12 @@ struct State {
     /// `a7` (index 15) is not meaningful here (stack discipline).
     delta: [Option<i64>; 16],
     /// The open `link` frames, innermost last: `(frame pointer, stack depth just
-    /// above its saved-fp slot)`. A `unlk aN` truncates back to the innermost
-    /// mark and pops the saved fp; an `unlk` that names a different register, or
-    /// one with no open frame, leaves sp at an unmodeled value → bail.
-    frames: Vec<(Reg, usize)>,
+    /// above its saved-fp slot, frame pointer written since the link)`. A
+    /// `unlk aN` truncates back to the innermost mark and pops the saved fp; an
+    /// `unlk` that names a different register, one with no open frame, or one
+    /// whose aN was written inside the frame (so it no longer holds the sp
+    /// `link` stored) leaves sp at an unmodeled value → bail.
+    frames: Vec<(Reg, usize, bool)>,
     /// This path hit a soundness bailout (computed sp / escape / aliasing store /
     /// underflow / unbalanced-depth join). Rides the CFG; only matters if it
     /// reaches a return.
@@ -933,6 +935,13 @@ fn transfer(
     policy: &CallPolicy,
 ) -> Option<String> {
     let (mnem, ops) = cfg.instr(idx)?;
+    // A write of an open frame's register inside the frame: the matching `unlk`
+    // would load sp from a value that is not the one `link` stored. `link` and
+    // `unlk` themselves are the frame's own operations (a nested `link` on the
+    // same register is modelled exactly by the frame stack).
+    if !st.frames.is_empty() && mnem != "link" && mnem != "unlk" {
+        mark_written_frames(st, policy, mnem, ops);
+    }
     // Only a FULL (`.l`) transfer round-trips the WHOLE register; a `.w` restore
     // round-trips just the low WORD (crediting `entry_word`, the `preserves(dN.w)`
     // facet), and a `.b` restore neither. `is_long` gates the full-facet credit;
@@ -1135,6 +1144,25 @@ fn credit_restore(st: &mut State, r: Reg, slot: Slot, is_long: bool, restore_w: 
     st.delta[reg_idx(r)] = None;
 }
 
+/// Mark every open frame whose register this instruction writes: the registers
+/// [`instr_written_regs`] names, a `movem (sp)+` restore's list (which that
+/// detector omits by design), and for a call every register the callee does not
+/// provably preserve ([`call_preserves`], the oracle [`apply_callee_effect`] uses).
+fn mark_written_frames(st: &mut State, policy: &CallPolicy, mnem: &str, ops: &[CodeOperand]) {
+    let written = |r: Reg| -> bool {
+        if is_call(mnem) {
+            return !call_preserves(policy, direct_proc_target(ops), r);
+        }
+        instr_written_regs(mnem, ops).contains(&r)
+            || (is_pop(ops) && reglist_mask(ops).is_some_and(|m| expand_mask(m).contains(&r)))
+    };
+    for frame in st.frames.iter_mut() {
+        if !frame.2 && written(frame.0) {
+            frame.2 = true;
+        }
+    }
+}
+
 /// Open a stack frame: `link aN, #-d` pushes aN (4 bytes), sets aN to the new sp,
 /// then allocates `d` bytes of locals. The saved-fp push is an ordinary tagged
 /// slot, so a frame is visible to the depth model like any other save; the
@@ -1142,8 +1170,11 @@ fn credit_restore(st: &mut State, r: Reg, slot: Slot, is_long: bool, restore_w: 
 /// mark lets the matching `unlk` truncate back.
 ///
 /// Bails on the forms the model cannot represent: a non-register or `a7` frame
-/// pointer, a non-immediate displacement, or a POSITIVE displacement (an sp
-/// INCREASE, which would reach into the caller's frame rather than allocate).
+/// pointer, a non-immediate displacement, a displacement outside the 16-bit word
+/// (the encoder refuses the line), or a POSITIVE displacement (an sp INCREASE,
+/// which would reach into the caller's frame rather than allocate). The
+/// displacement is the SIGNED extension word: `#$FFF8` is the same instruction
+/// as `#-8` (`4E56 FFF8`), so `$8000..=$FFFF` reads as `value - $10000`.
 fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
     let Some(CodeOperand::Reg(fp)) = ops.first() else {
         return Some("`link` with a non-register frame pointer".to_string());
@@ -1153,6 +1184,11 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
     }
     let Some(CodeOperand::Imm(disp)) = ops.last() else {
         return Some("`link` with a non-immediate frame size".to_string());
+    };
+    let disp = &match *disp {
+        d @ 0x8000..=0xFFFF => d - 0x10000,
+        d @ -0x8000..=0x7FFF => d,
+        _ => return Some("`link` displacement outside its 16-bit word".to_string()),
     };
     if *disp > 0 {
         return Some(
@@ -1167,7 +1203,7 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
     };
     let slot = tag(st, *fp, 4, Some(Width::L));
     st.stack.push(slot);
-    st.frames.push((*fp, st.stack.len()));
+    st.frames.push((*fp, st.stack.len(), false));
     if alloc > 0 {
         st.stack.push(Slot { reg: None, bytes: alloc, save_width: None });
     }
@@ -1191,7 +1227,10 @@ fn apply_unlk(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
         return Some("`unlk` with a non-register frame pointer".to_string());
     };
     match st.frames.pop() {
-        Some((open, depth)) if open == *fp && depth <= st.stack.len() => {
+        Some((open, _, true)) if open == *fp => Some(format!(
+            "`unlk {fp}` after `{fp}` was written inside its frame, sp becomes an unmodeled value"
+        )),
+        Some((open, depth, false)) if open == *fp && depth <= st.stack.len() => {
             st.stack.truncate(depth);
             let saved = st.stack.pop().and_then(|s| s.reg);
             // The saved fp is a full `.l` slot (`link` pushed 4 bytes), so a match
@@ -1765,12 +1804,11 @@ fn ds_join(acc: &mut DsState, other: &DsState) -> Result<(), ()> {
 mod frame_tests {
     //! `link` / `unlk` — the frame arm of the stack model.
     //!
-    //! These are UNIT tests because the 68k backend has no encoder for either
-    //! mnemonic, so no `.emp` source can reach the analysis through lowering. That
-    //! is also the honest state of the corpus: it contains ZERO `link`/`unlk`
-    //! sites. The rule is implemented for soundness — an unmodeled `link` would
-    //! leave the slot map claiming a depth the machine does not have — and proven
-    //! here, at the only level where it can be exercised.
+    //! Unit tests of the frame arm. Since A11 Task 6 `.emp` can spell both
+    //! mnemonics, and the source-level cases live in
+    //! `tests/a11_checks.rs`; these pin the transfer itself, including what a
+    //! call does to an open frame under each call policy. The corpus contains
+    //! ZERO `link`/`unlk` sites.
 
     use super::*;
     use sigil_span::SourceId;
@@ -1911,6 +1949,39 @@ mod frame_tests {
             Vec::new(),
             "a positive displacement is not the allocate idiom, so it is not modeled"
         );
+    }
+
+    /// A call inside the frame whose callee's (closure-verified) effect names the
+    /// frame register writes it: the matching `unlk` no longer pairs, so the path
+    /// bails and `preserves(a6)` is unverifiable, never verified. A callee whose
+    /// effect leaves a6 alone keeps the pair (`Verified`).
+    #[test]
+    fn a_call_that_clobbers_the_frame_register_unpairs_the_unlk() {
+        let call = |idx| instr(idx, "jsr", vec![CodeOperand::Sym("Q".to_string())]);
+        let items = [link(0, Reg::A6, -8), call(1), unlk(2, Reg::A6), rts(3)];
+        let effect = |r: &str| RegEffect { top: false, regs: BTreeSet::from([r.to_string()]) };
+        let clobbers_a6 = BTreeMap::from([("Q".to_string(), effect("a6"))]);
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::Oracle(&clobbers_a6), None, &BTreeSet::new());
+        assert!(matches!(got[&Reg::A6], PreserveStatus::Unverifiable(_)), "{got:?}");
+        let clobbers_a5 = BTreeMap::from([("Q".to_string(), effect("a5"))]);
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::Oracle(&clobbers_a5), None, &BTreeSet::new());
+        assert_eq!(got[&Reg::A6], PreserveStatus::Verified);
+    }
+
+    /// The stack check has no callee contracts (`ClobberAll`), so a call inside a
+    /// frame may have written the frame register: after the `unlk` the depth is
+    /// unknown and nothing is reported, even a push left below the frame. A frame
+    /// still open at the return is reported as before.
+    #[test]
+    fn the_stack_check_gives_up_after_an_unlk_whose_frame_held_a_call() {
+        let push = instr(0, "move", vec![CodeOperand::Reg(Reg::D0), CodeOperand::PreDec(Reg::A7)]);
+        let call = |idx| instr(idx, "jsr", vec![CodeOperand::Sym("Q".to_string())]);
+        let closed = [push.clone(), link(1, Reg::A6, -8), call(2), unlk(3, Reg::A6), rts(4)];
+        assert_eq!(check_stack_balance(&closed, true), Vec::new());
+        let open = [link(1, Reg::A6, -8), call(2), rts(4)];
+        let found = check_stack_balance(&open, true);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 12 });
     }
 
     /// A frame size the slot's byte width cannot hold is untracked, so it bails

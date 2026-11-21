@@ -3132,17 +3132,22 @@ until its row is removed.
   (where the next push lands) and `move.l d0, 4(a6)` writes over the return address; neither is examined.
 - Decide whether a frame-bounds check is wanted, and whether it is a check on `d(aN)` accesses between a `link` and
   its `unlk`, or a frame construct in the language (plan Open question 1).
+- Batch D fix round 1: a write of `aN` inside its own frame (every write the register model knows, and a call whose
+  callee is not proven to preserve `aN`) makes the matching `unlk` give up: the path's depth is unknown and
+  `preserves(aN)` is unverifiable. The per-file stack check has no callee contracts (`ClobberAll`), so ANY call inside
+  a frame counts as such a write, and after that `unlk` the path is not judged (a push left below the frame goes
+  unreported; a frame still open at the return is reported). Decide whether the stack check reads the closure's
+  verified callee effects.
 
-## EMP-LINK-UNSIGNED-DISPLACEMENT
+## EMP-LINK-UNSIGNED-DISPLACEMENT: UNSIGNED HALF CLOSED IN BRANCH 2026-11-22 (batch D fix round 1)
 
-- state: open 2026-11-22 (A11 Task 6)  size: `S`  project: `STEP0-A11`
-- `link a6, #$FFF8` assembles `4E56 FFF8`, the same instruction as `link a6, #-8`, on both routes (the encoder takes
-  -32768..=65535 for the word, as asl does). The stack model reads the immediate as the number written, +65528, so it
-  sees a positive displacement and bails the path to silence: `link a6, #$FFF8` then `rts` (an open frame) passes
-  where `link a6, #-8` then `rts` is `[stack.unbalanced]` (probed 2026-11-22). `link a6, #8` (a real positive
-  displacement, sp moved up) assembles and also bails the model.
-- Decide whether `.emp` refuses the unsigned spelling (or reads the word as signed in the model), and whether a
-  positive `link` displacement is refused.
+- state: open 2026-11-22 (A11 Task 6; rewritten in batch D fix round 1, which closed the unsigned half: `apply_link`
+  now reads the displacement as the signed extension word, so `link a6, #$FFF8` is `-8` to the stack model as it is
+  to the 68000, and a displacement outside the word bails instead of adding a `[stack.unbalanced]` beside the
+  encoder's range error)  size: `S`  project: `STEP0-A11`
+- `link a6, #8` and `link a6, #$7FFF` (a real positive displacement: sp moves UP, into the caller's frame) assemble
+  and the stack model gives up on the path, so neither an open nor a closed frame of that kind is judged.
+- Decide whether `.emp` refuses a positive `link` displacement.
 
 ## EMP-EXCEPTION-EDGE
 

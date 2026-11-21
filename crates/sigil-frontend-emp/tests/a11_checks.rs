@@ -413,3 +413,61 @@ fn trapv_falls_through_with_the_flags_it_found() {
     assert!(f.len() == 1 && f[0].cc == "eq" && f[0].always_taken, "{f:?}");
     assert_eq!(branch_const(&src("chk.w d2, d1")), [], "control: `chk` leaves Z undefined");
 }
+
+/// LINK's displacement is a signed 16-bit extension word: `#$FFF8` IS -8 (the
+/// same bytes, `4E56 FFF8`), so the stack check reads it as -8 and reports an
+/// open frame exactly as it does for `#-8`.
+#[test]
+fn a_link_displacement_is_its_signed_word() {
+    let open = |imm: &str| diags("clobbers(a6)", &format!("    link a6, #{imm}\n    rts"));
+    let minus8 = open("-8");
+    assert_eq!(errors(&minus8).len(), 1, "{minus8:?}");
+    assert!(errors(&minus8)[0].starts_with("[stack.unbalanced] in `P`: this path returns with 12 bytes"), "{minus8:?}");
+    assert_eq!(open("$FFF8"), minus8, "`#$FFF8` is the same instruction as `#-8`");
+    assert_eq!(diags("clobbers(a6)", "    link a6, #$FFF8\n    unlk a6\n    rts"), []);
+    // The boundary: `$8000` is -32768 (4 + 32768 bytes open), the same as `#-$8000`.
+    let low = open("$8000");
+    assert!(errors(&low).first().is_some_and(|m| m.starts_with("[stack.unbalanced] in `P`: this path returns with 32772 bytes")), "{low:?}");
+    assert_eq!(open("-$8000"), low);
+    assert_eq!(diags("clobbers(a6)", "    link a6, #$8000\n    unlk a6\n    rts"), []);
+    // `$7FFF` is +32767: sp moves UP, into the caller's frame. The model does not
+    // represent that and gives up on the path, as it does for `#8`.
+    assert_eq!(open("$7FFF"), []);
+    assert_eq!(open("8"), []);
+    // Outside the word the encoder refuses the line, and the stack check adds nothing.
+    let d = open("-$8001");
+    assert!(errors(&d).iter().any(|m| m.contains("out of range")), "{d:?}");
+    assert!(!has(&d, "[stack.unbalanced]"), "{d:?}");
+}
+
+/// `unlk aN` loads sp from aN: it closes the frame only if aN still holds the sp
+/// `link` put there. A write of aN inside the frame breaks that, so the `unlk`
+/// leaves sp at a value the model never computed: the path's depth is unknown
+/// (no `[stack.unbalanced]` verdict either way) and `preserves(a6)` is
+/// unverifiable, never satisfied.
+#[test]
+fn writing_the_frame_register_inside_its_frame_unpairs_the_unlk() {
+    let hdr = "clobbers(d0, a0, a5) preserves(a6)";
+    let framed = |mid: &str| diags(hdr, &format!("    link a6, #-8\n    {mid}\n    unlk a6\n    rts"));
+    for mid in ["movea.l a0, a6", "lea 4(a6), a6", "exg a0, a6", "addq.l #4, a6", "suba.l a0, a6", "movem.l (a0), d0/a6"] {
+        let d = framed(mid);
+        assert!(!has(&d, "[stack.unbalanced]"), "`{mid}`: {d:?}");
+        assert!(
+            errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(a6)`")),
+            "`{mid}`: preserves(a6) must not pass: {d:?}"
+        );
+    }
+    // The frame is still open at the return (no `unlk`): the depth is known and reported.
+    let d = diags(hdr, "    link a6, #-8\n    movea.l a0, a6\n    rts");
+    assert!(has(&d, "[stack.unbalanced] in `P`: this path returns with 12 bytes"), "{d:?}");
+    // Controls: reading a6, writing through it, writing another address register.
+    for mid in ["move.l -4(a6), d0", "move.l d0, -4(a6)", "movea.l a0, a5"] {
+        assert_eq!(framed(mid), [], "`{mid}`");
+    }
+    // A nested frame on the same register is modelled exactly: the inner `unlk`
+    // restores a6 to the outer frame's sp.
+    assert_eq!(diags(hdr, "    link a6, #-8\n    link a6, #-4\n    unlk a6\n    unlk a6\n    rts"), []);
+    let d = diags(hdr, "    link a6, #-8\n    link a6, #-4\n    unlk a6\n    rts");
+    assert!(has(&d, "[stack.unbalanced] in `P`: this path returns with 12 bytes"), "{d:?}");
+}
+
