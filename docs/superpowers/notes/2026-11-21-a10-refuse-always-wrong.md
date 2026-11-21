@@ -538,4 +538,52 @@ One line per ruling in the controller's ledger.
 
 ## Final proof (fix-wave tip)
 
-Recorded in the next commit, after the strict landing run at this tip.
+Code tip `a2bd0b12` (the fix-wave code commit; `842d029f` adds docs only). Free disk before the run: 295G.
+
+**TC** (`sigil-frontend-emp`, the only crate the fix wave touched, run in full after the last code edit):
+147 `test result:` lines summed, 2867 passed, 0 failed, 0 ignored (batch C's 2866 + the one new test).
+`cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+
+**BN** (candidate built from `a2bd0b12`):
+
+```
+SHAPE plain 142a39b9/850262 142a39b9/850262 SAME
+SHAPE debug 20acdb67/870606 20acdb67/870606 SAME
+SHAPE demo 4587df52/99980 4587df52/99980 SAME
+SHAPE demo_debug 37d66535/106981 37d66535/106981 SAME
+SHAPE config_a 2ce7438f/870972 2ce7438f/870972 SAME
+SHAPE config_b 128361b3/617715 128361b3/617715 SAME
+SHAPE lean f6b07847/798198 f6b07847/798198 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+**Strict landing run**, as Task 7 Step 5: fresh `cp -a` of the reference tree at `.a10-land-<id>` (git metadata
+kept, `__pycache__` removed), run-unique copy of `scripts/landing-run.sh`, detached, polled from its own log.
+Tests added on the whole branch, from `git diff 1e200e1b..HEAD -- crates | grep -cE '^\+\s*#\[test\]'`
+(indented lines included): 31 (Task 7's 30 + `an_unrecognized_mnemonic_keeps_its_own_diagnostic`); 0 removed,
+0 new `#[ignore]`.
+
+```
+tree            /home/volence/sonic_hacks/.sigil-a10 @ 842d029f (parcel/a10-refuse-always-wrong, clean)
+reference       /home/volence/sonic_hacks/.a10-land-<id> @ 9b80db1d (HEAD, clean), all four present
+target dir      /home/volence/sonic_hacks/.sigil-a10/.target-land
+started/ended   2026-11-21T15:04:02Z -> 2026-11-21T15:23:06Z (UTC)
+CARGO_EXIT      0
+CLIPPY_EXIT     0   (lint bar clean)
+LEDGER_EXIT     0   (ledger gate clean)
+ci-shaped leg   0   (CI shape green: 563 suite(s), 6217 passed, 0 failed)
+suites          563
+passed          6217
+failed          0
+ignored         4
+skip lines      0
+binaries        563 launched, 563 reported
+test targets    563 expected launches (549 runnable + 14 doctest, 0 excluded for required-features; cargo metadata --no-deps), all launched
+reconciles      6186 baseline + 31 new = 6217 observed
+RESULT          GREEN
+```
+
+`.target-land/tmp` (1.3G after the run) and the copies deleted. No pin, golden or attestation touched.
+
+Branch is ready; merge and push are the overseer's and owner-gated.

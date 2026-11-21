@@ -3024,12 +3024,12 @@ until its row is removed.
 
 ## STEP0-A10-REFUSALS
 
-- state: built, awaiting landing 2026-11-21 (A10, branch `parcel/a10-refuse-always-wrong` @ the fix-wave tip)  size: `M`  project: `STEP0-A10`
+- state: built, awaiting landing 2026-11-21 (A10, branch `parcel/a10-refuse-always-wrong` @ the fix-wave tip; code a2bd0b12)  size: `M`  project: `STEP0-A10`
 - Six `.emp` constructs a green build accepted are now refusals (`[proc.repeated-clause]`, `[name.duplicate-const]`,
   `[operand.bare-number]`, `[layout.odd-instruction]`, `[contract.binding-uncontracted]`, `[proc.sr-undeclared]` in the
   gated build). Proof: 7/7 shipped shapes and the three fixture rows byte-identical to `1e200e1b`; four aeon builds exit 0;
-  landing run GREEN at b6b32362 (6186 baseline + 30 new = 6216 observed, 0 failed, 4 ignored); the fix wave re-proves
-  7/7 and the landing run at its own tip (note, "Final review fix wave"). Evidence in
+  after the final-review fix wave, 7/7 again at a2bd0b12 and the strict landing run GREEN at 842d029f (563 suites,
+  6186 baseline + 31 new = 6217 observed, 0 failed, 4 ignored, 0 skips). Evidence in
   `docs/superpowers/notes/2026-11-21-a10-refuse-always-wrong.md`. Merge, push and the card's Progress line are the overseer's.
 - **Width of `[operand.bare-number]` (for the owner).** It refuses any integer-valued, non-path expression written
   without `#` in a 68000 operand position, not only a literal: `move.w sizeof(u16), d0`, `move.w 2+2, d0` and
