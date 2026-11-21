@@ -2101,3 +2101,18 @@ tree; whole logs `diff`-empty after normalising the scratch paths):
 | config_a | 147: 67, 57, 15, 5, 2, 1 | identical |
 | config_b | 163: 63, 61, 21, 15, 2, 1 | identical |
 | lean | 160: 63, 59, 20, 15, 2, 1 | identical |
+
+### Fix wave: the merge of master was NOT done (master moved again with code)
+
+The dispatch named `origin/master` = `573930be` and said to stop if master had moved again with code. After
+`git fetch origin`, `origin/master` is `01f930b6`: four commits past `573930be` (`d3440875`, `4518d037`, the
+merge `601be264`, `01f930b6`), touching `scripts/landing-run.sh` (+317 lines, an Oracle pinned-export lane),
+`crates/sigil-harness/tests/landing_verdict.rs` (+373 lines, 8 new `#[test]`), `docs/OVERSEER-REFERENCE.md`
+and `docs/QUEUE.md`. Stopped there; nothing merged. A dry run (`git merge-tree --write-tree`, which touches no
+worktree) says the only conflict against either `573930be` or `01f930b6` is `docs/QUEUE.md`.
+
+**Pending landing: the test counts the later run needs** (`#[test]` added minus removed, indented ones counted,
+`grep -cE '^\+\s*#\[test\]'` minus `grep -cE '^-\s*#\[test\]'` over `-- crates`):
+- this branch over its base `55c6ec32` (= over master after a clean merge, since no crate file conflicts):
+  **69** added, 0 removed (Task 12's 57 + 6 indented, plus the fix wave's 6);
+- master over `55c6ec32`: **8** at `573930be`, **16** at `01f930b6` (its `landing_verdict.rs` adds 8 more).
