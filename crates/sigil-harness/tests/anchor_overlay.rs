@@ -148,7 +148,7 @@ fn an_overlay_nothing_can_place_fails_the_build() {
 #[test]
 fn a_shape_row_carrying_an_overlay_is_refused_by_the_schema() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let game = sigil_harness::test_support::write_project_fixture(tmp.path());
+    let game = sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     let path = game.join("game.toml");
     let text = std::fs::read_to_string(&path).unwrap() + "anchor_overlay = \"overlay.toml\"\n";
     std::fs::write(&path, text).unwrap();

@@ -43,12 +43,26 @@
 //! ```
 
 use sigil_harness::pins;
-use sigil_harness::test_support::{native_section, NativeSection, ACT_DESCRIPTOR_ASSERT_FILES};
+use sigil_harness::test_support::{native_section, NativeSection};
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// The files whose link asserts the act-descriptor oracles decide against their
+/// AS-side seam: the descriptor itself and the modules the old hand-listed rig
+/// carried ambient (each of whose asserts that seam already resolved). Test data, so it
+/// lives here rather than in `sigil_harness::test_support` (G0b Task 12: no crate the
+/// `sigil` driver links names a game).
+const ACT_DESCRIPTOR_ASSERT_FILES: &[&str] = &[
+    "games/sonic4/data/levels/ojz/act1/act_descriptor.emp",
+    "engine/structs.emp",
+    "engine/system/constants.emp",
+    "games/sonic4/data/generated/ojz/act1/ojz_act_pool_manifest.emp",
+    "games/sonic4/data/generated/ojz/act1/sec_block_dicts.emp",
+    "games/sonic4/data/generated/ojz/act1/effects_scenes.emp",
+];
 
 fn aeon_root() -> PathBuf {
     sigil_harness::test_support::aeon_dir()

@@ -178,7 +178,7 @@ proc ZSndCaller () {
 /// Write the fixture tree: the two modules and the empty game map the shape's
 /// define merge requires.
 fn tree(root: &Path, m68k: &str, z80: &str) {
-    sigil_harness::test_support::write_project_fixture(root);
+    sigil_harness::test_support::write_project_fixture(root, "g");
     std::fs::write(root.join("engine/flagfix.emp"), m68k).unwrap();
     std::fs::write(root.join("engine/sndfix.emp"), z80).unwrap();
 }

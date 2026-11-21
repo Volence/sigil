@@ -128,7 +128,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use sigil_harness::freeze_journal;
+// The freeze journal is this tool's alone (and the `freeze_step_gap` gate's, which
+// compiles the same file by path): it lives beside this binary, not in the library the
+// `sigil` driver links (G0b Task 12: its step table names the per-game golden blobs).
+#[path = "refreeze/freeze_journal.rs"]
+#[allow(dead_code)] // its surface is shared with that gate; each user reads a part
+mod freeze_journal;
 use sigil_harness::harness_root::{
     announce_root, repin_invocation, resolve_harness_root, ROOT_OVERRIDE,
 };
@@ -368,7 +373,7 @@ fn interrupted_freeze(root: &Path) -> Option<String> {
 /// resolved root passed explicitly, so the re-run does not depend on standing in the same
 /// directory, and with the environment the freeze cannot run without.
 fn invocation(root: &Path) -> String {
-    use sigil_harness::freeze_journal::sh_quote;
+    use crate::freeze_journal::sh_quote;
     let mut parts: Vec<String> = Vec::new();
     parts.push(format!("{ROOT_OVERRIDE}={}", sh_quote(&root.display().to_string())));
     // The prebuilt-`repin` override is deliberately NOT carried across. It skips the
@@ -1556,7 +1561,7 @@ fn do_freeze(
     // (0.5) THE JOURNAL. Opened after the tree is known — it records which one — and
     // before the first step, because every step from here on writes an artifact whose
     // freshness a later reader has no other way to establish. Removed only when the run
-    // finishes; see [`sigil_harness::freeze_journal`] for why the three joints between
+    // finishes; see [`freeze_journal`] for why the three joints between
     // the steps are a wider exposure than the capture they follow.
     //
     // A leftover from a killed run is ANNOUNCED and then replaced, never refused: this
@@ -1859,7 +1864,7 @@ mod child_handover {
 
 #[cfg(test)]
 mod step_journal {
-    use sigil_harness::freeze_journal::{
+    use crate::freeze_journal::{
         STEPS, STEP_CAPTURE, STEP_LEDGER, STEP_PINS, STEP_SIZES,
     };
     use sigil_harness::harness_root::ROOT_MARKERS;

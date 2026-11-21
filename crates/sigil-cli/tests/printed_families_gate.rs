@@ -86,7 +86,7 @@ const HEADERS: [&str; 3] = [
 /// Write the fixture tree: the module and the empty game map the shape's define
 /// merge requires.
 fn tree(root: &Path, src: &str) {
-    sigil_harness::test_support::write_project_fixture(root);
+    sigil_harness::test_support::write_project_fixture(root, "g");
     std::fs::write(root.join("engine/printfix.emp"), src).unwrap();
 }
 

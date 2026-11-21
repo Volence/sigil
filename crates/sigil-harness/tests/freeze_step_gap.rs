@@ -35,7 +35,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use sigil_harness::freeze_journal::{self, STEPS};
+// The journal module lives beside the `refreeze` binary (G0b Task 12: out of the library
+// the `sigil` driver links); this gate compiles the same file.
+#[path = "../src/bin/refreeze/freeze_journal.rs"]
+#[allow(dead_code)]
+mod freeze_journal;
+use freeze_journal::STEPS;
 
 /// ONE TEST PER JOINT, not one over the set. The three gaps leave different wreckage — a
 /// kill after the capture strands three artifact classes, a kill after the pins strands

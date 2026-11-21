@@ -1112,7 +1112,7 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     // engine and one game, an empty map that declares no `[defines]` rows) with an empty
     // `engine.ram`, the RAM module its engine description seeds.
     let tmp = tempfile::tempdir().unwrap();
-    let game = sigil_harness::test_support::write_project_fixture(tmp.path());
+    let game = sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     std::fs::write(tmp.path().join("engine/ram.emp"), "module engine.ram\n").unwrap();
     let report = |cmd: &mut std::process::Command| {
         cmd.args(["build", "--project"]).arg(&game).args(["--shape", "release", "--report", "ram"]);

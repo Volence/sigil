@@ -55,7 +55,7 @@ const HEADER: &str = "error: [call.clobbers-incomplete] (Z80) closure firings";
 const PASSED: &str = "contract closure gate: passed (";
 
 fn tree(root: &Path, src: &str) -> std::path::PathBuf {
-    sigil_harness::test_support::write_project_fixture(root);
+    sigil_harness::test_support::write_project_fixture(root, "g");
     let f = root.join("engine/z80fix.emp");
     std::fs::write(&f, src).unwrap();
     f

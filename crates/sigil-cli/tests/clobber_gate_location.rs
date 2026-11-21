@@ -66,7 +66,7 @@ pub proc R () clobbers(d0/d2) {
 const HEADER: &str = "error: [proc.clobber-undeclared] closure firings";
 
 fn tree(root: &Path, src: &str) {
-    sigil_harness::test_support::write_project_fixture(root);
+    sigil_harness::test_support::write_project_fixture(root, "g");
     std::fs::write(root.join("engine/clobfix.emp"), src).unwrap();
 }
 

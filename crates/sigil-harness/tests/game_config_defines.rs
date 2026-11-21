@@ -22,7 +22,7 @@ use std::path::Path;
 /// `MAX_RING_BUFFER = 128` and whose placement map is `body`. Returns the tempdir.
 fn project_with_map(body: &str) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let game = sigil_harness::test_support::write_project_fixture(tmp.path());
+    let game = sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     let engine = tmp.path().join("engine/engine.toml");
     let mut text = std::fs::read_to_string(&engine).unwrap();
     text.push_str("[defines]\nMAX_RING_BUFFER = 128\n");
@@ -215,7 +215,7 @@ fn audit_tree(aeon: &Path) -> Result<BTreeSet<String>, String> {
 /// shape) whose maps are `g_map` and `h_map`.
 fn two_game_tree(g_map: &str, h_map: &str) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let g = sigil_harness::test_support::write_project_fixture(tmp.path());
+    let g = sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     let debug = "[shapes.debug]\nfeatures = { debug = true, crash_report = true, sound = false }\n";
     let gt = std::fs::read_to_string(g.join("game.toml")).unwrap() + debug;
     std::fs::write(g.join("game.toml"), &gt).unwrap();

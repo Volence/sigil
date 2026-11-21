@@ -69,11 +69,10 @@ pub mod strict_census;
 /// bin and the `provenance_chain` gate test.
 pub mod provenance;
 
-/// Which of `refreeze --freeze`'s four regeneration steps completed, so that a run
-/// killed in one of the three joints BETWEEN them is nameable afterwards instead of
-/// leaving fresh artifacts beside stale ones that all parse. Driven by the `refreeze`
-/// bin and the `freeze_step_gap` gate test.
-pub mod freeze_journal;
+// `freeze_journal` (which of `refreeze --freeze`'s steps completed) lives beside the
+// `refreeze` binary, `src/bin/refreeze/freeze_journal.rs`, since G0b Task 12: only that
+// binary and the `freeze_step_gap` gate use it, and its step table names per-game golden
+// blobs, which the no-game-names gate keeps out of every crate the `sigil` driver links.
 
 /// Whether the revisions `provenance.toml` records still EXIST in the histories they
 /// name. [`provenance`] checks their SHAPE; this checks that a branch still reaches

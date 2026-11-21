@@ -2568,18 +2568,6 @@ pub fn native_section(
     Ok(NativeSection { section: hits.remove(0), link_asserts })
 }
 
-/// The files whose link asserts the act-descriptor oracles decide against their
-/// AS-side seam: the descriptor itself and the modules the old hand-listed rig
-/// carried ambient (each of whose asserts that seam already resolved).
-pub const ACT_DESCRIPTOR_ASSERT_FILES: &[&str] = &[
-    "games/sonic4/data/levels/ojz/act1/act_descriptor.emp",
-    "engine/structs.emp",
-    "engine/system/constants.emp",
-    "games/sonic4/data/generated/ojz/act1/ojz_act_pool_manifest.emp",
-    "games/sonic4/data/generated/ojz/act1/sec_block_dicts.emp",
-    "games/sonic4/data/generated/ojz/act1/effects_scenes.emp",
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2921,14 +2909,15 @@ pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
     assert!(st.success(), "cp -a {} {}", from.display(), to.display());
 }
 
-/// The smallest described project a `sigil build --project <root>/games/g --shape release`
-/// reads (G0b Task 11): an engine description with no rows to satisfy (no required
-/// constants, labels or helpers; empty contract-closure baselines), one game `g` with one
+/// The smallest described project a `sigil build --project <root>/games/<id> --shape
+/// release` reads (G0b Task 11): an engine description with no rows to satisfy (no required
+/// constants, labels or helpers; empty contract-closure baselines), one game `id` with one
 /// sound-off `release` shape and an empty placement map. A gate test writes its own modules
 /// into `<root>/engine/` (analysed by the closure as engine-root modules) and reads the
 /// build's refusal text; the build itself stops at the first input the fixture lacks.
-/// Returns the `--project` directory.
-pub fn write_project_fixture(root: &std::path::Path) -> std::path::PathBuf {
+/// Returns the `--project` directory. The caller names the game (G0b Task 12: no crate the
+/// `sigil` driver links names one; the test suites all call theirs `g`).
+pub fn write_project_fixture(root: &std::path::Path, id: &str) -> std::path::PathBuf {
     const ENGINE: &str = r#"format = 1
 helpers = []
 ram_helpers = []
@@ -2955,31 +2944,34 @@ dac_head = "c"
 dac_blip_bank = "d"
 dac_shared_bank = "e"
 "#;
-    const GAME: &str = r#"format = 1
-id = "g"
-name = "g"
+    let game = format!(
+        r#"format = 1
+id = "{id}"
+name = "{id}"
 require_one_text = false
 appendix_floor = 4096
 map = "map.toml"
 baseline = "baseline.toml"
-engine = { suite_path = "aeon", root = "engine" }
-sources = { root = ".", residual_as = "game_root.asm" }
-entry = { game = "games.g.game", ram = "games.g.ram" }
+engine = {{ suite_path = "aeon", root = "engine" }}
+sources = {{ root = ".", residual_as = "game_root.asm" }}
+entry = {{ game = "games.{id}.game", ram = "games.{id}.ram" }}
 [shapes.release]
-features = { debug = false, crash_report = true, sound = false }
-"#;
+features = {{ debug = false, crash_report = true, sound = false }}
+"#
+    );
+    let dir = format!("games/{id}");
     for (rel, text) in [
-        ("engine/engine.toml", ENGINE),
-        ("engine/baseline.toml", "format = 1\n"),
-        ("games/g/game.toml", GAME),
-        ("games/g/map.toml", ""),
-        ("games/g/baseline.toml", "format = 1\n"),
+        ("engine/engine.toml".to_string(), ENGINE),
+        ("engine/baseline.toml".to_string(), "format = 1\n"),
+        (format!("{dir}/game.toml"), game.as_str()),
+        (format!("{dir}/map.toml"), ""),
+        (format!("{dir}/baseline.toml"), "format = 1\n"),
     ] {
         let path = root.join(rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, text).unwrap();
     }
-    root.join("games/g")
+    root.join(dir)
 }
 
 /// Hold a hand-listed table of `(game, shape row)` pairs to EXACTLY the shipped shapes

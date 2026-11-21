@@ -258,7 +258,7 @@ fn harvest_shapes_a_fixed_struct_set_exactly() {
     let tmp = tempfile::tempdir().expect("tempdir");
     // The struct twin list is the engine description's (`struct_twins`,
     // `struct_tail_equates`; G0b Task 11): the fixture engine.toml names the eight.
-    sigil_harness::test_support::write_project_fixture(tmp.path());
+    sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     let engine = tmp.path().join("engine/engine.toml");
     let text = std::fs::read_to_string(&engine).unwrap().replace(
         "struct_twins = []\n",
