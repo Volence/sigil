@@ -306,3 +306,30 @@ test an_undeclared_sr_write_stops_the_gated_build ... ok
 test outside_the_gate_it_stays_a_warning ... ok
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.84s
 ```
+
+### Task 5, fix round 1: `[contract.binding-uncontracted]` reaches a full gated `sigil build`
+
+Test: `crates/sigil-cli/tests/binding_uncontracted_gate.rs`. A copy of the reference tree has demo's `implement Game` bind `boot_hook` to `Zz_A10_Bound`, a proc planted in `demo_state.emp` with no `clobbers` clause. Mutation: the same as Task 5, the `refuse_uncontracted` call in `check_hook_sig` disabled with `if false &&`. The probe goes red because the mutated build succeeds; the control (the same binding with `clobbers()`, plus the unplanted tree) stays green.
+
+```
+$ git status --short
+$ git diff --stat
+ crates/sigil-frontend-emp/src/resolve/contract.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'refuse_uncontracted(iface' crates/sigil-frontend-emp/src/resolve/contract.rs
+381:    if refuse_uncontracted(iface, member, bound_sym, "proc", all_items, span, diags) {
+401:    if false && refuse_uncontracted(iface, member, bound_sym, "hook", all_items, span, diags) {
+$ AEON_DIR=/home/volence/sonic_hacks/.aeon-a10-ref SIGIL_STRICT_GATE=1 CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-cli --test binding_uncontracted_gate   # mutated
+test a_binding_to_a_proc_with_no_clause_stops_the_build ... FAILED
+test the_same_binding_with_a_clause_builds_and_so_does_the_unplanted_tree ... ok
+thread 'a_binding_to_a_proc_with_no_clause_stops_the_build' (2896397) panicked at crates/sigil-cli/tests/binding_uncontracted_gate.rs:42:5:
+the build must refuse:
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.39s
+error: test failed, to rerun pass `-p sigil-cli --test binding_uncontracted_gate`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/resolve/contract.rs
+$ git status --short
+$ AEON_DIR=/home/volence/sonic_hacks/.aeon-a10-ref SIGIL_STRICT_GATE=1 CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-cli --test binding_uncontracted_gate   # restored
+test a_binding_to_a_proc_with_no_clause_stops_the_build ... ok
+test the_same_binding_with_a_clause_builds_and_so_does_the_unplanted_tree ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.42s
+```
