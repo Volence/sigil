@@ -183,11 +183,43 @@
 #     the CI shape working, not strict gates that measured nothing), and a log without
 #     `CI_EXIT=` is refused by name.
 #
+#     A RED OR UNRUNNABLE ORACLE EXPORT LANE IS A RED RUN (QUEUE G0B-ORACLE-PIN-DRIFT, closed
+#     2026-11-21). Oracle pins the bytes of five real `sigil build` ROMs and their
+#     `empyrean.build` exports (`fixtures/g0a/{SHA256SUMS,EXPORTS.normalized}`), and those
+#     pins drifted THREE TIMES with nothing on this side noticing: once from a sigil byte
+#     move, twice from aeon source edits (comments included) that moved the file hashes an
+#     export names. Oracle's default suite never rebuilds them, so only a lane that runs
+#     Oracle's own runner sees it. After the CI-shaped leg, with the sigil binary THIS run
+#     built and the reference tree THIS run measured, the script runs
+#       <oracle>/tools/g0a-real-exports.sh --sigil <SIGIL_BUILD> --aeon-ref <AEON_DIR>
+#                                          --out <TARGET>/tmp/oracle-g0a.<pid> --test
+#     in its own `##### ORACLE G0A SPAN`, recording `ORACLE_G0A_EXIT=`. THREE OUTCOMES, NEVER
+#     MERGED: runner exit 0 is OK; exit 1 (a byte or a gate differed) is RED; exit 2, any
+#     other exit, or a checkout or runner that is missing when the lane was asked for is
+#     COULD NOT RUN. RED and COULD NOT RUN both make `RESULT FAILED`, exit 1. The scratch
+#     directory is removed on every outcome; Oracle's cargo build goes to a cache under
+#     <TARGET>/oracle-g0a-target/, never into the Oracle checkout's own `target/`.
+#
+#     WHICH ORACLE. Resolved like every other suite checkout: ORACLE_G0A_DIR, then
+#     EMPYREAN_SUITE_ROOT/oracle, then the sibling of this checkout. The precedent for an
+#     unresolvable reference under the strict gate is ORACLE_DIR's, and it is a REFUSAL, so
+#     a run that resolves no Oracle checkout refuses before anything spends time. THE ONE
+#     OPT-OUT IS `ORACLE_G0A_LANE=off`, said out loud: the verdict then prints that the lane
+#     DID NOT RUN and why. An unset variable never skips the lane. The checkout's HEAD and
+#     whether its tree is clean are stamped; a DIRTY Oracle checkout is reported loudly, not
+#     refused (its pins may be a re-pin in progress, which is the on-red procedure).
+#
+#     ON RED, nothing re-pins automatically. Classify the difference (this sigil moved bytes,
+#     or the aeon reference is not the one Oracle's `fixtures/g0a/PROVENANCE.md` says the pins
+#     were made against), then re-pin Oracle on a feature branch as part of the landing.
+#
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
 #   scripts/landing-run.sh --scoped -- -p sigil-span        # a deliberately partial run
 #   scripts/landing-run.sh --verdict-only <log>             # re-judge a finished log
+#   ORACLE_G0A_DIR=~/sonic_hacks/oracle scripts/landing-run.sh --baseline 4156 --aeon <tree>
+#   ORACLE_G0A_LANE=off scripts/landing-run.sh ...          # the oracle lane, OFF out loud
 #
 #   `--verdict-only <log>` runs NOTHING: it reads a log this script (or a fixture shaped
 #   like one) already wrote and puts it through the identical verdict code path, so the
@@ -296,7 +328,8 @@
 #   0  the suite ran, passed, reconciled against the stated baseline, and the lint bar
 #      exited 0
 #   1  the suite FAILED (red tests, cargo exited nonzero, or a `skip:` line survived
-#      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED, or THE LEDGER GATE IS RED
+#      SIGIL_STRICT_GATE=1), or THE LINT BAR IS RED, or THE LEDGER GATE IS RED, or THE
+#      ORACLE EXPORT LANE is RED or COULD NOT RUN
 #   2  the run COULD NOT RUN or could not be measured, never green, never a count; also
 #      a run whose verdict could not be appended to its log, whatever the verdict was
 #   3  the suite passed but the total does NOT reconcile with --baseline
@@ -577,6 +610,79 @@ elif [[ -n ${EMPYREAN_SUITE_ROOT:-} ]]; then ORACLE_STEP="2: EMPYREAN_SUITE_ROOT
 else ORACLE_STEP="3: sibling of this checkout via git --git-common-dir"
 fi
 
+# THE ORACLE EXPORT LANE'S CHECKOUT (header: "A RED OR UNRUNNABLE ORACLE EXPORT LANE"),
+# resolved here with the other references so the refusal comes before anything spends
+# time. Three preflight outcomes, and only the first lets the lane run:
+#   resolved, runner present  -> the lane runs after the CI-shaped leg
+#   resolved wrongly / no runner -> G0A_CANNOT is set; the run goes ahead (every other bar
+#                                   is still worth measuring) and the lane is COULD NOT RUN
+#   nothing named it          -> REFUSED, ORACLE_DIR's precedent, unless ORACLE_G0A_LANE=off
+G0A_MODE=${ORACLE_G0A_LANE:-on}
+G0A_DIR="" G0A_STEP="" G0A_CANNOT="" G0A_WHY_OFF=""
+G0A_HEAD="?" G0A_BRANCH="?" G0A_DIRTY="?"
+G0A_RUNNER_REL=tools/g0a-real-exports.sh
+case $G0A_MODE in
+    on) ;;
+    off)
+        [[ -z ${ORACLE_G0A_DIR:-} ]] \
+            || die "ORACLE_G0A_LANE=off and ORACLE_G0A_DIR=$ORACLE_G0A_DIR are both set. One says
+       run the oracle export lane against that checkout and the other says do not run it.
+       Unset the one you did not mean."
+        G0A_WHY_OFF="ORACLE_G0A_LANE=off was set by the operator, so Oracle's pinned exports were NOT checked against this sigil"
+        say "WARNING, ORACLE_G0A_LANE=off: the oracle export lane will NOT run, and the verdict will say so."
+        ;;
+    *)  die "ORACLE_G0A_LANE=$ORACLE_G0A_LANE is not a value this script knows. Leave it unset (the
+       lane runs) or set it to \`off\` to say out loud that this run does not check Oracle's
+       pinned exports." ;;
+esac
+if [[ $G0A_MODE == on ]]; then
+    G0A_DIR=$(suite_resolve_checkout oracle ORACLE_G0A_DIR)
+    G0A_RC=$?
+    case $G0A_RC in
+        0)
+            G0A_DIR=$(abspath "$G0A_DIR")
+            if [[ -n ${ORACLE_G0A_DIR:-} ]]; then G0A_STEP="1: explicit ORACLE_G0A_DIR"
+            elif [[ -n ${EMPYREAN_SUITE_ROOT:-} ]]; then G0A_STEP="2: EMPYREAN_SUITE_ROOT/oracle"
+            else G0A_STEP="3: sibling of this checkout via git --git-common-dir"
+            fi
+            [[ -f $G0A_DIR/$G0A_RUNNER_REL ]] \
+                || G0A_CANNOT="the Oracle checkout $G0A_DIR has no $G0A_RUNNER_REL, so its pinned exports cannot be checked"
+            G0A_HEAD=$(git -C "$G0A_DIR" rev-parse HEAD 2>/dev/null || echo '?')
+            G0A_BRANCH=$(git -C "$G0A_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
+            G0A_DIRTY=clean
+            [[ -n $(git -C "$G0A_DIR" status --porcelain 2>/dev/null) ]] && G0A_DIRTY=DIRTY
+            ;;
+        3)
+            die "no Oracle checkout could be resolved for the oracle export lane (see the refusal
+       above). That lane runs Oracle's tools/g0a-real-exports.sh with the sigil this run
+       builds, and it is how a drift in Oracle's pinned exports goes red on the day it
+       happens. Export ORACLE_G0A_DIR=<oracle checkout>, or set ORACLE_G0A_LANE=off to say
+       out loud that this run does not check them (the verdict will print DID NOT RUN)." ;;
+        *)
+            G0A_DIR=""
+            G0A_CANNOT="the Oracle checkout could not be resolved (the resolver refused with rc $G0A_RC: a variable is set but does not name an Oracle checkout, see the refusal above)" ;;
+    esac
+    if [[ -n $G0A_CANNOT ]]; then
+        say "WARNING, the oracle export lane COULD NOT RUN: $G0A_CANNOT.
+       The run goes ahead so every other bar is measured, and its RESULT WILL BE RED."
+    fi
+    if [[ $G0A_DIRTY == DIRTY ]]; then
+        say "WARNING, the Oracle checkout $G0A_DIR is DIRTY. The lane measures its working tree,
+       uncommitted pins included; that is reported in the verdict, not refused."
+    fi
+fi
+# Oracle's cargo build for the runner's gates, kept OUT of the Oracle checkout (whose
+# `target/` is a peer's) and out of this run's own artifacts. Keyed by the checkout's path
+# because cargo bakes the building tree's paths into what it caches, the shared-target
+# class refusal (2) is about.
+G0A_CARGO_TARGET=""
+[[ -n $G0A_DIR ]] && G0A_CARGO_TARGET="$TARGET/oracle-g0a-target/$(printf '%s' "$G0A_DIR" | sha256sum | cut -c1-12)"
+# The runner's scratch (its ROMs, exports, gate log and its copy of the reference tree):
+# run-unique, under this run's own temp area, and removed on EVERY outcome, by the lane
+# itself when it finishes and by this trap when anything exits early.
+G0A_OUT="$TARGET/tmp/oracle-g0a.$$"
+trap 'rm -rf -- "$G0A_OUT"' EXIT
+
 AEON_HEAD=$(git -C "$AEON" rev-parse HEAD 2>/dev/null || echo '?')
 AEON_BRANCH=$(git -C "$AEON" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')
 AEON_DIRTY=clean
@@ -783,6 +889,17 @@ say "test-target census: $CENSUS_LINE"
     echo "# aeon branch    $AEON_BRANCH ($AEON_DIRTY)"
     echo "# aeon ROMs      $ROM_STATE"
     echo "# ORACLE_DIR     $ORACLE_LEGACY (step $ORACLE_STEP)"
+    # The oracle export lane's checkout. Every state is stamped, never omitted, so a log
+    # always answers whether that lane was asked for and against what.
+    if [[ $G0A_MODE == off ]]; then
+        echo "# ORACLE_G0A_DIR DID NOT RUN ($G0A_WHY_OFF)"
+    elif [[ -z $G0A_DIR ]]; then
+        echo "# ORACLE_G0A_DIR COULD NOT RESOLVE ($G0A_CANNOT)"
+    else
+        echo "# ORACLE_G0A_DIR $G0A_DIR (step $G0A_STEP)"
+        echo "# oracle HEAD    $G0A_HEAD"
+        echo "# oracle branch  $G0A_BRANCH ($G0A_DIRTY)"
+    fi
     echo "# TARGET_DIR     $TARGET"
     echo "# SIGIL_BUILD    $SIGIL_BUILD_RESOLVED ($BUILD_ORIGIN)"
     echo "# SIGIL_EMIT     $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN)"
@@ -800,6 +917,9 @@ say "test-target census: $CENSUS_LINE"
     echo "# ledger command python3 ${LEDGER_ARGS[*]}"
     echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
     echo "# ci-shaped      env ${CI_UNSET[*]} SIGIL_ALLOW_PARTIAL=1 cargo ${CI_ARGS[*]}"
+    if [[ $G0A_MODE == on && -z $G0A_CANNOT ]]; then
+        echo "# oracle lane    CARGO_TARGET_DIR=$G0A_CARGO_TARGET bash $G0A_DIR/$G0A_RUNNER_REL --sigil $SIGIL_BUILD_RESOLVED --aeon-ref $AEON --out $G0A_OUT --test"
+    fi
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
 
@@ -874,6 +994,39 @@ SIGIL_ALLOW_PARTIAL=1 \
 CI_RC=${PIPESTATUS[0]}
 echo "CI_EXIT=$CI_RC" >> "$LOG"
 echo "##### CI-SHAPED SPAN ENDS" >> "$LOG"
+
+# ---------------------------------------------------------------------------------------
+# (11) THE ORACLE EXPORT LANE (G0B-ORACLE-PIN-DRIFT). After the build, so it uses the
+# binary this run built; after the suite, because it reads nothing the suite writes and a
+# reader tailing the log should meet the suite's verdict first. Collecting half only: the
+# DECIDING half is `G0A_RED` in the `RESULT FAILED` condition at the foot of this file.
+# Its own span, lifted out of the record before any strict-span reader runs: the runner
+# prints Oracle's own `test result:` line, which must not be counted as this suite's.
+# `ORACLE_G0A_EXIT=` is the runner's exit code, or `off` / `could-not-run` with the reason
+# on `ORACLE_G0A_WHY=` when it was not started.
+# ---------------------------------------------------------------------------------------
+if [[ $G0A_MODE == off ]]; then
+    echo "##### ORACLE G0A SPAN, not run" >> "$LOG"
+    echo "ORACLE_G0A_EXIT=off" >> "$LOG"
+    echo "ORACLE_G0A_WHY=$G0A_WHY_OFF" >> "$LOG"
+elif [[ -n $G0A_CANNOT ]]; then
+    echo "##### ORACLE G0A SPAN, not run" >> "$LOG"
+    echo "ORACLE_G0A_EXIT=could-not-run" >> "$LOG"
+    echo "ORACLE_G0A_WHY=$G0A_CANNOT" >> "$LOG"
+else
+    G0A_CMD=(bash "$G0A_DIR/$G0A_RUNNER_REL" --sigil "$SIGIL_BUILD_RESOLVED" --aeon-ref "$AEON"
+             --out "$G0A_OUT" --test)
+    echo "##### ORACLE G0A SPAN, CARGO_TARGET_DIR=$G0A_CARGO_TARGET ${G0A_CMD[*]}" >> "$LOG"
+    say "oracle export lane: ${G0A_CMD[*]}"
+    rm -rf -- "$G0A_OUT"
+    mkdir -p "$G0A_OUT" "$G0A_CARGO_TARGET"
+    CARGO_TARGET_DIR="$G0A_CARGO_TARGET" "${G0A_CMD[@]}" 2>&1 | tee -a "$LOG"
+    # PIPESTATUS[0] for the reason (6) gives.
+    G0A_EXIT=${PIPESTATUS[0]}
+    rm -rf -- "$G0A_OUT"
+    echo "ORACLE_G0A_EXIT=$G0A_EXIT" >> "$LOG"
+fi
+echo "##### ORACLE G0A SPAN ENDS" >> "$LOG"
 
 FINISHED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "# finished (UTC) $FINISHED" >> "$LOG"
@@ -955,6 +1108,46 @@ CI_UNMEASURED=0
 CI_RED=0
 (( CI_RC != 0 || CI_FAILED > 0 || CI_UNMEASURED )) && CI_RED=1
 mapfile -t CI_FAILING < <(failing_names <<< "$CI_RECORD")
+# ---------------------------------------------------------------------------------------
+# (11b) THE ORACLE EXPORT LANE'S SPAN, lifted out the same way and for the same reason:
+# the runner prints Oracle's own `test result:` line, which every strict-span reader below
+# would count as one of this suite's. The lane's state comes from that span alone:
+#   OK            ORACLE_G0A_EXIT=0
+#   RED           ORACLE_G0A_EXIT=1, a byte or a gate differed
+#   COULD NOT RUN ORACLE_G0A_EXIT=2 or any other code, `could-not-run`, a span with no exit
+#                 line (a run killed inside it), or a stamp naming the lane with no span
+#   DID NOT RUN   ORACLE_G0A_EXIT=off, the operator's explicit opt-out
+#   NOT STATED    neither span nor stamp: a log written before the lane existed, reported
+#                 and not failed, the census's precedent for a pre-existing log
+# ---------------------------------------------------------------------------------------
+G0A_RECORD=$(awk '/^##### ORACLE G0A SPAN,/ { on = 1 } on { print } /^##### ORACLE G0A SPAN ENDS/ { on = 0 }' <<< "$RECORD")
+RECORD=$(awk '/^##### ORACLE G0A SPAN,/ { off = 1 } !off { print } /^##### ORACLE G0A SPAN ENDS/ { off = 0 }' <<< "$RECORD")
+G0A_EXIT_REC=$(sed -n 's/^ORACLE_G0A_EXIT=//p' <<< "$G0A_RECORD" | tail -n 1)
+G0A_WHY_REC=$(sed -n 's/^ORACLE_G0A_WHY=//p' <<< "$G0A_RECORD" | tail -n 1)
+G0A_STAMP=$(stamp ORACLE_G0A_DIR)
+G0A_HEAD_REC=$(stamp 'oracle HEAD')
+G0A_BRANCH_REC=$(stamp 'oracle branch')
+if [[ -z $G0A_RECORD ]]; then
+    if [[ -n $G0A_STAMP ]]; then
+        G0A_STATE=COULD_NOT_RUN
+        G0A_WHY_REC="the log's stamp names the lane ($G0A_STAMP) and the log has no ORACLE G0A SPAN: the run stopped before the lane recorded anything"
+    else
+        G0A_STATE=NOT_STATED
+    fi
+else
+    case $G0A_EXIT_REC in
+        0)   G0A_STATE=OK ;;
+        1)   G0A_STATE=RED ;;
+        off) G0A_STATE=DID_NOT_RUN ;;
+        could-not-run) G0A_STATE=COULD_NOT_RUN ;;
+        '')  G0A_STATE=COULD_NOT_RUN
+             G0A_WHY_REC="the ORACLE G0A SPAN carries no ORACLE_G0A_EXIT line: the lane started and never finished" ;;
+        *)   G0A_STATE=COULD_NOT_RUN
+             G0A_WHY_REC="the runner exited $G0A_EXIT_REC, which is its could-not-run code (2) or not one of its codes at all; 2 is never a pass" ;;
+    esac
+fi
+G0A_RED=0
+[[ $G0A_STATE == RED || $G0A_STATE == COULD_NOT_RUN ]] && G0A_RED=1
 # ---------------------------------------------------------------------------------------
 # (7) Failures first, WITH the names. No `head`, no tail excerpt.
 # ---------------------------------------------------------------------------------------
@@ -1104,6 +1297,34 @@ elif (( CI_UNMEASURED )); then
     echo "  ci-shaped leg   $CI_RC   (CI-SHAPED LEG REPORTED NO TEST RESULT, it measured nothing)"
 else
     echo "  ci-shaped leg   $CI_RC   (CI-SHAPED LEG RED: $CI_FAILED failed over $CI_SUITES suite(s))"
+fi
+# THE ORACLE EXPORT LANE, always one line, in every state; the procedure on RED follows it.
+case $G0A_STATE in
+    OK)
+        echo "  oracle exports  OK   (runner exit 0: Oracle's pinned ROMs, exports and gates reproduced)" ;;
+    RED)
+        echo "  oracle exports  RED   (runner exit 1: a ROM, an export or a gate differs from Oracle's pins; the ORACLE G0A SPAN in the log names which)" ;;
+    COULD_NOT_RUN)
+        echo "  oracle exports  COULD NOT RUN   (${G0A_WHY_REC:-no reason recorded}). Not a pass." ;;
+    DID_NOT_RUN)
+        echo "  oracle exports  DID NOT RUN   (${G0A_WHY_REC:-ORACLE_G0A_LANE=off})" ;;
+    NOT_STATED)
+        echo "  oracle exports  NOT STATED, this log predates the oracle export lane" ;;
+esac
+if [[ -n $G0A_HEAD_REC ]]; then
+    echo "  oracle checkout $G0A_STAMP @ ${G0A_HEAD_REC:0:8} (${G0A_BRANCH_REC:-?})"
+    if [[ $G0A_BRANCH_REC == *'(DIRTY)' ]]; then
+        echo "                  ** THE ORACLE CHECKOUT IS DIRTY: the lane measured its working tree,"
+        echo "                  uncommitted pins included, not its HEAD. **"
+    fi
+fi
+if [[ $G0A_STATE == RED ]]; then
+    echo "                  WHAT TO DO: first classify the difference, either this sigil moved bytes"
+    echo "                  or the aeon reference ($AEON @ ${AEON_HEAD:0:8}) is not the aeon Oracle's pins"
+    echo "                  were made against (Oracle's fixtures/g0a/PROVENANCE.md names the aeon and"
+    echo "                  sigil the pins record). Then re-pin Oracle on a feature branch as part of"
+    echo "                  this landing, with that classification in the commit; nothing here"
+    echo "                  re-pins automatically."
 fi
 (( SCOPED )) && echo "  ** SCOPED RUN, PARTIAL. This is not a landing verdict. **"
 
@@ -1350,11 +1571,28 @@ fi
 # A RED CI-SHAPED LEG IS A RED RUN (A8), and an unmeasured one is too (`CI_RED` carries
 # both). THIS IS THE DECIDING HALF OF (10). Each informative branch below says "every other
 # bar is clean", so each one also requires `! CI_RED`.
+#
+# A RED OR UNRUNNABLE ORACLE EXPORT LANE IS A RED RUN (`G0A_RED` carries RED and COULD NOT
+# RUN alike). THIS IS THE DECIDING HALF OF (11). DID NOT RUN (the operator's explicit
+# ORACLE_G0A_LANE=off, printed in the block above) and NOT STATED (a log older than the
+# lane) are not in it. Each informative branch also requires `! G0A_RED`.
 if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC != 0 || LEDGER_SILENT \
       || ${#SILENT_BINARIES[@]} > 0 || COMPLETENESS_UNMEASURED || CENSUS_SHORT || CENSUS_UNMEASURED \
-      || CI_RED )); then
+      || CI_RED || G0A_RED )); then
     echo
-    if (( CI_RED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 \
+    if (( G0A_RED && ! CI_RED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 \
+          && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 \
+          && ! COMPLETENESS_UNMEASURED && ! CENSUS_SHORT && ! CENSUS_UNMEASURED )); then
+        if [[ $G0A_STATE == RED ]]; then
+            echo "  RESULT          FAILED, the ORACLE EXPORT LANE is RED: Oracle's pinned exports did"
+            echo "                  not reproduce with this sigil. Every other bar is clean. Follow the"
+            echo "                  WHAT TO DO above; do not land on this."
+        else
+            echo "  RESULT          FAILED, the ORACLE EXPORT LANE COULD NOT RUN. Every other bar is"
+            echo "                  clean; Oracle's pinned exports are UNCHECKED, which is not the same"
+            echo "                  as checked clean. Do not land on this."
+        fi
+    elif (( CI_RED && ! G0A_RED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 \
           && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 && ! COMPLETENESS_UNMEASURED \
           && ! CENSUS_SHORT && ! CENSUS_UNMEASURED )); then
         if (( CI_UNMEASURED )); then
@@ -1365,7 +1603,7 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
             echo "                  The strict run is clean; this is the shape GitHub CI runs (this repo"
             echo "                  alone, SIGIL_ALLOW_PARTIAL=1), so CI would be red. Do not land on this."
         fi
-    elif (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && ! CI_RED )); then
+    elif (( LEDGER_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && ! CI_RED && ! G0A_RED )); then
         # The informative case again: nothing about the code is red, and the run still is
         # not a landing because the owner's decision ledger moved somewhere he cannot read.
         if (( LEDGER_RC == 2 )); then
@@ -1378,23 +1616,23 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
             echo "                  passed and the lint bar is clean; the suite is not the reason this"
             echo "                  is not green. The report above names the lines. Do not land on this."
         fi
-    elif (( LEDGER_SILENT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0  && ! CI_RED )); then
+    elif (( LEDGER_SILENT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0  && ! CI_RED && ! G0A_RED )); then
         echo "  RESULT          FAILED, the LEDGER GATE reported nothing. Every other bar is clean;"
         echo "                  a gate with no measurement behind its exit code is why this is not"
         echo "                  green. Do not land on this."
-    elif (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
+    elif (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED && ! G0A_RED )); then
         # Named separately because the two halves disagreeing is the informative case, and
         # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
         echo "  RESULT          FAILED, the LINT BAR is red (clippy exit $CLIPPY_RC,"
         echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
         echo "                  the reason this is not green. Do not land on this."
-    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
+    elif (( SKIPS > 0 && CARGO_RC == 0 && FAILED == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED && ! G0A_RED )); then
         # The same informative case for the third bar: nothing was red, and the run is
         # still not a landing because $SKIPS gate(s) never measured their subject.
         echo "  RESULT          FAILED, $SKIPS skip line(s) survived SIGIL_STRICT_GATE=1. Every test"
         echo "                  that ran passed and the lint bar is clean; a gate that measured"
         echo "                  nothing is why this is not green. Do not land on this."
-    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
+    elif (( ${#SILENT_BINARIES[@]} > 0 && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED && ! G0A_RED )); then
         # The informative case for the fourth bar, and the one worth naming loudest: every
         # bar the run measures is clean and the run is still not a landing, because the
         # POPULATION it measured them over is short. Nothing else in this verdict would
@@ -1404,11 +1642,11 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "                  exited 0; the tests inside those binaries are simply not in the counts"
         echo "                  above. This is not a green run with a smaller number, it is a run whose"
         echo "                  population is unknown. Do not land on this."
-    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED )); then
+    elif (( COMPLETENESS_UNMEASURED && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT  && ! CI_RED && ! G0A_RED )); then
         echo "  RESULT          FAILED, the completeness check could not measure. Every other bar is"
         echo "                  clean; this log records no binary launches, so how many binaries should"
         echo "                  have reported is unknown, and an unknown population is not a green one."
-    elif (( CENSUS_SHORT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0  && ! CI_RED )); then
+    elif (( CENSUS_SHORT && CARGO_RC == 0 && FAILED == 0 && SKIPS == 0 && CLIPPY_RC == 0 && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0  && ! CI_RED && ! G0A_RED )); then
         # The informative case for the census: every binary that launched also reported,
         # so the log is internally consistent and still describes fewer targets than the
         # manifests do. Only a figure from outside the log can say that.
@@ -1418,7 +1656,7 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
         echo "                  with itself; it is the workspace it does not agree with. Do not land"
         echo "                  on this."
     else
-        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC, census $CENSUS_STATE, ci-shaped exit $CI_RC."
+        echo "  RESULT          FAILED, $FAILED test(s) red, ${#SILENT_BINARIES[@]} silent binary/binaries, $SKIPS skip line(s), cargo exit $CARGO_RC, clippy exit $CLIPPY_RC, ledger exit $LEDGER_RC, census $CENSUS_STATE, ci-shaped exit $CI_RC, oracle exports $G0A_STATE."
     fi
     echo "==================================================================================="
     exit 1

@@ -2630,7 +2630,22 @@ until its row is removed.
 
 ## G0B-ORACLE-PIN-DRIFT
 
-- state: open 2026-11-20 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
+- state: **closed 2026-11-21 by the landing-run oracle export lane** (open 2026-11-20, found in G0b Task 10)
+  size: `S`  project: `G0B-GAME-AS-DATA`
+- 2026-11-21 (closed): `scripts/landing-run.sh` now runs Oracle's `tools/g0a-real-exports.sh --test` after the
+  CI-shaped leg, with the sigil binary the run built and the run's own `--aeon` tree, so the next drift from
+  either cause (a sigil byte move, or an aeon source edit to a file an export names) is red at the landing that
+  causes it. Oracle checkout: `ORACLE_G0A_DIR`, then `EMPYREAN_SUITE_ROOT/oracle`, then the sibling; none
+  resolvable is a refusal (the `ORACLE_DIR` precedent) unless `ORACLE_G0A_LANE=off`, which the verdict prints as
+  DID NOT RUN. Runner exit 0 is OK, 1 is RED, 2 or a missing checkout/runner is COULD NOT RUN; RED and COULD NOT
+  RUN both fail the landing. On RED: classify (sigil moved bytes, or the aeon reference differs from the one in
+  oracle `fixtures/g0a/PROVENANCE.md`), then re-pin oracle on a feature branch in the same landing; no automatic
+  re-pin. Procedure in `docs/OVERSEER-REFERENCE.md` ("THE ORACLE EXPORT LANE IS PART OF THE LANDING BAR").
+  **What stays open, outside sigil:** oracle's own CI and default suite still do not run the runner (its default
+  suite reads only the trimmed fixture, which never rebuilds), so an oracle-side change that breaks the gates
+  against unchanged pins is seen only at the next sigil landing; and an aeon landing that edits an exported file
+  without a sigil landing in between is seen only at the next sigil landing, not at aeon's. Both are oracle's and
+  aeon's to book.
 - oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
   s4.trim.build.json}`) pin sigil `3f211b78`'s bytes. The walk merge (87b5c195) moved every shape's bytes, and from
   then on the runner was red against every sigil on this branch (with c6725ab3 and the same aeon `99cb963d`: none of

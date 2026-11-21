@@ -14,6 +14,7 @@
 //!
 //! Scratch is on disk, never under the system temp directory (tmpfs here), derived
 //! from this binary's own location inside the target directory.
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -1184,9 +1185,36 @@ test c_gate ... ok
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 ";
 
+/// The stub ORACLE runner, `tools/g0a-real-exports.sh` in a throwaway Oracle checkout. It
+/// records the arguments it was handed (one per line) in `FIXTURE_G0A_ARGS`, writes into
+/// its `--out` directory so the test can see the lane remove it, prints a `test result:`
+/// line of its own (Oracle's gates print one, and it must not reach this suite's counts),
+/// and exits `FIXTURE_G0A_RC`.
+const FAKE_G0A_RUNNER: &str = r#"#!/usr/bin/env bash
+printf '%s\n' "$@" > "$FIXTURE_G0A_ARGS"
+out=""
+while (( $# )); do [[ $1 == --out ]] && out=$2; shift; done
+[[ -d $out ]] || { echo "fixture g0a: --out $out is not a directory" >&2; exit 2; }
+echo "fixture rom" > "$out/s4.bin"
+echo "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+echo "G0A REAL-EXPORT GATES: 9/9 OK (fixture)"
+exit "${FIXTURE_G0A_RC:-0}"
+"#;
+
 /// Run the REAL landing-run.sh in run mode from a throwaway checkout under `dir`, and
 /// return (exit code, stdout, the log path).
 fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
+    let (code, stdout, stderr, log) = stub_run_with(dir, run, &[]);
+    assert!(log.is_file(), "COULD NOT MEASURE: the stub run wrote no log, it was refused before stamping:\n{stderr}");
+    (code, stdout, log)
+}
+
+/// [`stub_run`] with environment overrides applied last (`None` removes the variable), and
+/// no assertion that a log was written, so a refusal can be tested. Returns (exit code,
+/// stdout, stderr, the log path). The stub Oracle checkout is `<dir>/oracle-stub`, named in
+/// ORACLE_G0A_DIR by default; it is deliberately NOT `<dir>/oracle`, the sibling the
+/// resolver derives, so removing ORACLE_G0A_DIR leaves nothing to resolve.
+fn stub_run_with(dir: &Path, run: &StubRun, env: &[(&str, Option<&OsStr>)]) -> (i32, String, String, PathBuf) {
     let root = dir.join("checkout");
     std::fs::create_dir_all(root.join("scripts/lib")).unwrap();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
@@ -1227,6 +1255,18 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
     std::fs::create_dir_all(oracle.join("linux-port/gui")).unwrap();
     std::fs::create_dir_all(oracle.join("Devices")).unwrap();
     std::fs::write(oracle.join("linux-port/gui/Symbols.cpp"), "").unwrap();
+    // The Oracle checkout the export lane runs, a real git repository so the stamp's
+    // `oracle HEAD` and clean/DIRTY state are measured rather than defaulted.
+    let g0a = dir.join("oracle-stub");
+    std::fs::create_dir_all(g0a.join("tools")).unwrap();
+    write_exec(&g0a.join("tools/g0a-real-exports.sh"), FAKE_G0A_RUNNER);
+    git(&g0a, &["init", "-q"]);
+    git(&g0a, &["add", "."]);
+    git(&g0a, &["commit", "-q", "-m", "fixture"]);
+    // An uncommitted file, when a test asks for a DIRTY Oracle checkout.
+    if env.iter().any(|(k, _)| *k == "FIXTURE_G0A_DIRTY") {
+        std::fs::write(g0a.join("uncommitted-pin.txt"), "x").unwrap();
+    }
 
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -1245,8 +1285,8 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
         None => (span.clone(), 0),
     };
 
-    let out = Command::new("bash")
-        .arg(script())
+    let mut cmd = Command::new("bash");
+    cmd.arg(script())
         .args(["--baseline", "3", "--aeon"])
         .arg(&aeon)
         .arg("--target")
@@ -1256,6 +1296,10 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
         .current_dir(&root)
         .env("PATH", path)
         .env("ORACLE_DIR", &oracle)
+        .env("ORACLE_G0A_DIR", &g0a)
+        .env("FIXTURE_G0A_ARGS", dir.join("g0a-args.txt"))
+        .env_remove("ORACLE_G0A_LANE")
+        .env_remove("FIXTURE_G0A_RC")
         .env("SIGIL_BUILD", bin.join("cargo"))
         .env("SIGIL_EMIT", bin.join("cargo"))
         .env("FIXTURE_TEST_SPAN", &span)
@@ -1271,19 +1315,18 @@ fn stub_run(dir: &Path, run: &StubRun) -> (i32, String, PathBuf) {
         .env_remove("SIGIL_LANDING_TARGET")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .expect("COULD NOT MEASURE: bash could not run the wrapper");
+        .env_remove("GIT_INDEX_FILE");
+    for (k, v) in env {
+        match v {
+            Some(v) => cmd.env(k, v),
+            None => cmd.env_remove(k),
+        };
+    }
+    let out = cmd.output().expect("COULD NOT MEASURE: bash could not run the wrapper");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let code = out.status.code().unwrap_or_else(|| {
-        panic!("the wrapper was killed by a signal:\n{stdout}{}", String::from_utf8_lossy(&out.stderr))
-    });
-    assert!(
-        log.is_file(),
-        "COULD NOT MEASURE: the stub run wrote no log, it was refused before stamping:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    (code, stdout, log)
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let code = out.status.code().unwrap_or_else(|| panic!("the wrapper was killed by a signal:\n{stdout}{stderr}"));
+    (code, stdout, stderr, log)
 }
 
 /// The verdict block the log carries: the span body without its markers or `LANDING_EXIT=`.
@@ -1528,5 +1571,213 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
     assert_eq!(code, 1, "a red CI-shaped leg must fail the run, got {code}:\n{stdout}\n--- log ---\n{text}");
     assert!(stdout.contains("RESULT          FAILED, the CI-SHAPED LEG is red"), "{stdout}");
     assert!(text.contains("CI_EXIT=101\n"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ----------------------------------------------------------------------------------------
+// THE ORACLE EXPORT LANE (QUEUE G0B-ORACLE-PIN-DRIFT, closed 2026-11-21). Oracle's pinned
+// `sigil build` exports drifted three times with nothing on this side noticing; the landing
+// run now runs Oracle's `tools/g0a-real-exports.sh` with the binary and reference tree it
+// measured. These controls run the REAL wrapper in run mode against a stub runner and hold
+// the three outcomes apart (OK, RED, COULD NOT RUN), the refusal when nothing names an
+// Oracle checkout, and the one explicit opt-out.
+// ----------------------------------------------------------------------------------------
+
+const GREEN_RUN: StubRun<'static> =
+    StubRun { test_span: GREEN_SPAN, launches: 1, cargo_rc: 0, clippy_rc: 0, ci: None };
+
+/// THE CONTROL: the lane runs with THIS run's binary and tree, its scratch is gone
+/// afterwards, the runner's own `test result:` line stays out of the suite's counts, and
+/// the stamp names the Oracle checkout, its HEAD and that it is clean.
+#[test]
+fn the_oracle_export_lane_runs_with_this_runs_binary_and_tree_and_cleans_its_scratch() {
+    let dir = scratch("g0a-ok");
+    let (code, stdout, log) = stub_run(&dir, &GREEN_RUN);
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 0, "the CONTROL run must be green, got {code}:\n{stdout}\n--- log ---\n{text}");
+    assert!(stdout.contains("  oracle exports  OK   (runner exit 0"), "{stdout}");
+    assert!(stdout.contains("RESULT          GREEN"), "{stdout}");
+    // The runner printed `9 passed`; the suite's three must be all the verdict counts.
+    assert!(stdout.contains("  passed          3\n"), "the runner's test result leaked into the counts:\n{stdout}");
+    assert!(stdout.contains("3 baseline + 0 new = 3 observed"), "{stdout}");
+    assert!(text.contains("ORACLE_G0A_EXIT=0\n##### ORACLE G0A SPAN ENDS\n"), "{text}");
+
+    let g0a = dir.join("oracle-stub").canonicalize().unwrap();
+    assert!(
+        text.contains(&format!("# ORACLE_G0A_DIR {} (step 1: explicit ORACLE_G0A_DIR)", g0a.display())),
+        "{text}"
+    );
+    assert!(text.contains("# oracle HEAD    "), "{text}");
+    assert!(text.contains("# oracle branch  ") && text.contains("(clean)\n"), "{text}");
+
+    let args: Vec<String> =
+        std::fs::read_to_string(dir.join("g0a-args.txt")).unwrap().lines().map(str::to_owned).collect();
+    let target = dir.join("target").canonicalize().unwrap();
+    let aeon = dir.join("aeon").canonicalize().unwrap();
+    let sigil = dir.join("bin/cargo"); // SIGIL_BUILD, as stub_run overrides it
+    assert_eq!(args[0], "--sigil");
+    assert_eq!(Path::new(&args[1]), sigil.canonicalize().unwrap().as_path());
+    assert_eq!(args[2..4], ["--aeon-ref".to_string(), aeon.display().to_string()]);
+    assert_eq!(args[4], "--out");
+    let out = PathBuf::from(&args[5]);
+    assert!(out.starts_with(target.join("tmp")), "the runner's scratch must be under the run's tmp: {out:?}");
+    assert_eq!(args[6..], ["--test".to_string()]);
+    assert!(!out.exists(), "the runner's scratch {out:?} must be removed when the lane finishes");
+
+    let (ccode, cout) = check(&log);
+    assert_eq!(ccode, 0, "{cout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RED: runner exit 1 fails the run, the lane line says RED, the procedure is printed, the
+/// scratch is still removed, and both instruments agree on the log.
+#[test]
+fn a_red_oracle_export_lane_fails_the_run_and_says_what_to_do() {
+    let dir = scratch("g0a-red");
+    let (code, stdout, _stderr, log) = stub_run_with(&dir, &GREEN_RUN, &[("FIXTURE_G0A_RC", Some(OsStr::new("1")))]);
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 1, "a red oracle lane must fail the run, got {code}:\n{stdout}\n--- log ---\n{text}");
+    assert!(stdout.contains("  oracle exports  RED   (runner exit 1"), "{stdout}");
+    assert!(stdout.contains("RESULT          FAILED, the ORACLE EXPORT LANE is RED"), "{stdout}");
+    assert!(stdout.contains("WHAT TO DO: first classify the difference"), "{stdout}");
+    assert!(stdout.contains("fixtures/g0a/PROVENANCE.md"), "{stdout}");
+    assert!(stdout.contains("re-pin Oracle on a feature branch"), "{stdout}");
+    let args = std::fs::read_to_string(dir.join("g0a-args.txt")).unwrap();
+    let out = PathBuf::from(args.lines().nth(5).unwrap());
+    assert!(!out.exists(), "the scratch {out:?} must be removed on a red lane too");
+
+    let (ccode, cout) = check(&log);
+    assert_eq!(ccode, 1, "{cout}");
+    let (vcode, vout) = judge_stdout(&log);
+    assert_eq!(vcode, 1, "{vout}");
+    assert_eq!(recorded_block(&text), vout);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// COULD NOT RUN, three ways, each red and none of them RED: the runner exits 2; the named
+/// checkout has no runner; the variable names a directory that is not a checkout at all.
+#[test]
+fn an_oracle_lane_that_could_not_run_fails_the_run_and_is_not_called_red() {
+    let dir = scratch("g0a-cnr");
+    let norunner = dir.join("oracle-norunner");
+    std::fs::create_dir_all(&norunner).unwrap();
+    git(&norunner, &["init", "-q"]);
+    let notcheckout = dir.join("oracle-notcheckout");
+    std::fs::create_dir_all(&notcheckout).unwrap();
+    let cases: [(&str, (&str, &OsStr), &str); 3] = [
+        ("exit2", ("FIXTURE_G0A_RC", OsStr::new("2")), "the runner exited 2"),
+        ("norunner", ("ORACLE_G0A_DIR", norunner.as_os_str()), "has no tools/g0a-real-exports.sh"),
+        ("notcheckout", ("ORACLE_G0A_DIR", notcheckout.as_os_str()), "the resolver refused with rc 4"),
+    ];
+    for (tag, (k, v), why) in cases {
+        let sub = dir.join(tag);
+        std::fs::create_dir_all(&sub).unwrap();
+        let (code, stdout, stderr, log) = stub_run_with(&sub, &GREEN_RUN, &[(k, Some(v))]);
+        assert!(log.is_file(), "[{tag}] the run must go ahead and record the lane, not refuse:\n{stderr}");
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(code, 1, "[{tag}] got {code}:\n{stdout}\n--- log ---\n{text}");
+        assert!(stdout.contains("  oracle exports  COULD NOT RUN   ("), "[{tag}] {stdout}");
+        assert!(stdout.contains(why), "[{tag}] the reason `{why}` must be in the lane line:\n{stdout}");
+        assert!(stdout.contains("RESULT          FAILED, the ORACLE EXPORT LANE COULD NOT RUN"), "[{tag}] {stdout}");
+        assert!(!stdout.contains("oracle exports  RED"), "[{tag}] {stdout}");
+        let (vcode, vout) = judge_stdout(&log);
+        assert_eq!((vcode, recorded_block(&text)), (1, vout), "[{tag}]");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// NOTHING NAMES AN ORACLE CHECKOUT: refused before anything runs (ORACLE_DIR's precedent),
+/// naming the opt-out. With the opt-out the run goes ahead and the verdict says the lane
+/// DID NOT RUN and why. Both at once is a contradiction and is refused.
+#[test]
+fn an_unnamed_oracle_checkout_is_refused_and_the_opt_out_is_printed_not_silent() {
+    let dir = scratch("g0a-unset");
+    let refused = dir.join("refused");
+    std::fs::create_dir_all(&refused).unwrap();
+    let (code, stdout, stderr, log) = stub_run_with(&refused, &GREEN_RUN, &[("ORACLE_G0A_DIR", None)]);
+    assert_eq!(code, 2, "an unresolvable oracle checkout must be refused, got {code}:\n{stdout}{stderr}");
+    assert!(stderr.contains("REFUSING, no Oracle checkout could be resolved"), "{stderr}");
+    assert!(stderr.contains("ORACLE_G0A_LANE=off"), "the refusal must name the opt-out:\n{stderr}");
+    assert!(!log.exists(), "a refusal comes before the stamp");
+
+    let off = dir.join("off");
+    std::fs::create_dir_all(&off).unwrap();
+    let (code, stdout, stderr, log) = stub_run_with(
+        &off,
+        &GREEN_RUN,
+        &[("ORACLE_G0A_DIR", None), ("ORACLE_G0A_LANE", Some(OsStr::new("off")))],
+    );
+    assert_eq!(code, 0, "the opt-out run is otherwise green, got {code}:\n{stdout}{stderr}");
+    assert!(stdout.contains("  oracle exports  DID NOT RUN   (ORACLE_G0A_LANE=off was set by the operator"), "{stdout}");
+    assert!(!off.join("g0a-args.txt").exists(), "the runner must not be started when the lane is off");
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert!(text.contains("# ORACLE_G0A_DIR DID NOT RUN (ORACLE_G0A_LANE=off"), "{text}");
+    let (vcode, vout) = judge_stdout(&log);
+    assert_eq!((vcode, recorded_block(&text)), (0, vout));
+
+    let both = dir.join("both");
+    std::fs::create_dir_all(&both).unwrap();
+    let (code, _stdout, stderr, _log) = stub_run_with(&both, &GREEN_RUN, &[("ORACLE_G0A_LANE", Some(OsStr::new("off")))]);
+    assert_eq!(code, 2, "off plus a named checkout is a contradiction:\n{stderr}");
+    assert!(stderr.contains("are both set"), "{stderr}");
+
+    let bogus = dir.join("bogus");
+    std::fs::create_dir_all(&bogus).unwrap();
+    let (code, _stdout, stderr, _log) = stub_run_with(&bogus, &GREEN_RUN, &[("ORACLE_G0A_LANE", Some(OsStr::new("0")))]);
+    assert_eq!(code, 2, "an unknown ORACLE_G0A_LANE value must be refused, not read as off:\n{stderr}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DIRTY ORACLE CHECKOUT is reported loudly and not refused.
+#[test]
+fn a_dirty_oracle_checkout_is_reported_not_refused() {
+    let dir = scratch("g0a-dirty");
+    let (code, stdout, stderr, log) =
+        stub_run_with(&dir, &GREEN_RUN, &[("FIXTURE_G0A_DIRTY", Some(OsStr::new("1")))]);
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 0, "a dirty oracle checkout is reported, not refused, got {code}:\n{stdout}{stderr}");
+    assert!(text.contains("# oracle branch  ") && text.contains("(DIRTY)\n"), "{text}");
+    assert!(stdout.contains("THE ORACLE CHECKOUT IS DIRTY"), "{stdout}");
+    assert!(stderr.contains("is DIRTY"), "{stderr}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// THE VERDICT-ONLY READINGS: a log older than the lane says NOT STATED and is not failed
+/// (the census's precedent); a lane span with no exit line, or a stamp naming the lane with
+/// no span, is COULD NOT RUN and fails.
+#[test]
+fn verdict_only_reads_the_oracle_lane_from_the_record() {
+    let dir = scratch("g0a-verdict");
+    let old = fixture(&dir, "old.log", "");
+    let (code, out) = judge(&old, &[]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("  oracle exports  NOT STATED, this log predates the oracle export lane"), "{out}");
+
+    let stamped = dir.join("stamped.log");
+    let t = std::fs::read_to_string(&old).unwrap();
+    let with_stamp = t.replacen("# TARGET_DIR", "# ORACLE_G0A_DIR /fixture/oracle (step 1: explicit ORACLE_G0A_DIR)\n# TARGET_DIR", 1);
+    std::fs::write(&stamped, &with_stamp).unwrap();
+    let (code, out) = judge(&stamped, &[]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("COULD NOT RUN   (the log's stamp names the lane"), "{out}");
+
+    let open = dir.join("open.log");
+    let opened = with_stamp.replacen(
+        "# finished (UTC)",
+        "##### ORACLE G0A SPAN, fixture\ntest result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n# finished (UTC)",
+        1,
+    );
+    std::fs::write(&open, &opened).unwrap();
+    let (code, out) = judge(&open, &[]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("carries no ORACLE_G0A_EXIT line"), "{out}");
+    assert!(out.contains("  passed          3\n"), "the lane span must be lifted out of the counts:\n{out}");
+
+    let ok = dir.join("ok.log");
+    std::fs::write(&ok, opened.replacen("# finished (UTC)", "ORACLE_G0A_EXIT=0\n##### ORACLE G0A SPAN ENDS\n# finished (UTC)", 1))
+        .unwrap();
+    let (code, out) = judge(&ok, &[]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("  oracle exports  OK"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
