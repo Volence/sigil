@@ -1516,3 +1516,184 @@ TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2895 passed, 0 f
 --test frontend_differential_coverage` 3 suites, 17 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`,
 `STEP0_CMP_END rc=0` (the first attempt ran with `AEON_DIR` exported and exited 2, `[engine.conflict]`, could not
 run; rerun with it unset).
+
+### Task 11: a Z80 `(nn)` takes a link-time symbol (code commit 7f97d76a)
+
+**Reproduction at `55c6ec32`** (`/home/volence/sonic_hacks/.a11-base-55c6ec32/sigil emp`), `module m (cpu: z80)` /
+`proc f() { ld a, (q) / ret }` / `proc q() { ret }`:
+```
+r1.emp:3:12: unknown name `q`
+r1.emp:3:12: [lower.z80-unsupported] a Z80 indirect base must be `hl`/`bc`/`de`, an index register `(ix±d)`, or a comptime address `(nn)`, got poison
+r1.emp:3:5: instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)
+rc=1
+```
+The same file with `ld hl, q`: `built: 5 bytes`, `21 04 00 C9 C9`.
+
+**Neighbouring spellings, before (`55c6ec32`) and after (7f97d76a).** `q` is a one-byte proc at 4 after a 3-byte line,
+5 after a 4-byte line. "unknown name" below is the three-diagnostic set quoted above.
+
+| line | before | after |
+|---|---|---|
+| `ld a, (q)` / `ld (q), a` / `ld hl, (q)` / `ld (q), hl` | unknown name `q` | `3A 04 00` / `32 04 00` / `2A 04 00` / `22 04 00` |
+| `ld sp, (q)` / `ld (q), bc` / `ld ix, (q)` / `ld (q), iy` | unknown name `q` | `ED 7B 05 00` / `ED 43 05 00` / `DD 2A 05 00` / `FD 22 05 00` |
+| `ld a, (q+1)` / `ld (q+1), a` | unknown name `q` | `3A 05 00` / `32 05 00` |
+| `ld a, (q-q)` / `ld a, (q*2)` | unknown name `q` | `3A 00 00` / `3A 08 00` (as `ld hl, q-q` / `q*2` already did) |
+| `ld a, (D)`, `D` a data label later in the file | unknown name `D` | `3A 07 00` |
+| `ld a, (D)` / `ld (D), hl`, `D` in another section at `$1F00` | unknown name `D` | `3A 00 1F` / `22 00 1F` |
+| same, `D` in a section at `$12345` | unknown name `D` | `[value.out-of-range] link-expr value 74565 does not fit a 16-bit cell (0..65535)` |
+| `ld a, (q+$10000)` / `ld a, (q-5)` | unknown name `q` | `[value.out-of-range]` 65540 / -1 |
+| `ld a, (undefined_name)` | unknown name `undefined_name` | `unresolved symbol \`undefined_name\` for fixup in section text at offset 1` (link) |
+| `ld a, (extern("Foo"))` | `... got link-expr` | `unresolved symbol \`Foo\` for fixup ...`; with `Foo = $4000` in the env, `3A 00 40` |
+| `in a, (q)` / `out (q), a` | unknown name `q` | `[lower.z80-unsupported] a symbolic operand is only supported as the 16-bit immediate of ... or as the 16-bit address of \`ld r, (Label)\` / \`ld (Label), r\`` |
+| `jp (q)`, `ld (q), a, b` | unknown name `q` | the same symbolic-operand refusal |
+| `ld a, (bankid(q))` | `... got link-expr` | unchanged: `... got link-expr` (bank mask falls through) |
+| `ld b, (q)` / `ld (q), 5` / `ld i, (q)` | unknown name `q` | `[lower.z80-unsupported] unsupported form: Instruction { mnemonic: Ld, ops: [Reg(B), Mem(0)] }` (and the `Imm8(5)` / `RegI` twins) |
+| `ld (q), (q)` | unknown name `q` | `[lower.z80-unsupported] operand \`Z80MemSym { target: Sym("q") }\` has no Z80 encoding` |
+| `ld a, ($1234)`, `const C = $1234` / `ld a, (C)` | `3A 34 12` | unchanged |
+| `ld a, (c)` / `(a)` / `(af)` / `(i)` / `(r)` | unknown name `c` ... | `[lower.z80-unsupported] \`(c)\` is not a Z80 operand form: \`c\` is a register, not a memory address` |
+| `ld a, (b)` beside a `proc b` | unknown name `b` | the register refusal (WITHOUT the guard: `3A 04 00`, a read of the proc's address) |
+| `ld a, (nz)` | unknown name `nz` | link error `unresolved symbol \`nz\`` (a condition code is not reserved here; a label named `nz` would be read) |
+| `ld a, (.loc)` (a proc-local label at 0) / `ld a, (f)` (the proc itself) | `.loc` refused / unknown name `f` | `3A 00 00` / `3A 00 00` (correct: both are at 0) |
+| `in a, (c)`, `out (c), a`, `ex (sp), hl`, `ld a, (ix)` | `ED 78`, `ED 79`, `E3`, `DD 7E 00` | unchanged |
+
+The register guard is beyond the brief's code: without it, every register name that is not `hl`/`bc`/`de`/`sp`/`ix`/`iy`
+fell to the new link-time path (a bareword under the link context is a label), so `proc b` beside `ld a, (b)`
+assembled. It fires only on the link-time path, so a comptime `const` that shares a register's name keeps the `Z80Mem`
+path it had (nothing that assembled before changes).
+
+**RF step 1, red before implementing** (`("ld mem", 28)` deleted from `SYM_REFUSED`; `a11_z80_mem_sym.rs` = the brief's
+file plus six tests, the seventh, the register guard's, came with the guard and has its own red below):
+```
+test an_undefined_symbol_is_a_link_error_not_a_zero ... FAILED
+test an_address_outside_16_bits_is_a_link_error_not_a_truncation ... FAILED
+test a_literal_address_is_unchanged ... ok
+test a_comptime_constant_address_is_unchanged ... ok
+test a_forward_label_is_a_z80_memory_operand ... FAILED
+test the_neighbouring_spellings_stay_named_refusals ... FAILED
+test three_sides_agree_on_a_link_time_address_with_two_distinct_bytes ... FAILED
+test a_symbolic_port_is_refused_not_truncated ... FAILED
+test a_label_in_another_section_is_a_memory_operand ... FAILED
+---- an_undefined_symbol_is_a_link_error_not_a_zero stdout ----
+["[lower.z80-unsupported] a Z80 indirect base must be ... got link-expr", "instruction dropped, ..."]
+---- a_forward_label_is_a_z80_memory_operand stdout ----
+  left: Err(["unknown name `q`", "[lower.z80-unsupported] a Z80 indirect base must be ... got poison", "instruction dropped, ..."])
+ right: Ok([58, 4, 0, 201, 201])
+---- three_sides_agree_on_a_link_time_address_with_two_distinct_bytes stdout ----
+assertion `left == right` failed: `.emp`, `ld a, (ZSym)`
+  left: Err(["unknown name `ZSym`", ... "got poison", ...])
+ right: Ok([58, 52, 31, 201])
+---- a_symbolic_port_is_refused_not_truncated stdout ----
+`in a, (q)`: ["unknown name `q`", "[lower.z80-unsupported] ... got poison", "instruction dropped, ..."]
+test result: FAILED. 2 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out
+```
+`a_symbolic_port_is_refused_not_truncated` is red here, though the brief calls it a control that passes today: the
+first diagnostic was `unknown name`, not a `[lower.z80-unsupported]` one. It is green after.
+
+The walk:
+```
+test every_16_bit_z80_field_takes_a_link_time_symbol ... FAILED
+assertion `left == right` failed: symbol refusals differ from SYM_REFUSED:
+    "in mem": [ "`in a, (ZSym)`: unknown name `ZSym` | ... got poison | ..." ],
+    "ld mem": [ "`ld (ZSym), hl`: unknown name `ZSym` | ... got poison | ...", ... 28 rows ],
+  left: {"in mem": 1, "ld mem": 28, "out mem": 1}
+ right: {"in mem": 1, "out mem": 1}
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+The register guard's test, with the guard disabled (`if false && matches!(v, ...)`) before the commit:
+```
+test a_register_name_is_not_a_link_time_address ... FAILED
+called `Result::unwrap_err()` on an `Ok` value: [58, 4, 0, 201, 201]
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**RF step 2, green.** `a11_z80_mem_sym` 10 passed; `emp_isa_walk_z80` 4 passed; `z80_cycles` 29 passed.
+`SYM_REFUSED` after: `("in mem", 1)`, `("out mem", 1)` (an 8-bit port, no 16-bit field; Booked
+EMP-Z80-SYMBOLIC-BYTE-OPERAND). The comment saying so now sits directly above those two rows.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- <file>`).
+
+M1, the brief's (`eval/asm.rs`):
+```
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+-        let v = self.in_imm_link_ctx(|this| this.eval_expr(e, env));
++        let v = self.eval_expr(e, env);
+test a_forward_label_is_a_z80_memory_operand ... FAILED
+test a_symbolic_port_is_refused_not_truncated ... FAILED
+test an_address_outside_16_bits_is_a_link_error_not_a_truncation ... FAILED
+test a_register_name_is_not_a_link_time_address ... FAILED
+test three_sides_agree_on_a_link_time_address_with_two_distinct_bytes ... FAILED
+test the_neighbouring_spellings_stay_named_refusals ... FAILED
+test a_label_in_another_section_is_a_memory_operand ... FAILED
+test result: FAILED. 3 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out
+test every_16_bit_z80_field_takes_a_link_time_symbol ... FAILED
+  left: {"in mem": 1, "ld mem": 28, "out mem": 1}
+ right: {"in mem": 1, "out mem": 1}
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+`an_undefined_symbol_is_a_link_error_not_a_zero` stays green under M1: `extern("Foo")` is a `LinkExpr` even outside the
+link context, so it reaches `Z80MemSym` either way. Restored: 10 passed, 4 passed.
+
+M2, the register guard off:
+```
+-        if matches!(v, Value::Label(_) | Value::LinkExpr(_)) {
++        if false && matches!(v, Value::Label(_) | Value::LinkExpr(_)) {
+test a_register_name_is_not_a_link_time_address ... FAILED
+called `Result::unwrap_err()` on an `Ok` value: [58, 4, 0, 201, 201]
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: 10 passed.
+
+M3, the bank-mask gate off:
+```
+-            if !crate::eval::expr::expr_carries_bank_mask(le) {
++            if true || !crate::eval::expr::expr_carries_bank_mask(le) {
+test the_neighbouring_spellings_stay_named_refusals ... FAILED
+called `Result::unwrap_err()` on an `Ok` value: [58, 0, 0, 201, 201]
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: 10 passed.
+
+M4, one cycle row loses the symbol (`z80_cycles.rs`):
+```
+-        ("ld", [Z80Mem { .. } | Z80MemSym { .. }, Z80Pair(_)]) => Cost::Fixed(20),
++        ("ld", [Z80Mem { .. }, Z80Pair(_)]) => Cost::Fixed(20),
+test z80_cycles::tests::a_link_time_address_costs_what_a_number_costs ... FAILED
+called `Result::unwrap()` on an `Err` value: UnknownOp { mnemonic: "ld", ... }
+test result: FAILED. 28 passed; 1 failed; 0 ignored; 0 measured; 248 filtered out
+```
+Restored: 29 passed.
+
+**Every `Z80Mem` hit** (`grep -rn "Z80Mem" crates/sigil-frontend-emp/src`, after the change):
+- `value.rs:729,736,741`: the doc link, the `Z80Mem` variant, the new `Z80MemSym` variant.
+- `eval/asm.rs:2676,2697,2701,2705`: the guard's comment; the two `Z80MemSym` productions; the comptime `Z80Mem` one.
+- `lower/code.rs:1713-1714`: the 68000 mapper's defence-in-depth arm (both kinds). `:2114-2117`: the dispatch to
+  `lower_z80_abs16_sym`. `:2167,2179`: the two `ld` arms. `:2321`: the comptime `Z80Mem` mapping (a `Z80MemSym` never
+  reaches it: the dispatch takes it first; `ld (q), (q)` shows the catch-all naming it).
+- `z80_cycles.rs:260-300`: the six `ld` rows, now both kinds. `:433-434`: `in`/`out` port rows, `Z80Mem` only on
+  purpose (a symbolic port is refused before any analysis). `:589,599,614-615`: unit tests (the old poll, the new poll,
+  the six-form twin test). `:825,948,968,1096`: test fixtures (a comptime address; the port tests; the ISA-demand mirror,
+  which maps a numeric `Mem` and has no symbols).
+- `flag_check.rs:637`: `in` with a `Z80Mem` port leaves flags untouched; left alone (a symbolic port is refused).
+  `:2318`: its test fixture.
+
+**TC** (after the last code edit, 7f97d76a): `sigil-frontend-emp` 149 suites, 2907 passed, 0 failed, 0 ignored;
+`sigil-harness --test emp_isa_walk_z80 --test emp_isa_walk_m68k --test emp_a11_golden --test
+frontend_differential_coverage` 4 suites, 21 passed; `sigil-cli --test frontend_differential` 7 passed. Clippy clean.
+
+**BN:** `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0` (run with `AEON_DIR` unset). Warnings: all 7 shapes built again by
+both binaries with `SIGIL_WARNINGS=full` (every warning listed); the logs, with the tree path and output name
+normalised, are byte-identical per shape:
+
+| shape | base warning lines | cand warning lines | logs |
+|---|---|---|---|
+| plain | 179 | 179 | IDENTICAL |
+| debug | 166 | 166 | IDENTICAL |
+| demo | 86 | 86 | IDENTICAL |
+| demo_debug | 82 | 82 | IDENTICAL |
+| config_a | 165 | 165 | IDENTICAL |
+| config_b | 181 | 181 | IDENTICAL |
+| lean | 178 | 178 | IDENTICAL |
+
+(Summary line, plain: `161 warnings, proc.clobber-undeclared 63, module.unreachable 59, proc.undeclared-fallthrough 21,
+module.path-mismatch 15, import.no-names 2, proc.out-unwritten 1`, both binaries.)
