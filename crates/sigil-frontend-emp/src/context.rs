@@ -587,7 +587,7 @@ mod walker_tests {
     //! generality is shown rather than assumed.
 
     use super::*;
-    use crate::value::{CodeItem, ItemAuthor, Z80Cond};
+    use crate::value::{CodeItem, ItemAuthor};
     use sigil_span::SourceId;
     use std::cell::RefCell;
 
@@ -712,7 +712,7 @@ mod walker_tests {
     #[test]
     fn z80_cpu_uses_z80_edges() {
         let items = vec![
-            instr("jr", vec![CodeOperand::Z80Cc(Z80Cond::Nz), sym(".a")]),
+            instr("jr", vec![sym(".a")]),
             instr("nop", vec![]),
             label(".a"),
             instr("ret", vec![]),
@@ -725,7 +725,9 @@ mod walker_tests {
             &|s: &Levels, _, _, _| s.clone(),
             &|_| true,
         );
-        assert!(got.contains_key(&nth(&items, "nop", 0)));
+        // An unconditional Z80 `jr` has only its taken edge; the 68k model
+        // would fall through to the `nop` as well.
+        assert!(!got.contains_key(&nth(&items, "nop", 0)), "nop is skipped by the jr");
         assert!(got.contains_key(&nth(&items, "ret", 0)));
     }
 
