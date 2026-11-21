@@ -3065,3 +3065,24 @@ until its row is removed.
   - **M8** `name_duplicate_const.rs`'s `use other.{Foo}` control is parse-only; booked in `EMP-CONST-EQU-SAME-NAME`.
   - **M9** `crates/sigil-cli/src/main.rs` prints the gated-refusal header and FAILED line with a hardcoded
     `[proc.sr-undeclared]` while `GATED_WARNING_IDS` is a list; a second id would print under the wrong name.
+
+## STEPA-PRIVATE-WORKLISTS
+
+- state: open 2026-11-21 (booked by step A piece 1, branch `parcel/stepA-p1-shared-walker`)  size: `L` (eight walkers, each its own risk)  project: `STEP-A`
+- blockedBy: nothing. Step A pieces 2 to 5 do NOT need these moved.
+
+**Eight private worklists still walk `flag_check::Cfg` on their own.** (The plan's brief said seven; the
+grep found eight, and `preserves` is the eighth.) Piece 1 added the shared walker,
+`forward_in_states` in `crates/sigil-frontend-emp/src/context.rs` (a `Lattice` state, a per-edge step, a
+follow predicate), and moved the two existing callers onto it (`check_regions` and `z80_bus`). The spec
+(verbatim): "moving the other seven private walking loops over. That is worth doing, but each is its own
+risk, and none is needed for pieces 2 to 5. It is recorded as owed."
+
+Found by `grep -ln "VecDeque" crates/sigil-frontend-emp/src/*.rs`, minus `context.rs` (the shared walker
+itself): `calls.rs`, `out_verify.rs`, `type_slice.rs`, `branch_const.rs`, `z80_preserves.rs`,
+`z80_out_verify.rs`, `flag_check.rs`, `preserves.rs` (two loops, around lines 580 and 1552). The first seven are
+the brief's names; `preserves.rs` is the one beyond it.
+
+Method for each, one at a time: write the walker's step as a `forward_in_states` closure, prove byte-neutral
+(protocol BN, 7/7 shapes) and report-neutral (RN, three contract reports), and red-first a test that fails when
+the edge model or the meet is broken. Do not batch them: a moved diagnostic is a stop, not an adjustment.
