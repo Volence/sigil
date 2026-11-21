@@ -2724,8 +2724,16 @@ until its row is removed.
      and moved `freeze_journal` beside the `refreeze` binary (compiled by `#[path]` there and in the
      `freeze_step_gap` gate). A `test-support` cargo feature or a separate harness crate would make "not the
      driver's code" structural instead of a convention the gate polices.
-  3. **Comments are not scanned.** 28 doc-comment game-id hits (and plain `//` comments) remain in the closure;
-     they are prose examples, not driver decisions. The gate prints the doc count, ungated.
+  3. **Comments are not gated.** They are prose examples, not driver decisions. Since the G0b final-review fix wave
+     (C-I1) the gate COUNTS them and its line says exactly what: comment lines naming a game (an id or a games path),
+     test-only items left out, 29 doc (`///`, `//!`, `/** */`) and 14 plain (`//`, `/* */`) at that wave.
+  4. **Output stems are not needles (C-I3 stem half, stopped by the ruling's bar).** Adding sonic4's `[outputs]`
+     stem `s4` as a needle measured 5 new hits: `crates/sigil-harness/src/test_support.rs:520` `listing_path`'s
+     `"s4.debug.lst"` / `"s4.lst"` (a real game fact in the linked library; deriving it from `[outputs]` would need
+     a `games/sonic4` literal instead) and three in `pins.rs` (`S4LZ`, `S4_LZ_DECOMPRESS`, `S4_LZ_DECOMPRESS_DICT`:
+     the engine's S4LZ codec, which no allow row can exempt honestly under the G0c-exit rule). Exit: G0c removes
+     the `test_support` reference-listing helper with the seams' port gates, or a `test-support` feature (item 2)
+     takes it out of the closure; then derive `[outputs]` stems into the fixture with a codec-name exemption.
 
 ## G0B-AS-FEATURE-DEFINES-INERT
 

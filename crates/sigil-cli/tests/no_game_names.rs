@@ -17,11 +17,16 @@
 //!   statement whose `#[cfg(..)]` REQUIRES `test` (`test`, or `all(.., test, ..)`, or an
 //!   `any(..)` all of whose arms do) is removed structurally before the scan. What is
 //!   left is scanned token by token: identifiers and literals. Comments are not code and
-//!   are not scanned (plain comments are not tokens; doc comments, which are `#[doc]`
-//!   attributes, are skipped and only counted, ungated).
+//!   are not gated; they are COUNTED, and the count says exactly what it covers: comment
+//!   LINES naming a game, doc comments (`///`, `//!`, `/** */`, read from their `#[doc]`
+//!   attributes) and plain comments (`//`, `/* */`, read from the source text by a small
+//!   lexer that skips string and char literals) apart, both outside test-only items.
 //!
-//! The needles (case-insensitive; a "word" is bounded by anything but an ASCII letter or
-//! digit, so `demo_profile` hits and `demolish` does not):
+//! The needles (case-insensitive) match whole words. A word is bounded by anything but an
+//! ASCII letter or digit, and also by a case hump inside an identifier (a lower-case letter
+//! or a digit followed by an upper-case one, and the last capital of an acronym followed by a
+//! capitalised word), so `demo_profile`, `DemoShape` and `Sonic4Profile` hit, and
+//! `demolish`, `sonic42` and `demoshape` do not:
 //! - every game id in the fixture (generated from the aeon descriptions' `id` fields, plus
 //!   `cherub`; `tests/game_ids_fixture.rs` holds the fixture to the descriptions);
 //! - any `games.<x>` module prefix and any `games/<x>/` path, whatever `<x>` is.
@@ -29,7 +34,8 @@
 //! A hit is exempt only by a row in [`ALLOW`]: one file, one needle text, an exact hit
 //! count, a reason and an exit. A row whose count no longer matches (in particular one that
 //! matches nothing) is itself a failure: a stale exemption hides the next regression in
-//! that file. The engine id (`aeon`) is counted beside the result, not gated.
+//! that file. The engine id (`aeon`) is counted beside the result, not gated: code tokens
+//! carrying it as a word (a `games/<x>` path token is not an engine-id hit).
 //!
 //! `measure_the_tree_named_by_env` runs the same verdict against another checkout (the
 //! red-before-Task-11 measurement); it is `#[ignore]`d and refuses to run unnamed.
@@ -150,26 +156,56 @@ fn is_word(b: u8) -> bool {
     b.is_ascii_alphanumeric()
 }
 
-/// Every needle `text` carries, as the spelling that matched (lowercased).
-fn needles_in(text: &str, ids: &[String]) -> Vec<String> {
+/// Is there a word boundary at byte `i` of `b` (between `b[i - 1]` and `b[i]`)? The ends
+/// are; so is any non-alphanumeric byte's edge; so is a case hump: lower case or a digit
+/// followed by upper case (`demoShape`, `Sonic4Profile`), and an acronym's last capital
+/// followed by a capitalised word (`ROMSonic4`). A letter beside a digit is not one, so
+/// `sonic42` and `s4lz` stay single words.
+fn boundary_at(b: &[u8], i: usize) -> bool {
+    if i == 0 || i >= b.len() {
+        return true;
+    }
+    let (x, y) = (b[i - 1], b[i]);
+    if !is_word(x) || !is_word(y) {
+        return true;
+    }
+    let lower_or_digit = x.is_ascii_lowercase() || x.is_ascii_digit();
+    (lower_or_digit && y.is_ascii_uppercase())
+        || (x.is_ascii_uppercase() && y.is_ascii_uppercase() && b.get(i + 1).is_some_and(|n| n.is_ascii_lowercase()))
+}
+
+/// Every id of `ids` that `text` carries as a word, lowercased.
+fn id_needles(text: &str, ids: &[String]) -> Vec<String> {
     let lower = text.to_ascii_lowercase();
-    let b = lower.as_bytes();
+    let b = text.as_bytes();
     let mut out = Vec::new();
-    let bounded_at = |at: usize, len: usize| {
-        (at == 0 || !is_word(b[at - 1])) && (at + len >= b.len() || !is_word(b[at + len]))
-    };
     for id in ids {
         let mut from = 0;
         while let Some(off) = lower[from..].find(id.as_str()) {
             let at = from + off;
-            if bounded_at(at, id.len()) {
+            if boundary_at(b, at) && boundary_at(b, at + id.len()) {
                 out.push(id.clone());
                 break;
             }
             from = at + 1;
         }
     }
-    // `games.<x>` and `games/<x>/`, any `<x>`.
+    out
+}
+
+/// Every game needle `text` carries: an id of `ids` as a word ([`id_needles`]), then any
+/// `games.<x>` module prefix or `games/<x>/` path ([`path_needles`]).
+fn needles_in(text: &str, ids: &[String]) -> Vec<String> {
+    let mut out = id_needles(text, ids);
+    out.extend(path_needles(text));
+    out
+}
+
+/// `games.<x>` and `games/<x>/`, any `<x>`, lowercased.
+fn path_needles(text: &str) -> Vec<String> {
+    let lower = text.to_ascii_lowercase();
+    let b = lower.as_bytes();
+    let mut out = Vec::new();
     let seg = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
     let mut from = 0;
     while let Some(off) = lower[from..].find("games") {
@@ -222,16 +258,34 @@ fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("cfg") && a.parse_args::<syn::Meta>().is_ok_and(|m| requires_test(&m)))
 }
 
-struct StripTestOnly;
+/// Removes every test-only item, recording the line span of each (so the plain-comment
+/// count, read from the text, can leave them out too).
+#[derive(Default)]
+struct StripTestOnly {
+    removed: Vec<(usize, usize)>,
+}
+
+impl StripTestOnly {
+    fn keep_items(&mut self, items: &mut Vec<syn::Item>) {
+        let removed = &mut self.removed;
+        items.retain(|i| {
+            let drop = item_test_only(i);
+            if drop {
+                removed.extend(line_span(i));
+            }
+            !drop
+        });
+    }
+}
 
 impl VisitMut for StripTestOnly {
     fn visit_file_mut(&mut self, f: &mut syn::File) {
-        f.items.retain(|i| !item_test_only(i));
+        self.keep_items(&mut f.items);
         syn::visit_mut::visit_file_mut(self, f);
     }
     fn visit_item_mod_mut(&mut self, m: &mut syn::ItemMod) {
         if let Some((_, items)) = &mut m.content {
-            items.retain(|i| !item_test_only(i));
+            self.keep_items(items);
         }
         syn::visit_mut::visit_item_mod_mut(self, m);
     }
@@ -310,8 +364,12 @@ struct Hit {
 #[derive(Default)]
 struct Counts {
     hits: Vec<(usize, String, Vec<String>)>,
+    /// Code tokens carrying an engine id as a word.
     engine: usize,
-    doc: usize,
+    /// Doc-comment lines naming a game, outside test-only items.
+    doc_lines: usize,
+    /// Plain-comment lines naming a game, outside test-only items.
+    plain_lines: usize,
     include_macro: Option<usize>,
 }
 
@@ -340,10 +398,10 @@ fn scan_tokens(ts: TokenStream, ids: &Ids, c: &mut Counts) {
                     if g.delimiter() == Delimiter::Bracket {
                         let mut inner = g.stream().into_iter();
                         if matches!(inner.next(), Some(TokenTree::Ident(d)) if d == "doc") {
+                            // One `///` line is one attribute; a `/** */` block is one
+                            // attribute whose literal holds `\n` escapes: count its lines.
                             let text = g.stream().to_string();
-                            if !needles_in(&text, &ids.games).is_empty() {
-                                c.doc += 1;
-                            }
+                            c.doc_lines += text.split("\\n").filter(|l| !needles_in(l, &ids.games).is_empty()).count();
                             i = j + 1;
                             continue;
                         }
@@ -370,7 +428,7 @@ fn scan_tokens(ts: TokenStream, ids: &Ids, c: &mut Counts) {
                         };
                         c.hits.push((line, text.clone(), n));
                     }
-                    if !needles_in(&text, &ids.engines).is_empty() {
+                    if !id_needles(&text, &ids.engines).is_empty() {
                         c.engine += 1;
                     }
                 }
@@ -380,11 +438,120 @@ fn scan_tokens(ts: TokenStream, ids: &Ids, c: &mut Counts) {
     }
 }
 
+/// The lines of the plain comments (`//`, `/* */`; not the doc forms `///`, `//!`, `/**`,
+/// `/*!`) in `text`, one entry per source line a comment covers, with that line's comment
+/// text. String, raw-string and char literals are skipped, so a `//` inside a string is
+/// not a comment. Enough for an ungated count; a lifetime is told from a char by its
+/// closing quote.
+fn plain_comment_lines(text: &str) -> Vec<(usize, String)> {
+    let b = text.as_bytes();
+    let (mut i, mut line, mut out) = (0usize, 1usize, Vec::new());
+    let push = |out: &mut Vec<(usize, String)>, line: usize, s: &[u8]| out.push((line, String::from_utf8_lossy(s).into_owned()));
+    while i < b.len() {
+        match b[i] {
+            b'\n' => {
+                line += 1;
+                i += 1;
+            }
+            b'/' if b.get(i + 1) == Some(&b'/') => {
+                let end = b[i..].iter().position(|&c| c == b'\n').map_or(b.len(), |k| i + k);
+                let doc = (b.get(i + 2) == Some(&b'/') && b.get(i + 3) != Some(&b'/')) || b.get(i + 2) == Some(&b'!');
+                if !doc {
+                    push(&mut out, line, &b[i + 2..end]);
+                }
+                i = end;
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                let doc = (b.get(i + 2) == Some(&b'*') && !matches!(b.get(i + 3), Some(b'*') | Some(b'/'))) || b.get(i + 2) == Some(&b'!');
+                let (mut depth, mut j, mut start) = (1usize, i + 2, i + 2);
+                while j < b.len() && depth > 0 {
+                    if b[j] == b'/' && b.get(j + 1) == Some(&b'*') {
+                        depth += 1;
+                        j += 2;
+                    } else if b[j] == b'*' && b.get(j + 1) == Some(&b'/') {
+                        depth -= 1;
+                        j += 2;
+                    } else if b[j] == b'\n' {
+                        if !doc {
+                            push(&mut out, line, &b[start..j]);
+                        }
+                        line += 1;
+                        j += 1;
+                        start = j;
+                    } else {
+                        j += 1;
+                    }
+                }
+                if !doc {
+                    push(&mut out, line, &b[start..j.min(b.len())]);
+                }
+                i = j;
+            }
+            b'r' if matches!(b.get(i + 1), Some(b'"') | Some(b'#')) && (i == 0 || !is_word(b[i - 1]) && b[i - 1] != b'_') => {
+                let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
+                if b.get(i + 1 + hashes) != Some(&b'"') {
+                    i += 1;
+                    continue;
+                }
+                let close: Vec<u8> = std::iter::once(b'"').chain(std::iter::repeat_n(b'#', hashes)).collect();
+                let mut j = i + 2 + hashes;
+                while j < b.len() && !b[j..].starts_with(&close) {
+                    line += usize::from(b[j] == b'\n');
+                    j += 1;
+                }
+                i = j + close.len();
+            }
+            b'"' => {
+                let mut j = i + 1;
+                while j < b.len() && b[j] != b'"' {
+                    line += usize::from(b[j] == b'\n');
+                    j += if b[j] == b'\\' { 2 } else { 1 };
+                }
+                i = j + 1;
+            }
+            b'\'' => {
+                // A char literal (`'x'`, `'\n'`, `'\u{..}'`) or a lifetime (`'a`).
+                let close = if b.get(i + 1) == Some(&b'\\') {
+                    b[i + 2..].iter().position(|&c| c == b'\'').map(|k| i + 2 + k)
+                } else {
+                    let ch = text[i + 1..].chars().next().map_or(1, char::len_utf8);
+                    (b.get(i + 1 + ch) == Some(&b'\'')).then_some(i + 1 + ch)
+                };
+                i = close.map_or(i + 1, |k| k + 1);
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// The 1-based line span of `t`'s tokens.
+fn line_span(t: &impl ToTokens) -> Option<(usize, usize)> {
+    fn walk(ts: TokenStream, lo: &mut usize, hi: &mut usize) {
+        for t in ts {
+            let sp = t.span();
+            *lo = (*lo).min(sp.start().line);
+            *hi = (*hi).max(sp.end().line);
+            if let TokenTree::Group(g) = t {
+                walk(g.stream(), lo, hi);
+            }
+        }
+    }
+    let (mut lo, mut hi) = (usize::MAX, 0);
+    walk(t.to_token_stream(), &mut lo, &mut hi);
+    (hi > 0).then_some((lo, hi))
+}
+
 /// Parse one source text, strip its test-only items, scan what is left.
 fn scan_source(text: &str, ids: &Ids) -> Result<(syn::File, Counts), String> {
     let mut file = syn::parse_file(text).map_err(|e| format!("parse: {e}"))?;
-    StripTestOnly.visit_file_mut(&mut file);
+    let mut strip = StripTestOnly::default();
+    strip.visit_file_mut(&mut file);
     let mut c = Counts::default();
+    c.plain_lines = plain_comment_lines(text)
+        .into_iter()
+        .filter(|(line, body)| !strip.removed.iter().any(|(lo, hi)| lo <= line && line <= hi) && !needles_in(body, &ids.games).is_empty())
+        .count();
     scan_tokens(file.to_token_stream(), ids, &mut c);
     if let Some(line) = c.include_macro {
         return Err(format!("line {line}: `include!` splices a file this gate does not follow"));
@@ -400,7 +567,8 @@ struct Scan {
     files: usize,
     hits: Vec<Hit>,
     engine: usize,
-    doc: usize,
+    doc_lines: usize,
+    plain_lines: usize,
 }
 
 fn rel(root: &Path, p: &Path) -> String {
@@ -511,7 +679,7 @@ fn declared_files(items: &[syn::Item], dir: &Path, file_dir: &Path, top: bool, o
 
 fn scan_tree(root: &Path, ids: &Ids) -> Result<Scan, String> {
     let crates = closure(root)?;
-    let mut scan = Scan { crates: vec![], files: 0, hits: vec![], engine: 0, doc: 0 };
+    let mut scan = Scan { crates: vec![], files: 0, hits: vec![], engine: 0, doc_lines: 0, plain_lines: 0 };
     for (name, entry) in &crates {
         scan.crates.push(name.clone());
         let entry_dir = entry.parent().ok_or("target root without a directory")?.to_path_buf();
@@ -527,7 +695,8 @@ fn scan_tree(root: &Path, ids: &Ids) -> Result<Scan, String> {
             let (parsed, c) = scan_source(&text, ids).map_err(|e| format!("{shown}: {e}"))?;
             scan.files += 1;
             scan.engine += c.engine;
-            scan.doc += c.doc;
+            scan.doc_lines += c.doc_lines;
+            scan.plain_lines += c.plain_lines;
             for (line, text, needles) in c.hits {
                 scan.hits.push(Hit { file: shown.clone(), line, text, needles });
             }
@@ -586,7 +755,7 @@ fn verdict(root: &Path, allow: &[Allow]) -> Result<Verdict, String> {
         }
     }
     lines.push(format!(
-        "{} game-name hits: {} unexplained, {} exempt by an allow-list of {} rows ({} stale)",
+        "{} game-name hits (code tokens naming a game): {} unexplained, {} exempt by an allow-list of {} rows ({} stale)",
         scan.hits.len(),
         unexplained,
         used.iter().sum::<usize>(),
@@ -594,10 +763,12 @@ fn verdict(root: &Path, allow: &[Allow]) -> Result<Verdict, String> {
         stale
     ));
     lines.push(format!(
-        "engine id ({}): {} code hits, not gated; doc-comment game-id hits: {}, not gated",
+        "not gated: engine id ({}) in {} code tokens; comment lines naming a game (an id or a games.<x> / \
+         games/<x>/ path), test-only items left out: {} doc (///, //!, /** */), {} plain (//, /* */)",
         ids.engines.join(" "),
         scan.engine,
-        scan.doc
+        scan.doc_lines,
+        scan.plain_lines
     ));
     Ok(Verdict { lines, unexplained, stale })
 }
@@ -611,12 +782,12 @@ fn judge(root: &Path) {
     for l in &v.lines {
         println!("{l}");
     }
+    // The verdict lines are printed once, above; the failure names the counts only.
     assert!(
         v.unexplained == 0 && v.stale == 0,
-        "a crate the driver links names a game ({} hits) or an exemption is stale ({} rows):\n{}",
+        "a crate the driver links names a game ({} hits) or an exemption is stale ({} rows); the HIT and STALE lines are printed above",
         v.unexplained,
         v.stale,
-        v.lines.join("\n")
     );
 }
 
@@ -686,12 +857,40 @@ fn test_only_impl_items_and_statements_are_removed() {
     assert_eq!(hits(src), vec!["8:\"cherub\"".to_string()]);
 }
 
+/// G0b final review C-I1: comments are not gated, and the count says what it counts:
+/// comment LINES naming a game (a line naming two counts once), doc and plain apart, test-only
+/// items left out of both, a `//` inside a string not a comment.
 #[test]
-fn comments_are_not_code() {
-    let src = "/// games/sonic4/x\n// sonic4\n/* demo */\nfn f() {}\n";
+fn comments_are_not_code_and_are_counted_by_line() {
+    let src = "//! sonic4\n/// games/sonic4/x\n// sonic4 and demo\n/* demo */\n/* cherub\n   plain line two: sonic4\n   nothing */\n\
+               /** demo\n  cherub */\nfn f() { let _s = \"// sonic4 in a string\"; let _c = '\"'; } // demo trailing\n\
+               #[cfg(test)]\nmod t {\n    // sonic4 in a test module\n    /// demo doc in a test module\n    fn g() {}\n}\n";
     let (_, c) = scan_source(src, &ids_for_tests()).unwrap();
-    assert!(c.hits.is_empty());
-    assert_eq!(c.doc, 1, "the doc comment is counted, not gated");
+    assert_eq!(c.hits.len(), 1, "only the string literal is code: {:?}", c.hits);
+    assert_eq!(c.doc_lines, 4, "`///`, `//!` and the two lines of `/** */`, not the test module's");
+    assert_eq!(c.plain_lines, 5, "`// sonic4 and demo` (once), `/* demo */`, two of the block's three lines, the trailing `//`");
+}
+
+/// G0b final review C-I2: the engine count is the engine id's, not every games-path token.
+#[test]
+fn a_games_path_is_not_an_engine_id_hit() {
+    let (_, c) = scan_source("const A: &str = \"games/sonic4/x\"; const B: &str = \"aeon/engine\"; fn aeon_dir() {}\n", &ids_for_tests()).unwrap();
+    assert_eq!(c.engine, 2, "`aeon/engine` and `aeon_dir`, not the games path");
+}
+
+/// G0b final review C-I3: a game named in CamelCase is a word (`Sonic4Profile`, `DemoShape`,
+/// `CherubRom`, `ROMSonic4`), and a longer word is still not (`sonic42`, `demolish`,
+/// `Demolish`, `demoshape`).
+#[test]
+fn a_game_named_in_camel_case_is_a_hit() {
+    assert_eq!(hits("struct Sonic4Profile;\n"), vec!["1:Sonic4Profile".to_string()]);
+    let ids = ids_for_tests().games;
+    for hit in ["DemoShape", "CherubRom", "ROMSonic4", "build_DemoRom", "mySonic4"] {
+        assert!(!id_needles(hit, &ids).is_empty(), "{hit} names a game");
+    }
+    for miss in ["sonic42", "demolish", "Demolish", "demoshape", "Sonic42Rom"] {
+        assert!(id_needles(miss, &ids).is_empty(), "{miss} names no game");
+    }
 }
 
 #[test]
