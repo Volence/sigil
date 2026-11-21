@@ -235,7 +235,7 @@ impl sigil_build::driver::Seams for EmitUnderMovedDac {
 /// under an anchor overlay that moves `dac_banks` by one window, the placement reads
 /// the unmoved map.
 #[test]
-fn a_moved_map_anchor_fails_the_build_with_this_diagnostic() {
+fn a_sound_emit_under_a_moved_dac_anchor_fails_the_build_with_this_diagnostic() {
     use sigil_build::driver::{build, BuildOptions};
     let profile = sonic4(false);
     let Some(aeon) = reference_tree_for_shape(&profile) else { return };

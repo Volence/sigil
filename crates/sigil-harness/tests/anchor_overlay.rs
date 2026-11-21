@@ -146,7 +146,7 @@ fn an_overlay_nothing_can_place_fails_the_build() {
 /// row has no overlay key, and the description schema refuses an invented one
 /// (`deny_unknown_fields`), so a `[shapes.*]` row that tried to carry one fails to load.
 #[test]
-fn no_shipping_profile_carries_an_overlay() {
+fn a_shape_row_carrying_an_overlay_is_refused_by_the_schema() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let game = sigil_harness::test_support::write_project_fixture(tmp.path());
     let path = game.join("game.toml");

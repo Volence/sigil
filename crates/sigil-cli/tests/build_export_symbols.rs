@@ -299,3 +299,13 @@ fn pub_data_exports_public_and_private_data_does_not() {
     // whether the `.emp` side table saw the symbol at all.
     assert!(pub_data["module"].is_string() && priv_data["module"].is_string());
 }
+
+/// `SHAPES` is every shipped shape and nothing else (`shapes::shipped`), so a new
+/// shipped row cannot go unwatched by this file.
+#[test]
+fn the_shapes_table_is_every_shipped_shape() {
+    sigil_harness::test_support::assert_lists_every_shipped_shape(
+        SHAPES.iter().map(|(_, gs)| (gs[0], gs[1])),
+        "this file's SHAPES table",
+    );
+}

@@ -117,7 +117,7 @@ fn rom_labels(built: &sigil_build::driver::BuildOutput) -> std::collections::BTr
 /// driver's frozen provisional base. The game-as-data driver reads no frozen table, so
 /// there is no provisional base to drift from; the packing is witnessed directly instead.
 #[test]
-fn parcel_scale_growth_packs_downstream_and_reports_the_drift() {
+fn parcel_scale_growth_builds_and_packs_downstream() {
     let (label, profile) = sonic4_shape();
     let label = label.as_str();
     let Some(aeon) = reference_tree_for_shape(&profile) else { return };

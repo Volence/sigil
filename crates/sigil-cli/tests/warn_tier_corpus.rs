@@ -1141,3 +1141,10 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
         "`SIGIL_WARNINGS=off` must silence the tier, got: {silenced:?}"
     );
 }
+
+/// `SEVEN` is every shipped shape and nothing else (`shapes::shipped`), so a new shipped
+/// row cannot go unwatched by the warn-tier gates.
+#[test]
+fn seven_is_every_shipped_shape() {
+    sigil_harness::test_support::assert_lists_every_shipped_shape(SEVEN.iter().map(|&(_, g, r)| (g, r)), "SEVEN");
+}

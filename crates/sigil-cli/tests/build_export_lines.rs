@@ -659,3 +659,13 @@ fn every_rom_byte_is_covered_once() {
     }
     assert!(failures.is_empty(), "gate 2 failed:\n{}", failures.join("\n"));
 }
+
+/// `SHAPES` is every shipped shape and nothing else (`shapes::shipped`), so a new
+/// shipped row cannot go unwatched by this file.
+#[test]
+fn the_shapes_table_is_every_shipped_shape() {
+    sigil_harness::test_support::assert_lists_every_shipped_shape(
+        SHAPES.iter().map(|(_, gs)| (gs[0], gs[1])),
+        "this file's SHAPES table",
+    );
+}

@@ -2981,3 +2981,27 @@ features = { debug = false, crash_report = true, sound = false }
     }
     root.join("games/g")
 }
+
+/// Hold a hand-listed table of `(game, shape row)` pairs to EXACTLY the shipped shapes
+/// the reference tree describes (`shapes::shipped`), so a new shipped row cannot go
+/// unwatched by a gate that iterates its own list, and a listed row that stops shipping
+/// is named. `what` names the table in the failure. Skips green (strict: hard-fails) when
+/// no reference tree is present, like every reference-gated test.
+pub fn assert_lists_every_shipped_shape<'a>(listed: impl IntoIterator<Item = (&'a str, &'a str)>, what: &str) {
+    let Some(aeon) = reference_tree(&["engine/engine.toml"]) else { return };
+    let shipped: std::collections::BTreeSet<(String, String)> = crate::shapes::shipped(&aeon)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_iter()
+        .map(|s| (s.game.clone(), s.shape.clone()))
+        .collect();
+    let listed: std::collections::BTreeSet<(String, String)> =
+        listed.into_iter().map(|(g, r)| (g.to_string(), r.to_string())).collect();
+    let unwatched: Vec<_> = shipped.difference(&listed).collect();
+    let stale: Vec<_> = listed.difference(&shipped).collect();
+    assert!(
+        unwatched.is_empty() && stale.is_empty(),
+        "{what} is not the shipped shape set of {}: shipped but not listed {unwatched:?}; listed but not \
+         shipped {stale:?}",
+        aeon.display()
+    );
+}
