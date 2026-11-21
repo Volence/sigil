@@ -128,3 +128,39 @@ test a_repeated_clause_on_a_signature_is_refused ... ok
 test a_repeated_clobbers_clause_is_refused ... ok
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+### Task 2: `[name.duplicate-const]`
+
+Mutation (plan Task 2 Step 8): comment out the `self.refuse_duplicate_consts(...)` call in `file`.
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-frontend-emp/src/parser.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'refuse_duplicate_consts' crates/sigil-frontend-emp/src/parser.rs
+501:        // self.refuse_duplicate_consts(&items, &mut std::collections::HashSet::new());
+512:    fn refuse_duplicate_consts(&mut self, items: &[Item], seen: &mut std::collections::HashSet<String>) {
+520:                Item::Section(s) => self.refuse_duplicate_consts(&s.items, seen),
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test name_duplicate_const   # mutated
+test a_const_beside_an_equ_of_the_same_name_is_not_this_refusal ... ok
+test a_const_declared_twice_is_refused_at_the_later_one ... FAILED
+test distinct_names_and_other_kinds_stay_legal ... ok
+test pub_typed_and_section_nested_duplicates_are_refused ... FAILED
+thread 'a_const_declared_twice_is_refused_at_the_later_one' (563270) panicked at crates/sigil-frontend-emp/tests/name_duplicate_const.rs:16:5:
+  left: 0
+ right: 1
+thread 'pub_typed_and_section_nested_duplicates_are_refused' (563272) panicked at crates/sigil-frontend-emp/tests/name_duplicate_const.rs:23:5:
+  left: 0
+ right: 1
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test name_duplicate_const`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/parser.rs
+$ git status --short --untracked-files=no
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test name_duplicate_const   # restored
+test a_const_beside_an_equ_of_the_same_name_is_not_this_refusal ... ok
+test a_const_declared_twice_is_refused_at_the_later_one ... ok
+test pub_typed_and_section_nested_duplicates_are_refused ... ok
+test distinct_names_and_other_kinds_stay_legal ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
