@@ -47,8 +47,8 @@ fn read_ref(name: &str) -> Option<Vec<u8>> {
     }
 }
 
-// The whole-ROM native build touches the shared `engine/sound/generated` dir
-// (ensure_generated) — serialize the two shapes so they never race on it.
+// Serialize the two whole-ROM shapes. The lock dates from when both wrote the tree's
+// `engine/sound/generated`; each build now emits into its own generated root.
 static GEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// (PLAIN) the all-gates-ON native ROM == the canonical assembled `s4.bin`.

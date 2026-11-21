@@ -9,8 +9,8 @@
 //! song and patch labels of the song banks: those are cross-seam labels, read from the
 //! reference build's listing.
 //!
-//! EMIT-FIRST: the embedded `.bin` are gitignored build artifacts, so the gate runs
-//! `ensure_generated` FIRST, then compares.
+//! EMIT-FIRST: the embedded `.bin` are build artifacts, so the gate emits them into a
+//! private generated root (`shapes::standalone_sound_roots`) FIRST, then compares.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \

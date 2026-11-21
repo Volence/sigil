@@ -457,10 +457,9 @@ fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
     static CACHE: OnceLock<Option<Vec<ShapeWarnings>>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
+            // Each shape emits the seam-emitted sound blobs into its own private generated
+            // root (`shapes::emp_program`), so nothing is written into the reference tree.
             let aeon = aeon_dir()?;
-            // The `.emp` corpus embeds the seam-emitted sound blobs, so they must
-            // exist before any shape lowers.
-            native::ensure_generated(&aeon);
             Some(
                 SEVEN
                     .iter()

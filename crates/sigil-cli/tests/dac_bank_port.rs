@@ -9,8 +9,8 @@
 //! pad). Head label Dac_Temp_Blip; shape-invariant.
 //!
 //! EMIT-FIRST (the boot_data pattern): the embedded `.bin` are gitignored BUILD
-//! ARTIFACTS, so the gate runs `ensure_generated` FIRST (the build's own contract),
-//! then compares. This is the emit-first golden gate spec §6 requires.
+//! ARTIFACTS, so the gate emits them into a private generated root
+//! (`shapes::standalone_sound_roots`, the build's own contract) FIRST, then compares. This is the emit-first golden gate spec §6 requires.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \

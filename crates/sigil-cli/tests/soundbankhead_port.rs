@@ -9,8 +9,9 @@
 //! shape-INVARIANT size (0x628 — sound-pkg3 v2), shape-DEPENDENT content (SfxBlobWinTab / SeqOpcodeTable
 //! differ per shape). The AS twin's `fatal` span walls are the module's comptime ensures.
 //!
-//! EMIT-FIRST: the embedded head `.bin` are gitignored build artifacts, so the gate
-//! runs `ensure_generated` FIRST, then compares against the reference ROM @ $58000.
+//! EMIT-FIRST: the embedded head `.bin` are build artifacts, so the gate emits them into a
+//! private generated root (`shapes::standalone_sound_roots`) FIRST, then compares against
+//! the reference ROM @ $58000.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
@@ -38,7 +39,7 @@ fn strict_gate() -> bool {
 
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Serialise the gates (they share `ensure_generated`'s output dir). Poison-tolerant:
+/// Serialise the gates (each emits the sound artifacts before lowering). Poison-tolerant:
 /// a sibling that panics while holding the lock must fail alone, not take every later
 /// holder down with a `PoisonError` (the `native_full_rom.rs` idiom).
 fn lock() -> std::sync::MutexGuard<'static, ()> {

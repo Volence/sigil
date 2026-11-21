@@ -37,7 +37,6 @@ struct Spellings {
 
 impl Spellings {
     fn derive(aeon: &Path) -> Spellings {
-        native::ensure_generated(aeon);
         let prog = shapes::emp_program(aeon, &Shape::new("sonic4", "release")).unwrap_or_else(|e| panic!("build_emp: {e}"));
         let sec = prog
             .sections
