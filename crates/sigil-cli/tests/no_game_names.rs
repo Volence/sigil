@@ -874,8 +874,10 @@ fn comments_are_not_code_and_are_counted_by_line() {
 /// G0b final review C-I2: the engine count is the engine id's, not every games-path token.
 #[test]
 fn a_games_path_is_not_an_engine_id_hit() {
-    let (_, c) = scan_source("const A: &str = \"games/sonic4/x\"; const B: &str = \"aeon/engine\"; fn aeon_dir() {}\n", &ids_for_tests()).unwrap();
-    assert_eq!(c.engine, 2, "`aeon/engine` and `aeon_dir`, not the games path");
+    // (The second identifier is `aeon_root`, not the tree accessor's name: the nightly
+    // source-gate lane selects test files by that spelling, and this file reads no tree.)
+    let (_, c) = scan_source("const A: &str = \"games/sonic4/x\"; const B: &str = \"aeon/engine\"; fn aeon_root() {}\n", &ids_for_tests()).unwrap();
+    assert_eq!(c.engine, 2, "`aeon/engine` and `aeon_root`, not the games path");
 }
 
 /// G0b final review C-I3: a game named in CamelCase is a word (`Sonic4Profile`, `DemoShape`,
