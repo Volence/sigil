@@ -1713,7 +1713,12 @@ this differs from what the plan predicted, the difference is named.
   symbol: bare `usp` in any other instruction, `(usp).w` / `(usp).l`, a spliced `usp`, an immediate `#usp`
   (and `dc.l usp`), and every PC-relative target `usp(pc)` / `usp(pc,Xn)` are the named refusal
   `[operand.usp-unsupported]` (the immediate and PC-relative halves since the final-review fix wave; before it
-  they linked to an outside symbol named `usp`). The rest are refused UNNAMED (`unknown name \`usp\``):
+  they linked to an outside symbol named `usp`). The fix-wave refusal in the label fallback reaches further than
+  instruction immediates: it fires wherever a bareword `usp` would become a link symbol, unless the evaluator's
+  CPU is the Z80. That covers `bankid(usp)`, struct-literal field values and defaults, and ordinary comptime call
+  arguments. Data items are evaluated with no CPU set, so it fires even in a Z80 section's data. Z80 code itself
+  is unchanged (`ld hl, usp` still links), because `usp` is not a Z80 register word. The probed list is in
+  `EMP-IMM-REGISTER-WORD`. The rest are refused UNNAMED (`unknown name \`usp\``):
   `(usp)`, `-(usp)`, `(usp)+`, `usp(a0)`, `4(usp)`, `usp+0`, `0+usp`, a data field `= usp`; see
   `EMP-IMM-REGISTER-WORD`. Added in fix round C (not in the plan): the two moves are flag-inert (a flag result
   computed before one survives it, for conditional outs and for `preserves(sr.ccr)`), and

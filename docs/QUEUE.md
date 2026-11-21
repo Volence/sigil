@@ -3209,12 +3209,35 @@ until its row is removed.
   - Refused UNNAMED (`unknown name \`usp\``, then `instruction dropped`): `(usp)`, `-(usp)`, `(usp)+`,
     `usp(a0)`, `4(usp)`, `usp+0`, `0+usp`; a data field `data p: u32 = usp` / `*u8 = usp` (`sr` and `d1` there
     say `unknown name` too).
-- Closed in the final-review fix wave (triage (a)): `usp` in an immediate (`move.l #usp, d0`, `#usp+1`) and as
-  any PC-relative target (`lea` / `jmp` / `pea` / `move.l usp(pc)`, `usp+4(pc)`, `usp(pc,d0.w)`) is now the
-  named `[operand.usp-unsupported]`; before, against an outside symbol `usp = $1234`, they linked to
-  `203C 0000 1234`, `41FA 1232`, `4EFA 1232`, `487A 1232`, `203A 1232` (`a11_checks.rs`
-  `usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name`). `dc.l usp` / `dc.w usp` moved from
-  `unknown name` to the named refusal through the same fallback (`usp_reserved.rs`).
+- Closed in the final-review fix wave (triage (a)), with its true scope (re-review N1; every line probed with the
+  base binary `55c6ec32` and the candidate, a missing outside `usp` showing as a link error on the base):
+  - Two refusal sites. `map_pcrel_operand` refuses any PC-relative target spelled `usp`. The label fallback
+    (`fallback_label`, `eval/mod.rs`) refuses the name `usp` wherever a bareword would otherwise become a link
+    symbol, unless the evaluator's CPU is the Z80. The fallback is not specific to instructions: it serves every
+    label-taking position, and data items are evaluated with NO CPU set, so it fires there even inside a Z80
+    section.
+  - Used to bind an outside `usp`, now the named `[operand.usp-unsupported]`:
+    - an instruction immediate in 68000 code (`move.l #usp, d0`, `#usp+1`);
+    - every PC-relative target (`lea` / `jmp` / `pea` / `move.l usp(pc)`, `usp+4(pc)`, `usp(pc,d0.w)`). Against
+      `usp = $1234` the base gave `203C 0000 1234`, `41FA 1232`, `4EFA 1232`, `487A 1232`, `203A 1232`
+      (`a11_checks.rs` `usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name`);
+    - the argument of `bankid(usp)` in a data item, whether the item sits in a 68000 section, a Z80 section or
+      the module's default section (base: `unresolved target expression (dangling symbol(s) \`usp\`)`);
+    - a struct-literal field value in a pointer field (`data D: S = S{ p: usp }`, `p: *u8`) and a struct field
+      default `p: *u8 = usp` taken through `default` (base: `unresolved symbol \`usp\``).
+  - Already refused, now refused under the named id instead:
+    - `dc.l usp` / `dc.w usp` in a 68000 proc (was `unknown name \`usp\``, `usp_reserved.rs`);
+    - `usp` as an ordinary comptime call argument, to a `Label` or a `u32` parameter, in 68000 code or at module
+      level (`put usp`, `const C = k(usp)`, `data P: *u8 = k(usp)`). It was ``a register is not a valid `Label`
+      argument: `usp` is a register word``, and is now the fallback's named refusal at the same argument
+      (`register_word_splice.rs` re-pinned);
+    - a struct-literal value in an integer field (`S{ p: usp }`, `p: u32`): was `[emit.type] expected an integer`.
+  - Unchanged, and correct for the Z80, where `usp` is not a register word:
+    - `ld hl, usp` in a Z80 proc still links to an outside `usp`;
+    - `put usp` in a Z80 module keeps the argument-class refusal;
+    - `dc.w usp` in a Z80 proc says `unknown name`;
+    - `cycles(usp, .end)` in a Z80 proc reads `usp` as a label (base and candidate both).
+  - Also unchanged: `data P: u32 = usp` is `unknown name` on both.
 - Refused by name (`[operand.usp-unsupported]`), the full list: bare `usp` in any instruction but the two moves
   (`move.l usp, d0`, `lea usp, a0`, `jsr usp`, ...); `(usp).w` / `(usp).l`; `#usp`; `dc.l usp` / `dc.w usp`;
   every `usp(pc)` / `usp(pc,Xn)` target, `movem` included; a spliced `usp`.
