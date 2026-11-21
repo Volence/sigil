@@ -3155,8 +3155,9 @@ until its row is removed.
 
 ## STEP0-A11-INSTRUCTION-SET
 
-- state: built, awaiting landing 2026-11-22 (A11, branch `parcel/a11-complete-instruction-set` @ `fcba640e`; the
-  final review, its fix wave and the strict landing run follow)  size: `M`  project: `STEP0-A11`
+- state: landed in branch, pending merge and push 2026-11-22 (A11, branch `parcel/a11-complete-instruction-set`;
+  final review, its fix wave, the merge of master `01f930b6` and a strict landing run GREEN on `9f8e1bc6`)
+  size: `M`  project: `STEP0-A11`
 - `.emp` assembles every 68000 instruction the shared encoder accepts: the 12 mnemonics (`abcd`, `sbcd`, `nbcd`,
   `negx`, `subx`, `rtr`, `link`, `unlk`, `stop`, `reset`, `chk`, `trapv`), bare `exg`, the two `usp` moves, the five
   sr/ccr forms and `movem` from a PC-relative source; a Z80 `ld` with a 16-bit `(nn)` takes a link-time symbol. Two
@@ -3164,8 +3165,11 @@ until its row is removed.
   set from drifting. Each new word has a golden vector on three sides and a test of what the checks say about it.
 - Proof at `fcba640e`: `SHAPES 7/7 IDENTICAL` to `55c6ec32`, the three fixture rows SAME, four aeon builds exit 0
   (`emp_expect_fail: OK — 56/56`), the touched crates' suites 438 suites / 4612 passed / 0 failed / 4 ignored.
-  Strict landing run pending. Evidence in `docs/superpowers/notes/2026-11-22-a11-complete-instruction-set.md`.
-  Merge, push and the card's Progress line are the overseer's.
+  Strict landing run (`scripts/landing-run.sh --baseline 6233`, Oracle export lane on) on `9f8e1bc6`:
+  `RESULT GREEN`, `reconciles 6233 baseline + 69 new = 6302 observed`, `oracle exports OK`, CARGO / CLIPPY / LEDGER
+  exit 0, 0 skip lines; `check_landing_log.py`: `VERDICT: RESULT GREEN`. The commit recording it is docs-only, on
+  top of `9f8e1bc6`. Evidence in `docs/superpowers/notes/2026-11-22-a11-complete-instruction-set.md`.
+  Merge to master, push and the card's Progress line are the overseer's.
 
 ## ISA-Z80-DEAD-MNEMONICS
 

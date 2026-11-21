@@ -2140,3 +2140,42 @@ pass); `sigil-cli --test frontend_differential` 7 passed; clippy exit 0; BN `SHA
 - The Oracle lane compares exports that record whether the sigil checkout that built the binary was clean:
   `git status --short` must be empty in this worktree before that run (it is, after this commit; the
   `.superpowers/sdd` workspace is ignored here).
+
+### The strict landing run (made on `9f8e1bc6`; this section is written by the docs-only commit on top of it)
+
+Preconditions: `git fetch origin` gave `origin/master` = `01f930b6`. `git status --short` was empty. `df -h /`
+showed 248G free. The landing binary was rebuilt from the clean tree after
+`CARGO_TARGET_DIR=.target-land cargo clean --release -p sigil-cli`, and `sigil --version` named `9f8e1bc6`,
+`tree: clean at capture, no uncommitted changes`.
+
+The reference was a fresh `cp -a` of `.aeon-a10-ref` at `/home/volence/sonic_hacks/.a11-land-216473` (aeon
+`9b80db1d`, git link kept, `__pycache__` removed). The script was copied to a run-unique path outside the
+worktree and run detached:
+`ORACLE_DIR=/home/volence/sonic_hacks/oracle-old ORACLE_G0A_DIR=/home/volence/sonic_hacks/oracle <copy> --baseline 6233 --aeon <tree copy>`,
+with `AEON_DIR`, `NO_LINT` and `FAST` unset. The Oracle export lane was ON (Oracle `3e617113`, main, clean).
+
+The log is `.target-land/landing-20261121T224101Z.log`. Its verdict block:
+```
+  tree            /home/volence/sonic_hacks/.sigil-a11 @ 9f8e1bc6 (parcel/a11-complete-instruction-set, clean)
+  reference       /home/volence/sonic_hacks/.a11-land-216473 @ 9b80db1d (HEAD, clean), all four present
+  started/ended   2026-11-21T22:41:01Z -> 2026-11-21T23:03:15Z (UTC)
+  CARGO_EXIT      0
+  CLIPPY_EXIT     0   (lint bar clean)
+  LEDGER_EXIT     0   (ledger gate clean)
+  ci-shaped leg   0   (CI shape green: 568 suite(s), 6302 passed, 0 failed)
+  oracle exports  OK   (runner exit 0: Oracle's pinned ROMs, exports and gates reproduced)
+  suites          568
+  passed          6302
+  failed          0
+  ignored         4
+  skip lines      0
+  binaries        568 launched, 568 reported
+  reconciles      6233 baseline + 69 new = 6302 observed
+  RESULT          GREEN
+```
+`scripts/check_landing_log.py` on the log printed `VERDICT: RESULT GREEN`, with `LANDING_EXIT=0`,
+`CARGO_EXIT=0`, `CLIPPY_EXIT=0` and `LEDGER_EXIT=0`. Wall clock: 22 min 14 s.
+
+No byte moved, so nothing was refrozen or attested. Afterwards the tree copy, the script copy and
+`.target-land/tmp` were deleted. The commit carrying this section is docs-only and sits on top of `9f8e1bc6`, the
+commit the run was made on. Not merged to master, not pushed.
