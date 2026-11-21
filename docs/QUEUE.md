@@ -2651,6 +2651,16 @@ until its row is removed.
   that moves bytes should re-run the oracle runner (or a landing lane should, with the oracle checkout as an
   optional reference like `ORACLE_DIR`), so the next drift is red the day it happens. Decide at the G0b final
   landing (oracle's pins also need sigil's merged revision then).
+- 2026-11-21 (G0b Task 13a): **it drifted again, and again nothing here noticed.** The runner with sigil
+  `02b8a8f4` on aeon `727ae46b` reproduced all five ROMs and NONE of the five normalized exports. Not sigil's doing:
+  aeon's comment-only edits after `644fd722` (Tasks 11 and 12) moved 5 sonic4 and 2 demo files' `sha256`/`size` and
+  renumbered 9 `song_bank2.emp` line rows; re-hashing those rows to their `644fd722` bytes and mapping the lines back
+  reproduces all five pins exactly. So aeon SOURCE edits (comments included) also move oracle's export pins, which
+  widens the class: the trigger is any change to a file the export names, not only a byte move. Re-pinned on oracle
+  `feat/g0b-shape-names` `430509a1` (see oracle `fixtures/g0a/PROVENANCE.md`, "Re-pinned 2026-11-21") together
+  with Task 13a's root-relative `files` paths (`G0B-EXPORT-BY-ROOTS`): five exports, each classified against
+  `02b8a8f4`'s as the stripped `<shape.game>/` plus `inputsSha256` and `tool.revision` only; trimmed fixture exactly
+  `files[4].path`, `files[5].path`, `inputsSha256`, `tool.revision`; strict runner 9/9 OK.
 
 ## G0B-HELPER-CLOSURE-LOCATOR
 
