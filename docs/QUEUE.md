@@ -2668,12 +2668,9 @@ until its row is removed.
 
 - state: open 2026-11-20 (found in G0b Task 11)  size: `M`  project: `G0B-GAME-AS-DATA`
 - What Task 11 (the profile-driven driver's deletion) left, each its own small item:
-  1. **The residual AS feature defines are byte-inert on every shipped shape.** `as_feature_defines`
-     (`SOUND_DRIVER_ENABLED` / `__DEBUG__` / `__MDDBG__`, engine.toml) moved out of the driver at 2cef7f08 and is
-     held only by unit tests: narrowing `__MDDBG__` to debug left step0 7/7, so no byte gate can see a wrong row.
-     Either the AS residual stops reading them (and the rows go), or a gate that reads the AS symbol environment
-     holds them.
-  2. **`.target-land/tmp` leaks.** Measured 39G during Task 11; test scratch trees under `CARGO_TARGET_TMPDIR`
+  1. **The residual AS feature defines are byte-inert on every shipped shape.** Booked on its own as
+     `G0B-AS-FEATURE-DEFINES-INERT` (controller ruling, Task 11 fix round 1).
+  2. **`.target-land/tmp` leaks.** Measured 39G early in Task 11 and 44G at its end; test scratch trees under `CARGO_TARGET_TMPDIR`
      are not removed on success. Find the writers (`grep -rn CARGO_TARGET_TMPDIR crates/*/tests`) and drop on
      success, or have `scripts/landing-run.sh` clear it first.
   3. ~~**`/./` in rendered game-root paths.**~~ Already fixed in 87540c32 (`Project::sources_root` drops `.`
@@ -2690,11 +2687,29 @@ until its row is removed.
      commits landed anyway (the column was not in the per-commit 7/7). Cause and the last outputs are in
      `docs/superpowers/notes/2026-11-17-g0b-game-as-data.md`. The gate is retired; the lesson is that a parcel's
      per-commit evidence must name every gate the parcel's own work can turn red.
-  7. **clippy was not clean at the Task 11 base:** `-D warnings --all-targets` failed on five lints introduced by
-     0df8f9a9 and 87540c32 (`too_many_arguments` on `Seams::validate_sound`, an orphan doc comment, a single-element
+  7. **clippy was not clean on the Task 11 prep commits** (the base 5e45644c was clean): `-D warnings
+     --all-targets` failed on five lints those commits introduced (0df8f9a9 and 87540c32) (`too_many_arguments` on `Seams::validate_sound`, an orphan doc comment, a single-element
      loop, `&PathBuf` params, a manual `contains`). Fixed in a265daf1. `scripts/landing-run.sh` (7) runs the
      lint bar, so a LANDING would have caught them; the prep commits' per-commit evidence (tests + step0) did not
      run clippy, so each commit carried them silently. Per-commit evidence on a parcel should include the lint bar.
+
+## G0B-AS-FEATURE-DEFINES-INERT
+
+- state: open 2026-11-20 (found in G0b Task 11; controller ruling in fix round 1)  size: `S`  project: `G0B-GAME-AS-DATA`
+- aeon `engine/engine.toml` `as_feature_defines` has three rows (`SOUND_DRIVER_ENABLED` when `sound`, `__DEBUG__` when
+  `debug`, `__MDDBG__` when `debug || crash_report`), read by `sigil_build::driver::as_feature_defines` and handed to the
+  residual AS side (`games/<g>/game_root.asm`) as plain `-D`s. Ruled: rows and consumer stay exactly as they are; the
+  table goes when `game_root.asm` goes.
+- **The rows are byte-inert on all seven shipped shapes, and only a fixture unit test holds them**
+  (`driver::tests::the_residual_as_feature_defines_follow_the_description`, a synthetic engine). Measured at 2cef7f08:
+  narrowing `__MDDBG__` to `debug` left step0 `SHAPES 7/7 IDENTICAL`. So deleting a row from the REAL engine.toml, or
+  mistyping its `when`, still passes 7/7, the goldens and the full suites: nothing that runs on a shipped tree reads
+  what the residual AS did with the define.
+- **A real witness** would hold the residual AS's symbol environment, not the bytes: for every shipped shape, assemble
+  the residual AS side (`driver::as_side`) and assert that the definedness-gated arms it takes match the shape's
+  features (e.g. the `ifdef __MDDBG__` include's `MDDBG__*` externs are present exactly on `debug || crash_report`
+  shapes, the `SOUND_DRIVER_ENABLED`-gated names exactly on sound-on shapes), red-first by deleting each row from a
+  tree copy's engine.toml. Or retire the rows by making the residual AS stop testing them (G0c-adjacent).
 
 ## G0B-COMPARE-IDENTITY-NAMES
 
