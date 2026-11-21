@@ -2111,8 +2111,27 @@ merge `601be264`, `01f930b6`), touching `scripts/landing-run.sh` (+317 lines, an
 and `docs/QUEUE.md`. Stopped there; nothing merged. A dry run (`git merge-tree --write-tree`, which touches no
 worktree) says the only conflict against either `573930be` or `01f930b6` is `docs/QUEUE.md`.
 
-**Pending landing: the test counts the later run needs** (`#[test]` added minus removed, indented ones counted,
-`grep -cE '^\+\s*#\[test\]'` minus `grep -cE '^-\s*#\[test\]'` over `-- crates`):
-- this branch over its base `55c6ec32` (= over master after a clean merge, since no crate file conflicts):
-  **69** added, 0 removed (Task 12's 57 + 6 indented, plus the fix wave's 6);
-- master over `55c6ec32`: **8** at `573930be`, **16** at `01f930b6` (its `landing_verdict.rs` adds 8 more).
+**Pending landing: the test counts the later run needs** (superseded by the merge below; recomputed there).
+
+### Fix wave: merge of master `01f930b6` (merge commit after `57dc6bfb`)
+
+Controller ruling: merge `origin/master` at `01f930b6` (its four extra commits are the controller's own Oracle
+export lane). `git fetch origin` confirmed `01f930b6`; `git merge origin/master` conflicted in `docs/QUEUE.md`
+only (both sides appended rows after `A10-FINAL-REVIEW-RESIDUE`: this branch's A11 rows, master's
+`STEPA-PRIVATE-WORKLISTS`). Resolution: both blocks kept, the branch's first, then master's. Verified by row
+name: every `## ` heading of each parent is present in the merge (100 from the branch, 91 from master, 106 in
+the merge, 0 missing); `git diff HEAD^1 -- docs/QUEUE.md` removes no line.
+
+After the merge: `sigil-frontend-emp` 149 suites, 2921 passed, 0 failed (+8: master's walker tests);
+`sigil-harness` 70 suites, 532 passed, 0 failed, 2 ignored (+8: the lane's `landing_verdict` tests; the walks
+pass); `sigil-cli --test frontend_differential` 7 passed; clippy exit 0; BN `SHAPES 7/7 IDENTICAL`,
+`STEP0_CMP_END rc=0` (CRCs as before the merge).
+
+**Pending landing: the counts** (`#[test]` added minus removed over `-- crates`, indented included):
+- (a) master `01f930b6` over `55c6ec32`: **16** added, 0 removed.
+- (b) this branch over `origin/master` after the merge: **69** added, 0 removed.
+- The landing's baseline is **6233** (the lane's landing run on `01f930b6`: 6225 baseline + 8 new = 6233
+  observed), so the expected observed total is **6233 + 69 = 6302**.
+- The Oracle lane compares exports that record whether the sigil checkout that built the binary was clean:
+  `git status --short` must be empty in this worktree before that run (it is, after this commit; the
+  `.superpowers/sdd` workspace is ignored here).
