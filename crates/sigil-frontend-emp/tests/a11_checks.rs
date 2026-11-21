@@ -328,3 +328,88 @@ fn reset_leaves_registers_flags_and_flow_alone() {
     assert!(f.len() == 1 && f[0].cc == "eq" && f[0].always_taken, "{f:?}");
     assert_eq!(branch_const(&src("tst.w d1")), [], "control");
 }
+
+#[test]
+fn chk_trapv_and_reset_are_plain_instructions_to_the_checks() {
+    assert_eq!(diags("clobbers()", "    chk.w d1, d0\n    trapv\n    reset\n    rts"), []);
+}
+
+/// Review Focus 1: a new mnemonic does not take a name away from data.
+#[test]
+fn a_const_or_label_named_after_a_new_mnemonic_is_still_a_name() {
+    let d = module_diags("module m\nconst stop = 3\nconst link = 4\nproc P () clobbers(d0) {\n.chk:\n    moveq #stop + link, d0\n    bra.s .chk\n}\n");
+    assert_eq!(d, [], "{d:?}");
+}
+
+/// The conditional-out SURVIVES probe: `moveq #1, d1` leaves Z clear, so the
+/// return is a `!eq` exit where `d0` must survive. It fires only while the
+/// flags are still known at the return.
+fn out_cond_survives(mid: &str) -> bool {
+    let d = diags("clobbers(d1, d2, a1) out(d0 if eq)", &format!("    moveq #5, d0\n    moveq #1, d1\n    {mid}\n    rts"));
+    has(&d, "[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)`")
+}
+
+/// CHK <ea>, Dn traps when Dn < 0 or Dn > the bound and otherwise falls
+/// through. It writes no register (an auto-increment source still advances its
+/// base); N is defined only on the trap and Z, V, C are "Undefined", so to every
+/// flag check the flags after it are gone. It does not end a routine.
+#[test]
+fn chk_reads_its_operands_and_leaves_the_flags_undefined() {
+    // The bound register is read, never written.
+    assert_eq!(diags("clobbers()", "    chk.w d2, d1\n    rts"), []);
+    let d = diags("clobbers()", "    chk.w (a1)+, d1\n    rts");
+    assert!(has(&d, "[proc.clobber-undeclared] `P` writes `a1`"), "{d:?}");
+    assert!(!has(&d, "[proc.clobber-undeclared] `P` writes `d1`"), "{d:?}");
+    // Not a terminator.
+    let d = diags("clobbers()", "    chk.w d2, d1");
+    assert!(has(&d, "[proc.undeclared-fallthrough] `P` can reach its closing `}`"), "{d:?}");
+    // The flag-result walk: a callee's carry (or zero) is gone after `chk`, so
+    // the branch after it does not read it and the result is unused (fires).
+    // Control: `lea` leaves the flags, the branch reads the callee's.
+    for (flag, branch) in [("carry", "bcs.s"), ("zero", "beq.s")] {
+        for (mid, fires) in [("chk.w d2, d1", true), ("lea (a0), a1", false)] {
+            let src = format!("module m\nproc P () clobbers(a1) {{\n    jbsr Queue\n    {mid}\n    {branch} .x\n.x:\n    rts\n}}\n");
+            let f = flag_unused(&src, flag);
+            assert_eq!(!f.is_empty(), fires, "{flag} across `{mid}`: {f:?}");
+        }
+    }
+    // The conditional-out tracker: the flags are unknown after `chk`.
+    assert!(!out_cond_survives("chk.w d2, d1"), "flags across `chk`");
+    assert!(out_cond_survives("lea (a0), a1"), "control: `lea` keeps them");
+    // `preserves(sr.ccr)` is refused. Control: `lea` keeps it.
+    let d = diags("preserves(sr.ccr)", "    chk.w d2, d1\n    rts");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "{d:?}");
+    assert_eq!(diags("clobbers(a1) preserves(sr.ccr)", "    lea (a0), a1\n    rts"), [], "control");
+}
+
+/// TRAPV traps when V is set (it READS V, which no check tracks) and otherwise
+/// falls through with the condition codes untouched ("Condition Codes: Not
+/// affected."). It writes no register and does not end a routine.
+#[test]
+fn trapv_falls_through_with_the_flags_it_found() {
+    assert_eq!(diags("clobbers()", "    trapv\n    rts"), []);
+    let d = diags("clobbers()", "    trapv");
+    assert!(has(&d, "[proc.undeclared-fallthrough] `P` can reach its closing `}`"), "{d:?}");
+    // The flag-result walk: a callee's carry (or zero) read after `trapv` is
+    // still the callee's. Control: `move.l a0, d0` writes both flags.
+    for (flag, branch) in [("carry", "bcs.s"), ("zero", "beq.s")] {
+        for (mid, fires) in [("trapv", false), ("move.l a0, d0", true)] {
+            let src = format!("module m\nproc P () clobbers(d0) {{\n    jbsr Queue\n    {mid}\n    {branch} .x\n.x:\n    rts\n}}\n");
+            let f = flag_unused(&src, flag);
+            assert_eq!(!f.is_empty(), fires, "{flag} across `{mid}`: {f:?}");
+        }
+    }
+    // The conditional-out tracker still knows the flags after `trapv` (fires).
+    assert!(out_cond_survives("trapv"), "flags across `trapv`");
+    assert!(!out_cond_survives("move.l a0, d2"), "control: `move.l a0, d2` writes the flags");
+    // `preserves(sr.ccr)` holds across it. Control: a flag write does not.
+    assert_eq!(diags("preserves(sr.ccr)", "    trapv\n    rts"), []);
+    let d = diags("clobbers(d0) preserves(sr.ccr)", "    trapv\n    moveq #0, d0\n    rts");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
+    // The constant-branch net: `moveq #0` sets Z, `trapv` keeps it on the path
+    // that reaches the `beq`, so the branch is always taken. Control: `chk`.
+    let src = |mid: &str| format!("module m\nproc P () clobbers(d0) {{\n    moveq #0, d0\n    {mid}\n    beq.s .x\n.x:\n    rts\n}}\n");
+    let f = branch_const(&src("trapv"));
+    assert!(f.len() == 1 && f[0].cc == "eq" && f[0].always_taken, "{f:?}");
+    assert_eq!(branch_const(&src("chk.w d2, d1")), [], "control: `chk` leaves Z undefined");
+}

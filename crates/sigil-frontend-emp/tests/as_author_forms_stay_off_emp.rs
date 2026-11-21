@@ -74,10 +74,11 @@ fn the_other_as_rewrites_do_not_reach_emp() {
     assert_unchanged("unlk a6", &[]);
     // A11: a real instruction, the bytes are pinned in emp_a11_golden.rs
     assert_unchanged("reset", &[]);
-    for m in ["chk.w d0,d1", "trapv"] {
-        let word = m.split(['.', ' ']).next().unwrap();
-        assert_unchanged(m, &[&format!("`{word}` is not a recognized 68000 mnemonic")]);
-    }
+    // A11 made the words this test once pinned as unrecognized (`chk`, `link`,
+    // `unlk`, `reset`, `trapv`, `stop`) instructions; the bytes are pinned in
+    // emp_a11_golden.rs.
+    assert_unchanged("chk.w d0,d1", &[]);
+    assert_unchanged("trapv", &[]);
 }
 
 /// AS-SYMBOL-SIZE-SUFFIX's AS-route reading (`jmp Foo.w` is `Foo` at word

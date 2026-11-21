@@ -15,7 +15,7 @@ mod frontend_diff;
 
 use frontend_diff::{
     cases_m68k, cases_z80, compare, compare_z80, expected_case_count, expected_z80_case_count,
-    emp_assemble, emp_spelling, as_assemble, as_spelling, families_without_an_emp_form, families,
+    emp_assemble, emp_spelling, as_assemble, as_spelling, families,
     is_out_of_range, label, report, report_z80, run_all, Case, Ea, Outcome, RunResult, EXCLUSIONS,
 };
 use std::sync::OnceLock;
@@ -102,18 +102,16 @@ fn generator_is_deterministic_and_matches_its_tables() {
 
 /// The measurement floor (review M4): a shared breakage (the frame, link or
 /// flatten) would turn every case into `BothRefuse` and read as agreement.
-/// Every family with a form `.emp` assembles must have compared at least one
-/// byte string, and the families with none are exactly the ones the exclusion
-/// tables say `.emp` lacks (derived, `families_without_an_emp_form`).
+/// Since A11 `.emp` has a form for every family: EVERY family must have
+/// compared at least one byte string.
 #[test]
 fn every_family_with_a_legal_emp_form_compared_bytes() {
     let r = matrix();
-    let none = families_without_an_emp_form();
     let mut wrong = Vec::new();
     for f in families() {
         let same = r.per_family.get(f).map_or(0, |t| t.same);
-        if (same == 0) != none.contains(f) {
-            wrong.push(format!("{f}: {same} SameBytes, expected {}", if none.contains(f) { "0" } else { ">0" }));
+        if same == 0 {
+            wrong.push(format!("{f}: 0 SameBytes, expected >0"));
         }
     }
     assert!(wrong.is_empty(), "measurement floor:\n{}", wrong.join("\n"));

@@ -1832,11 +1832,14 @@ pub(crate) fn cc_inert_data_op(mnem: &str, ops: &[CodeOperand]) -> bool {
     // edge-credit walk on a mnemonic that is not even in the ROM. LINK and UNLK
     // move sp and the frame register only: "Condition Codes: Not affected."
     // RESET pulses the external RESET line and changes no register or flag
-    // ("Condition Codes: Not affected."), then execution goes on.
+    // ("Condition Codes: Not affected."), then execution goes on. TRAPV traps
+    // when V is set and otherwise goes on with the flags it found ("Not
+    // affected"); its trap is treated as `trap #n`'s is (no edge, the handler
+    // returns with the state intact or not at all, `EMP-EXCEPTION-EDGE`).
     matches!(
         mnem,
         "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "link" | "unlk"
-            | "reset" | "assume_some"
+            | "reset" | "trapv" | "assume_some"
     ) || is_usp_move(mnem, ops)
 }
 

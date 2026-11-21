@@ -585,12 +585,6 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
          and the AS route default the size (word; `bchg` byte on memory, long on Dn).",
     ),
     (
-        "emp-lacks-mnemonic",
-        "`.emp` has no `chk` \
-         (`m68k_mnemonic`, `lower/code.rs`: `is not a recognized 68000 mnemonic`); asl and the AS \
-         route assemble it (the ISA encodes it).",
-    ),
-    (
         "emp-no-implicit-variant",
         "asl (and the AS route) rewrite `add`/`sub <ea>,An` to `adda`/`suba` and `eor #imm,Dn` to \
          `eori`; `.emp` does not (`Add|Sub requires a Dn operand`, `... with an address-register \
@@ -632,11 +626,6 @@ fn is_branch_family(f: &str) -> bool {
     matches!(f, "bra" | "bsr" | "bcc")
 }
 
-/// The mnemonics `.emp` does not recognise (row `emp-lacks-mnemonic`). A
-/// closed list: a newly unrecognised mnemonic is a new disagreement.
-pub const EMP_ABSENT_MNEMONICS: &[&str] =
-    &["chk"];
-
 /// The families row `emp-requires-a-size-suffix` may name: those `.emp` has no
 /// default size for. Closed, so a NEW unsized refusal is a new disagreement.
 pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
@@ -647,14 +636,6 @@ pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
 
 /// The families row `emp-label-operand-gap` may name.
 pub const LABEL_GAP_FAMILIES: &[&str] = &["move", "movem"];
-
-/// The families with NO form `.emp` assembles, derived from the exclusion
-/// tables above (the absent mnemonics). The measurement
-/// floor (`every_family_with_a_legal_emp_form_compared_bytes`) holds every
-/// OTHER family to at least one `SameBytes` case, and these to none.
-pub fn families_without_an_emp_form() -> BTreeSet<&'static str> {
-    families().into_iter().filter(|f| EMP_ABSENT_MNEMONICS.contains(&mnemonic(f))).collect()
-}
 
 fn emp_err_only(emp: &Result<Vec<u8>, Vec<String>>) -> Option<&[String]> {
     match emp {
@@ -698,15 +679,6 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
             c.size.is_none()
                 && SIZE_DEFAULT_GAP_FAMILIES.contains(&c.family)
                 && emp_refuses_as_assembles(&|s| s == "instruction needs an explicit size suffix (.b/.w/.l)")
-        }
-        "emp-lacks-mnemonic" => {
-            let mn = mnemonic(c.family);
-            EMP_ABSENT_MNEMONICS.contains(&mn)
-                && emp_err_only(emp)
-                    .is_some_and(|m| m[0] == format!("`{mn}` is not a recognized 68000 mnemonic"))
-                && emp_refuses_as_assembles(&|s| {
-                    s == format!("`{mn}` is not a recognized 68000 mnemonic")
-                })
         }
         "emp-no-implicit-variant" => {
             let to_an = matches!(c.dst, Some(Ea::A(_)));

@@ -3143,3 +3143,17 @@ until its row is removed.
   displacement, sp moved up) assembles and also bails the model.
 - Decide whether `.emp` refuses the unsigned spelling (or reads the word as signed in the model), and whether a
   positive `link` displacement is refused.
+
+## EMP-EXCEPTION-EDGE
+
+- state: open 2026-11-22 (A11 Task 9)  size: `S`  project: `STEP0-A11`
+- Four instructions can raise an exception, a transfer to a handler: `chk` (bound check), `trapv` (V set), `trap #n`
+  and `divu` / `divs` (divide by zero). None has an edge to its handler in any check: the handler is assumed to
+  return with the registers intact or not at all. No call edge, no clobber charge, flag roles as the ISA table has
+  them (`chk` writes C and Z, `trapv` and `trap` leave them), and no cycle row, so a `@budget` proc containing one is
+  refused as unpriceable.
+- One inconsistency left as found: `trapv` and `reset` are in the flag-inert allowlists (`cc_inert_data_op`,
+  `branch_const`), but `trap #n` is not, though its carry and zero roles are also Untouched; the out-cond tracker and
+  `preserves(sr.ccr)` read a `trap` as a flag write.
+- Decide whether an exception gets an edge (a handler declared per vector, its contract checked at the raise site),
+  and whether `trap #n` joins the flag-inert allowlists.

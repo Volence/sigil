@@ -66,13 +66,19 @@ fn rtr_assembles() {
 /// A suffix the instruction does not have is refused, on both routes.
 #[test]
 fn a_size_suffix_the_instruction_lacks_is_refused() {
-    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6", "stop.w #$2700", "reset.w"] {
+    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6", "stop.w #$2700", "reset.w", "trapv.w", "chk.l d0, d1", "chk.b d0, d1"] {
         let e = emp(line).unwrap_err();
         assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
         let a = asl(line).unwrap_err();
         // The AS route names the written mnemonic, suffix included (`unlk.l`).
+        // asl itself assembles `chk.l` (the MC68020 word `4300`); the AS route
+        // refuses it with its own reason, a 68000 does not decode that word.
         let word = line.split_whitespace().next().unwrap();
-        let want = format!("`{word}` is refused, as asl refuses it");
+        let want = if word == "chk.l" {
+            "`chk.l` is the MC68020's long form, which a 68000 does not decode".to_string()
+        } else {
+            format!("`{word}` is refused, as asl refuses it")
+        };
         assert!(a.iter().any(|m| m.contains(&want)), "AS route, `{line}`: {a:?}");
     }
 }
@@ -154,4 +160,33 @@ fn stop_and_the_sr_immediates_assemble() {
 #[test]
 fn reset_assembles() {
     golden("reset", i(Mnemonic::Reset, Size::W, &[]), &[0x4E, 0x70]);
+}
+
+#[test]
+fn chk_and_trapv_assemble() {
+    use Operand::*;
+    golden("chk.w d0, d1", i(Mnemonic::Chk, Size::W, &[Dn(0), Dn(1)]), &[0x43, 0x80]);
+    golden("chk.w (a0), d1", i(Mnemonic::Chk, Size::W, &[Ind(0), Dn(1)]), &[0x43, 0x90]);
+    golden("trapv", i(Mnemonic::Trapv, Size::W, &[]), &[0x4E, 0x76]);
+    // `chk` has no default size on either route.
+    assert_eq!(emp("chk d0, d1").unwrap_err(), ["instruction needs an explicit size suffix (.b/.w/.l)"]);
+    assert!(asl("chk d0,d1").is_err());
+}
+
+/// CHK.W is `0100 DDD 110 MMMRRR` (bound register DDD, bound source EA
+/// mode/register), TRAPV the fixed word `0100 1110 0111 0110` = $4E76. With
+/// distinct non-zero registers in every field:
+/// - `chk.w d3, d5`: DDD=101, EA=000 011 -> 0100 1011 1000 0011 = $4B83;
+/// - `chk.w (a2), d6`: DDD=110, EA=010 010 -> 0100 1101 1001 0010 = $4D92;
+/// - `chk.w #$1234, d2`: DDD=010, EA=111 100 -> 0100 0101 1011 1100 = $45BC,
+///   then the immediate word $1234;
+/// - `chk.w 6(a4), d7`: DDD=111, EA=101 100 -> 0100 1111 1010 1100 = $4FAC,
+///   then the displacement word $0006.
+#[test]
+fn chk_assembles_with_distinct_registers_in_every_field() {
+    use Operand::*;
+    golden("chk.w d3, d5", i(Mnemonic::Chk, Size::W, &[Dn(3), Dn(5)]), &[0x4B, 0x83]);
+    golden("chk.w (a2), d6", i(Mnemonic::Chk, Size::W, &[Ind(2), Dn(6)]), &[0x4D, 0x92]);
+    golden("chk.w #$1234, d2", i(Mnemonic::Chk, Size::W, &[Imm(0x1234), Dn(2)]), &[0x45, 0xBC, 0x12, 0x34]);
+    golden("chk.w 6(a4), d7", i(Mnemonic::Chk, Size::W, &[Disp16An(6, 4), Dn(7)]), &[0x4F, 0xAC, 0x00, 0x06]);
 }

@@ -181,13 +181,6 @@ fn emp_writes(line: &str, want: &Instruction) -> Result<(), String> {
     }
 }
 
-/// Families `.emp` still refuses, with the number of refused instructions in
-/// each. A11 empties this table one task at a time; a row whose count is no
-/// longer true fails the walk, so a closed gap cannot keep its row.
-const KNOWN_REFUSED: &[(&str, usize)] = &[
-    ("chk", 11), ("trapv", 1),
-];
-
 /// The floor under the demand, measured at sigil `55c6ec32`. A pool or mnemonic
 /// list that shrinks fails here instead of passing with less work done.
 const MIN_ACCEPTED: usize = 2439;
@@ -216,9 +209,7 @@ fn emp_assembles_every_68000_instruction_the_shared_encoder_accepts() {
             refused.entry(family_name(inst.mnemonic)).or_default().push(format!("`{sized}`: {a}  ||  `{bare}`: {b}"));
         }
     }
-    let got: BTreeMap<&str, usize> = refused.iter().map(|(f, rows)| (*f, rows.len())).collect();
-    let want: BTreeMap<&str, usize> = KNOWN_REFUSED.iter().copied().collect();
-    assert_eq!(got, want, "refused instructions per family differ from KNOWN_REFUSED:\n{refused:#?}");
+    assert!(refused.is_empty(), "{} family(ies) with an instruction `.emp` refuses:\n{refused:#?}", refused.len());
 }
 
 #[test]

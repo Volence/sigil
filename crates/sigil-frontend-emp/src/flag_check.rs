@@ -1809,25 +1809,12 @@ mod zero_model_tests {
         }
     }
 
-    /// The ISA families no `.emp` CodeBuf can hold, each for a named reason.
-    ///
-    /// - `chk`, `trapv`: `.emp`'s
-    ///   mnemonic table has no spelling for them (they are reached from the AS
-    ///   front-end only) until A11 Task 9 spells them.
-    const UNSPELLABLE: &[&str] = &[
-        "chk",
-        "trapv",
-    ];
-
     /// Every family `sigil-isa` encodes has a zero role through the walk's string
-    /// path, except the families [`UNSPELLABLE`] names, which no CodeBuf can hold.
+    /// path (since A11, `.emp` spells every one of them).
     #[test]
     fn every_encodable_68k_family_has_a_zero_role() {
         let mut checked = 0;
         for family in sigil_backend_m68k::m68k::ALL_FAMILY_NAMES {
-            if UNSPELLABLE.contains(family) {
-                continue;
-            }
             for (mnem, ops) in spellings(family) {
                 assert!(
                     zero_role(&mnem, &ops, Cpu::M68000).is_some(),
@@ -1837,7 +1824,8 @@ mod zero_model_tests {
                 checked += 1;
             }
         }
-        assert!(checked > 60, "the sweep checked only {checked} spellings");
+        // Measured at A11 Task 9: 137 spellings over all 85 families.
+        assert!(checked > 132, "the sweep checked only {checked} spellings");
     }
 
     /// The `.emp` words that are not ISA mnemonics have a role too, and a word
@@ -1853,14 +1841,11 @@ mod zero_model_tests {
     }
 
     /// Every family `sigil-isa` encodes has a carry role through the walk's
-    /// string path, with the same [`UNSPELLABLE`] exceptions as the zero sweep.
+    /// string path, every family as in the zero sweep.
     #[test]
     fn every_encodable_68k_family_has_a_carry_role() {
         let mut checked = 0;
         for family in sigil_backend_m68k::m68k::ALL_FAMILY_NAMES {
-            if UNSPELLABLE.contains(family) {
-                continue;
-            }
             for (mnem, ops) in spellings(family) {
                 assert!(
                     carry_role(&mnem, &ops, Cpu::M68000).is_some(),
@@ -1870,7 +1855,8 @@ mod zero_model_tests {
                 checked += 1;
             }
         }
-        assert!(checked > 60, "the sweep checked only {checked} spellings");
+        // Measured at A11 Task 9: 137 spellings over all 85 families.
+        assert!(checked > 132, "the sweep checked only {checked} spellings");
     }
 
     /// The `.emp` words and the extend family (`.emp` spells all five since A11,
