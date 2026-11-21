@@ -2665,8 +2665,42 @@ impl Evaluator<'_> {
             }
             return Some(CodeOperand::Z80Indexed { reg, disp });
         }
-        // `(nn)` — a comptime absolute address.
-        let v = self.eval_expr(e, env);
+        // `(nn)` — a comptime absolute address, or (A11) a link-time label or
+        // label expression, evaluated under the immediate's link context exactly
+        // as `map_plain_z80` does, which lowers to a `Value16Le` hole. A
+        // bank-masked expression falls through to the refusal below.
+        let v = self.in_imm_link_ctx(|this| this.eval_expr(e, env));
+        // A register name is never a link-time address: `(b)` with a `proc b` in
+        // scope would otherwise read the proc's address (the A11 `proc usp`
+        // lesson). Only on the link-time path, so a comptime `const` that happens
+        // to share a register's name keeps the `Z80Mem` path it had before.
+        if matches!(v, Value::Label(_) | Value::LinkExpr(_)) {
+            if let ast::Expr::Path(p) = e {
+                let seg = p.segments.first().map(String::as_str).unwrap_or("");
+                if p.segments.len() == 1
+                    && (Z80Reg8::from_name(seg).is_some()
+                        || Z80Pair::from_name(seg).is_some()
+                        || matches!(seg, "i" | "r"))
+                {
+                    self.error(
+                        expr_span(e),
+                        format!(
+                            "[lower.z80-unsupported] `({seg})` is not a Z80 operand form: `{seg}` \
+                             is a register, not a memory address"
+                        ),
+                    );
+                    return None;
+                }
+            }
+        }
+        if let Value::Label(n) = &v {
+            return Some(CodeOperand::Z80MemSym { target: sigil_ir::expr::Expr::Sym(n.clone()) });
+        }
+        if let Value::LinkExpr(le) = &v {
+            if !crate::eval::expr::expr_carries_bank_mask(le) {
+                return Some(CodeOperand::Z80MemSym { target: le.clone() });
+            }
+        }
         match v.as_stored_int() {
             Some(addr) => Some(CodeOperand::Z80Mem { addr }),
             None => {

@@ -257,8 +257,10 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // ld (hl), n                                  10
         ("ld", [Z80IndHl, b]) if is_imm(b) => Cost::Fixed(10),
         // ld a,(nn) / ld (nn),a                       13
-        ("ld", [a, Z80Mem { .. }]) if is_a(a) => Cost::Fixed(13),
-        ("ld", [Z80Mem { .. }, b]) if is_a(b) => Cost::Fixed(13),
+        // A link-time `(Label)` (`Z80MemSym`) costs what a number costs: the
+        // same opcode, the address resolved at link.
+        ("ld", [a, Z80Mem { .. } | Z80MemSym { .. }]) if is_a(a) => Cost::Fixed(13),
+        ("ld", [Z80Mem { .. } | Z80MemSym { .. }, b]) if is_a(b) => Cost::Fixed(13),
         // ld r,(ix+d) / ld (ix+d),r                   19
         ("ld", [a, Z80Indexed { .. }]) if is_reg8(a) => Cost::Fixed(19),
         ("ld", [Z80Indexed { .. }, b]) if is_reg8(b) => Cost::Fixed(19),
@@ -287,11 +289,15 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // ld hl,(nn) 16 (base 2A)  ;  ld dd,(nn) 20 (ED-prefixed)  ;  ld ix,(nn) 20
         // The 4 T between them is the prefix byte, and `hl` is the ONLY pair with
         // an unprefixed form, which is exactly why the encoder never emits ED 6B.
-        ("ld", [Z80Pair(crate::value::Z80Pair::Hl), Z80Mem { .. }]) => Cost::Fixed(16),
-        ("ld", [Z80Pair(_), Z80Mem { .. }]) => Cost::Fixed(20),
+        ("ld", [Z80Pair(crate::value::Z80Pair::Hl), Z80Mem { .. } | Z80MemSym { .. }]) => {
+            Cost::Fixed(16)
+        }
+        ("ld", [Z80Pair(_), Z80Mem { .. } | Z80MemSym { .. }]) => Cost::Fixed(20),
         // ld (nn),hl 16  ;  ld (nn),dd 20  ;  ld (nn),ix 20, the same split.
-        ("ld", [Z80Mem { .. }, Z80Pair(crate::value::Z80Pair::Hl)]) => Cost::Fixed(16),
-        ("ld", [Z80Mem { .. }, Z80Pair(_)]) => Cost::Fixed(20),
+        ("ld", [Z80Mem { .. } | Z80MemSym { .. }, Z80Pair(crate::value::Z80Pair::Hl)]) => {
+            Cost::Fixed(16)
+        }
+        ("ld", [Z80Mem { .. } | Z80MemSym { .. }, Z80Pair(_)]) => Cost::Fixed(20),
         // push qq 11 / pop qq 10, the ONE place a push and its matching pop
         // differ, because the push writes two bytes after an extra idle T-state.
         // push ix 15 / pop ix 14 add the prefix's 4. Zilog UM0080, "16-Bit Load".
@@ -585,6 +591,42 @@ mod tests {
             instr("jp", vec![CodeOperand::Z80Cc(Z80Cond::Nz), CodeOperand::Sym("t".into())]),
         ];
         assert_eq!(span_cost(&items).unwrap(), 30);
+    }
+
+    // A11: the same poll with a link-time `(Label)` costs the same 30.
+    #[test]
+    fn timer_poll_on_a_link_time_address_is_30() {
+        let sym = CodeOperand::Z80MemSym { target: sigil_ir::expr::Expr::Sym("q".into()) };
+        let items = vec![
+            instr("ld", vec![a(), sym]),
+            instr("and", vec![CodeOperand::Imm(1)]),
+            instr("jp", vec![CodeOperand::Z80Cc(Z80Cond::Nz), CodeOperand::Sym("t".into())]),
+        ];
+        assert_eq!(span_cost(&items).unwrap(), 30);
+    }
+
+    // A11: every `ld` with a `(nn)` field prices a `(Label)` exactly as its
+    // numeric twin: 13, 13, 16, 20, 16, 20 (Zilog UM0080, the 8- and 16-bit load
+    // groups).
+    #[test]
+    fn a_link_time_address_costs_what_a_number_costs() {
+        use crate::value::Z80Pair;
+        let num = || CodeOperand::Z80Mem { addr: 0x4000 };
+        let sym = || CodeOperand::Z80MemSym { target: sigil_ir::expr::Expr::Sym("q".into()) };
+        type Form = fn(CodeOperand) -> Vec<CodeOperand>;
+        let forms: [(Form, TStates); 6] = [
+            (|m| vec![a(), m], 13),
+            (|m| vec![m, a()], 13),
+            (|m| vec![CodeOperand::Z80Pair(Z80Pair::Hl), m], 16),
+            (|m| vec![CodeOperand::Z80Pair(Z80Pair::De), m], 20),
+            (|m| vec![m, CodeOperand::Z80Pair(Z80Pair::Hl)], 16),
+            (|m| vec![m, CodeOperand::Z80Pair(Z80Pair::De)], 20),
+        ];
+        for (form, want) in forms {
+            let n = span_cost(&[instr("ld", form(num()))]).unwrap();
+            let s = span_cost(&[instr("ld", form(sym()))]).unwrap();
+            assert_eq!((n, s), (want, want), "{:?}", form(sym()));
+        }
     }
 
     // FILL's 16-bit pointer/len ops: `inc ix` (10, ROM++) and `dec hl` (6, shadow

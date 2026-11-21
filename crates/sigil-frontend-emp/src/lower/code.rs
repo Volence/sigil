@@ -1711,6 +1711,7 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         | CodeOperand::Z80IndC
         | CodeOperand::Z80Indexed { .. }
         | CodeOperand::Z80Mem { .. }
+        | CodeOperand::Z80MemSym { .. }
         | CodeOperand::Z80AfShadow
         | CodeOperand::Z80RegI
         | CodeOperand::Z80RegR
@@ -2110,8 +2111,11 @@ fn lower_z80_instr(
     // Label[±k]`, §4): a label (bare `Sym`) or a symbol-bearing expression
     // (`ImmLink`, t27) cannot fold at eval, so defer it to link as a 2-byte LE
     // hole. Detected before the comptime mapper because neither has a comptime
-    // `Z80Operand`.
-    if ops.iter().any(|o| matches!(o, CodeOperand::Sym(_) | CodeOperand::ImmLink { .. })) {
+    // `Z80Operand`. A link-time `(Label)` address (`Z80MemSym`, A11) takes the
+    // same path: in every `ld` form with `(nn)`, `nn` is the last two bytes.
+    if ops.iter().any(|o| {
+        matches!(o, CodeOperand::Sym(_) | CodeOperand::ImmLink { .. } | CodeOperand::Z80MemSym { .. })
+    }) {
         lower_z80_abs16_sym(m, ops, span, builder, diags);
         return;
     }
@@ -2128,9 +2132,13 @@ fn lower_z80_instr(
 }
 
 /// Lower a symbolic 16-bit absolute immediate form (§4): `ld rr, Label`,
-/// `jp Label`, or `call Label`. The immediate is always the LAST two bytes of
-/// the encoding, so encode with an `Imm16(0)` placeholder, then reserve those
-/// two bytes as a `Value16Le` fixup hole.
+/// `jp Label`, or `call Label`, or a link-time `(Label)` address in an `ld`
+/// (A11: `ld a, (Label)`, `ld (Label), hl`, `ld ix, (Label)`...). The 16-bit
+/// field is always the LAST two bytes of the encoding (opcodes `3A 32 2A 22`,
+/// `ED 4B/5B/7B`, `ED 43/53/73`, `DD/FD 2A`, `DD/FD 22` for the address), so
+/// encode with an `Imm16(0)` / `Mem(0)` placeholder, then reserve those two bytes
+/// as a `Value16Le` fixup hole. An 8-bit port (`in a, (Label)`) has no 16-bit
+/// field and falls to the named refusal.
 ///
 /// §9 naming call — `Value16Le` (NOT a new `Abs16Le`, NOT `BankPtr16Le`): the
 /// linker ALREADY dispatches `Value16Le` for a 2-byte little-endian VALUE
@@ -2155,6 +2163,31 @@ fn lower_z80_abs16_sym(
         }
         (Z80Mnemonic::Ld, [CodeOperand::Z80Pair(rr), CodeOperand::ImmLink { target }]) => {
             (vec![Z80Operand::Pair(map_z80_pair(*rr)), Z80Operand::Imm16(0)], target.clone())
+        }
+        (Z80Mnemonic::Ld, [dst, CodeOperand::Z80MemSym { target }]) => {
+            match map_z80_operands(m, std::slice::from_ref(dst)) {
+                Ok(mut z) => {
+                    z.push(Z80Operand::Mem(0));
+                    (z, target.clone())
+                }
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            }
+        }
+        (Z80Mnemonic::Ld, [CodeOperand::Z80MemSym { target }, src]) => {
+            match map_z80_operands(m, std::slice::from_ref(src)) {
+                Ok(z) => {
+                    let mut v = vec![Z80Operand::Mem(0)];
+                    v.extend(z);
+                    (v, target.clone())
+                }
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            }
         }
         (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::Sym(name)]) => {
             (vec![Z80Operand::Imm16(0)], Expr::Sym(name.clone()))
@@ -2183,7 +2216,8 @@ fn lower_z80_abs16_sym(
                 diags,
                 span,
                 "[lower.z80-unsupported] a symbolic operand is only supported as the 16-bit \
-                 immediate of `ld rr, Label[±k]` / `jp Label[±k]` / `call Label[±k]`"
+                 immediate of `ld rr, Label[±k]` / `jp Label[±k]` / `call Label[±k]`, or as \
+                 the 16-bit address of `ld r, (Label)` / `ld (Label), r`"
                     .to_string(),
             );
             return;

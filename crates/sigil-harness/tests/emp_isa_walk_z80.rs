@@ -141,7 +141,6 @@ const MIN_DISTINCT: usize = 538;
 const SYM_REFUSED: &[(&str, usize)] = &[
     // `in a, (n)` / `out (n), a`: the port is ONE byte, so there is no 16-bit
     // field to carry a symbol. Booked: EMP-Z80-SYMBOLIC-BYTE-OPERAND.
-    ("ld mem", 28),
     ("in mem", 1),
     ("out mem", 1),
 ];

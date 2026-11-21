@@ -737,6 +737,11 @@ pub enum CodeOperand {
         /// The comptime address.
         addr: i128,
     },
+    /// `(Label)`: a LINK-TIME absolute memory address.
+    Z80MemSym {
+        /// The residual link-time expression.
+        target: sigil_ir::expr::Expr,
+    },
     /// `af'` (only in `ex af,af'`).
     Z80AfShadow,
     /// `i` (only in `ld i,a`).
