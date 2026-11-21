@@ -2095,7 +2095,7 @@ impl Parser {
         let mut requires = Vec::new();
         let mut grants = Vec::new();
         let mut falls_into = None;
-        let mut seen = Vec::new();
+        let mut seen: Vec<&'static str> = Vec::new();
         loop {
             self.note_contract_clause(&mut seen, &name);
             if self.eat_kw("requires") {
@@ -2310,7 +2310,7 @@ impl Parser {
         let mut inout = None;
         let mut inout_types = Vec::new();
         let mut requires = Vec::new();
-        let mut seen = Vec::new();
+        let mut seen: Vec<&'static str> = Vec::new();
         loop {
             self.note_contract_clause(&mut seen, "this signature");
             if self.eat_kw("clobbers") {
