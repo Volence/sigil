@@ -334,3 +334,82 @@ test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
 TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2868 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 6 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 3: `rtr` (code commit 9095953f)
+
+The brief's code blocks compiled and ran as given. One placement note: the `rtr` block in `preserves.rs`
+`transfer` went immediately before the `// FRAME OPEN / CLOSE` comment that heads `if mnem == "link" {`,
+not between that comment and its `if` (the plan's "insert before the item's comment" rule).
+
+**RF step 1, red before implementing.** `("rtr", 1)` deleted from `KNOWN_REFUSED`, the two golden tests and
+the check test appended, nothing else changed:
+
+```
+test rtr_assembles ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+thread 'rtr_assembles' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:63:5:
+  left: Err(["`rtr` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 119, 78, 117])
+thread 'a_size_suffix_the_instruction_lacks_is_refused' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:71:9:
+`rtr.w`: ["`rtr` is not a recognized 68000 mnemonic"]
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "rtr": [
+        "`rtr.w `: `rtr` is not a recognized 68000 mnemonic  ||  `rtr `: `rtr` is not a recognized 68000 mnemonic",
+    ],
+  left: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "ori-sr": 1, "reset": 1, "rtr": 1, "stop": 1, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test rtr_ends_a_proc_and_pops_the_saved_ccr_word ... FAILED
+thread 'rtr_ends_a_proc_and_pops_the_saved_ccr_word' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:43:5:
+  left: [(true, "`rtr` is not a recognized 68000 mnemonic"), (false, "[proc.undeclared-fallthrough] `P` can reach its closing `}` without an unconditional terminator and does not declare `falls_into`, it will run into whatever follows it"), (true, "[stack.unbalanced] in `P`: this path returns with 2 bytes still on the stack, sp is below its entry value, so the return reads its address from the wrong word")]
+ right: []
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+The red already shows both wrong verdicts on correct code (Review Focus 2): the fall-through warning and
+the 2-byte `[stack.unbalanced]` error.
+
+**RF step 2, green.** golden 4 passed, walk 3 passed, `a11_checks` 2 passed, `as_author_forms_stay_off_emp` 4 passed.
+
+**RF step 3, mutation 1 on the clean committed HEAD** (`git status --short` empty). Delete `"rtr"` from `is_terminator`:
+
+```
+ crates/sigil-frontend-emp/src/lower/proc.rs | 2 +-
+-        Cpu::M68000 => matches!(mnemonic, "rts" | "rtr" | "rte" | "bra" | "jmp" | "jbra" | "illegal"),
++        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp" | "jbra" | "illegal"),
+```
+
+`cargo test --release -p sigil-frontend-emp --test a11_checks --no-fail-fast`:
+
+```
+test rtr_ends_a_proc_and_pops_the_saved_ccr_word ... FAILED
+thread 'rtr_ends_a_proc_and_pops_the_saved_ccr_word' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:43:5:
+  left: [(false, "[proc.undeclared-fallthrough] `P` can reach its closing `}` without an unconditional terminator and does not declare `falls_into`, it will run into whatever follows it")]
+ right: []
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Restored with `git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/proc.rs`: 2 passed.
+
+**Mutation 2.** `apply_sp_cleanup(st, 2)` to `(st, 0)`:
+
+```
+ crates/sigil-frontend-emp/src/preserves.rs | 2 +-
+-        return apply_sp_cleanup(st, 2);
++        return apply_sp_cleanup(st, 0);
+```
+
+```
+test rtr_ends_a_proc_and_pops_the_saved_ccr_word ... FAILED
+thread 'rtr_ends_a_proc_and_pops_the_saved_ccr_word' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:43:5:
+  left: [(true, "[stack.unbalanced] in `P`: this path returns with 2 bytes still on the stack, sp is below its entry value, so the return reads its address from the wrong word")]
+ right: []
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Restored with `git restore --source=HEAD -- crates/sigil-frontend-emp/src/preserves.rs`: 2 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2869 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 8 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
