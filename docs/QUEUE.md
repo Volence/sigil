@@ -406,7 +406,14 @@ Why we take about 1.3 seconds on Sonic 1 where the old assembler takes half. One
 
 Whether a name may begin with a digit. The one-byte-short defect is closed; what remains splits into a compatibility call (mine) and a language call (yours).
 
-## EMP-USP-CCR-SURFACE: USP HALF CLOSED IN BRANCH 2026-11-22 (A11 Task 4)
+## EMP-USP-CCR-SURFACE: CLOSED IN BRANCH 2026-11-22 (A11 Tasks 4, 5 and 7)
+
+**CLOSED 2026-11-22 on `parcel/a11-complete-instruction-set` (A11 Task 7): `andi.w` / `ori.w` / `eori.w #, sr` and
+`stop #imm` assemble in `.emp` (golden vectors in `emp_a11_golden.rs`). Each is an undeclared write of the mask,
+`[proc.sr-undeclared]`, exactly as `move #, sr` (`a11_checks.rs`; the gated build refuses `stop`,
+`sr_undeclared_gate.rs`). What a mask VALUE means (raising or lowering it) is review B's Q7, not modelled. Every form
+this row named now assembles; the rest of the history follows.**
+
 
 - A11 Task 4 (`parcel/a11-complete-instruction-set`): `move.l aN, usp` and `move.l usp, aN` assemble in `.emp`
   (`4E6x`, golden vectors in `crates/sigil-harness/tests/emp_a11_golden.rs`). `usp` is the operand
@@ -414,8 +421,8 @@ Whether a name may begin with a digit. The one-byte-short defect is closed; what
   (`lea usp, a0`, `move.l usp, d0`, `move.w a0, usp`, `jsr usp`, ...); bare `move a0, usp` is refused for its
   missing size suffix, like every `move` (`crates/sigil-frontend-emp/tests/usp_reserved.rs`, `a11_checks.rs`).
   Spellings that still read `usp` as a symbol (an immediate, a PC-relative target) are in
-  `EMP-IMM-REGISTER-WORD`. The ccr half: A11 Task 5 made `move <ea>, ccr` and `eori #, ccr` assemble; this row's
-  closure is A11 Task 7's.
+  `EMP-IMM-REGISTER-WORD`. The ccr half: A11 Task 5 made `move <ea>, ccr` and `eori #, ccr` assemble; the sr
+  immediates were A11 Task 7's (closed above).
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: nothing
 

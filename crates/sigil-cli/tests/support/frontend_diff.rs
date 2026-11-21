@@ -586,15 +586,9 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
     ),
     (
         "emp-lacks-mnemonic",
-        "`.emp` has no `chk`, `stop` \
+        "`.emp` has no `chk` \
          (`m68k_mnemonic`, `lower/code.rs`: `is not a recognized 68000 mnemonic`); asl and the AS \
-         route assemble them (the ISA encodes both).",
-    ),
-    (
-        "emp-lacks-sr-ccr-form",
-        "`.emp` maps only `move <ea>,sr`, `move sr,<ea>`, `andi #,ccr`, `ori #,ccr`, \
-         `eori #,ccr`, `move <ea>,ccr` (`refine_m68k_mnemonic`); `andi`/`ori`/`eori #,sr` \
-         refuse `unsupported form: sr is not a general EA`. asl and the AS route assemble them.",
+         route assemble it (the ISA encodes it).",
     ),
     (
         "emp-no-implicit-variant",
@@ -641,7 +635,7 @@ fn is_branch_family(f: &str) -> bool {
 /// The mnemonics `.emp` does not recognise (row `emp-lacks-mnemonic`). A
 /// closed list: a newly unrecognised mnemonic is a new disagreement.
 pub const EMP_ABSENT_MNEMONICS: &[&str] =
-    &["chk", "stop"];
+    &["chk"];
 
 /// The families row `emp-requires-a-size-suffix` may name: those `.emp` has no
 /// default size for. Closed, so a NEW unsized refusal is a new disagreement.
@@ -651,24 +645,15 @@ pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
     "move-to-sr", "move-from-sr", "move-to-ccr", "move-to-usp", "move-from-usp",
 ];
 
-/// The families row `emp-lacks-sr-ccr-form` may name.
-pub const SR_CCR_GAP_FAMILIES: &[&str] = &["andi-sr", "ori-sr", "eori-sr"];
-
 /// The families row `emp-label-operand-gap` may name.
 pub const LABEL_GAP_FAMILIES: &[&str] = &["move", "movem"];
 
 /// The families with NO form `.emp` assembles, derived from the exclusion
-/// tables above (absent mnemonics, the sr/ccr forms). The measurement
+/// tables above (the absent mnemonics). The measurement
 /// floor (`every_family_with_a_legal_emp_form_compared_bytes`) holds every
 /// OTHER family to at least one `SameBytes` case, and these to none.
 pub fn families_without_an_emp_form() -> BTreeSet<&'static str> {
-    families()
-        .into_iter()
-        .filter(|f| {
-            EMP_ABSENT_MNEMONICS.contains(&mnemonic(f))
-                || SR_CCR_GAP_FAMILIES.contains(f)
-        })
-        .collect()
+    families().into_iter().filter(|f| EMP_ABSENT_MNEMONICS.contains(&mnemonic(f))).collect()
 }
 
 fn emp_err_only(emp: &Result<Vec<u8>, Vec<String>>) -> Option<&[String]> {
@@ -722,10 +707,6 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                 && emp_refuses_as_assembles(&|s| {
                     s == format!("`{mn}` is not a recognized 68000 mnemonic")
                 })
-        }
-        "emp-lacks-sr-ccr-form" => {
-            SR_CCR_GAP_FAMILIES.contains(&c.family)
-                && emp_refuses_as_assembles(&|s| s == "unsupported form: sr is not a general EA")
         }
         "emp-no-implicit-variant" => {
             let to_an = matches!(c.dst, Some(Ea::A(_)));

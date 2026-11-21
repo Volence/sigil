@@ -2061,7 +2061,7 @@ pub(crate) fn collect_sr_mask_preservers(
                     safe.insert(name.clone());
                 }
                 CodeItem::Instr { mnemonic, ops, .. } => {
-                    let touches_sr = matches!(mnemonic.as_str(), "rte" | "rtr")
+                    let touches_sr = matches!(mnemonic.as_str(), "rte" | "rtr" | "stop")
                         || ops.iter().any(|o| matches!(o, CodeOperand::Sr));
                     if touches_sr {
                         break; // first SR op — later export labels are not save-first entries

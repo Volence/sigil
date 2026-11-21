@@ -1375,9 +1375,11 @@ fn check_clobbers(
         // `clobbers(sr.ccr)` alone leaves that perturbation undeclared and
         // still fires. (CCR-ONLY destinations never trip this lint at all —
         // ledgered.) A bracketed BODY's hand-written SR write is `User`-
-        // authored and still fires. Only a write-form mnemonic can target SR.
-        if writes_dest_register(mnemonic)
-            && matches!(ops.last(), Some(CodeOperand::Sr))
+        // authored and still fires. Only a write-form mnemonic can target SR,
+        // except `stop #imm`, which loads SR from its immediate with no `sr`
+        // operand.
+        if ((writes_dest_register(mnemonic) && matches!(ops.last(), Some(CodeOperand::Sr)))
+            || mnemonic == "stop")
             && !mask_covered
             && !matches!(
                 author,
@@ -2952,6 +2954,13 @@ pub(crate) fn sr_writes_round_trip<'a>(items: impl Iterator<Item = &'a CodeItem>
         let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
         if mnemonic == "rte" {
             return false;
+        }
+        // `stop #imm` loads SR from its immediate with no `sr` operand: an SR
+        // write that is never the restore.
+        if mnemonic == "stop" {
+            saved_before_first_write.get_or_insert(saved);
+            last_write_is_restore = false;
+            continue;
         }
         // Save: `move.w sr, -(sp)` (reads SR — not an SR write).
         if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {

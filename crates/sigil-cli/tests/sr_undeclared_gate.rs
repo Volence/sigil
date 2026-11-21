@@ -25,6 +25,7 @@ mod gate_tree;
 use std::process::Command;
 
 const PLANT: &str = "\npub proc Zz_A10_SrProbe () clobbers(d0) {\n        moveq   #0, d0\n        move.w  #$2700, sr\n        rts\n}\n";
+const PLANT_STOP: &str = "\npub proc Zz_A11_StopProbe () clobbers(d0) {\n        moveq   #0, d0\n        stop    #$2000\n        rts\n}\n";
 const TWIN: &str = "\npub proc Zz_A10_SrProbe () clobbers(d0/sr) {\n        moveq   #0, d0\n        move.w  #$2700, sr\n        rts\n}\n";
 const HEADER: &str = "error: [proc.sr-undeclared], 1 firing(s); an undeclared write to the status register stops a gated `sigil build`:";
 
@@ -48,6 +49,23 @@ fn an_undeclared_sr_write_stops_the_gated_build() {
     let line = err
         .lines()
         .find(|l| l.contains("[proc.sr-undeclared] `Zz_A10_SrProbe` writes `sr`"))
+        .unwrap_or_else(|| panic!("{err}"));
+    assert!(line.contains("games/demo/demo_state.emp:"), "located: {line}");
+    assert!(err.contains("contract closure gate: passed"), "the closure gate itself ran and passed first:\n{err}");
+    assert!(!rom.exists(), "a refused build writes no ROM");
+}
+
+/// A11 Task 7: `stop #imm` loads SR with no `sr` operand; it is the same undeclared mask
+/// write, and stops the gated build the same way.
+#[test]
+fn a_stop_stops_the_gated_build() {
+    let Some(tree) = planted(PLANT_STOP) else { return };
+    let (out, err, rom) = tree.build(&["-o"], &[]);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(err.contains(HEADER), "{err}");
+    let line = err
+        .lines()
+        .find(|l| l.contains("[proc.sr-undeclared] `Zz_A11_StopProbe` writes `sr`"))
         .unwrap_or_else(|| panic!("{err}"));
     assert!(line.contains("games/demo/demo_state.emp:"), "located: {line}");
     assert!(err.contains("contract closure gate: passed"), "the closure gate itself ran and passed first:\n{err}");

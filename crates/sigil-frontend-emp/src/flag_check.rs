@@ -1820,7 +1820,6 @@ mod zero_model_tests {
         "chk",
         "reset",
         "trapv",
-        "stop",
     ];
 
     /// Every family `sigil-isa` encodes has a zero role through the walk's string

@@ -225,3 +225,53 @@ fn a_frame_op_leaves_the_condition_codes_alone() {
     let d = diags("clobbers(a6, d0) preserves(sr.ccr)", "    link a6, #-8\n    moveq #0, d0\n    unlk a6\n    rts");
     assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
 }
+
+#[test]
+fn every_sr_write_form_is_an_undeclared_mask_write() {
+    for line in ["stop #$2000", "ori.w #$0700, sr", "andi.w #$F8FF, sr", "eori.w #$0700, sr"] {
+        let d = diags("clobbers()", &format!("    {line}\n    rts"));
+        assert!(has(&d, "[proc.sr-undeclared] `P` writes `sr`"), "`{line}`: {d:?}");
+        let d = diags("clobbers(sr)", &format!("    {line}\n    rts"));
+        assert!(!has(&d, "[proc.sr-undeclared]"), "`{line}` declared: {d:?}");
+    }
+    // A condition-code-only write is not a mask write.
+    for line in ["eori.b #1, ccr", "move.w d0, ccr"] {
+        let d = diags("clobbers()", &format!("    {line}\n    rts"));
+        assert!(!has(&d, "[proc.sr-undeclared]"), "`{line}`: {d:?}");
+    }
+}
+
+#[test]
+fn stop_cannot_hide_behind_preserves_sr() {
+    let d = diags("clobbers() preserves(sr)", "    stop #$2700\n    rts");
+    assert!(has(&d, "[proc.preserves-sr-unbalanced]"), "{d:?}");
+    let d = diags("clobbers() preserves(sr)", "    move.w sr, -(sp)\n    stop #$2000\n    move.w (sp)+, sr\n    rts");
+    assert!(!has(&d, "[proc.preserves-sr-unbalanced]"), "{d:?}");
+}
+
+/// STOP: "Condition Codes: Set according to the immediate operand." ANDI / ORI /
+/// EORI to SR change C and Z exactly as the low byte of the immediate says. A
+/// callee's flag result read after one is the callee's only when the write left
+/// that flag alone.
+#[test]
+fn the_sr_writes_reach_the_flags_as_their_immediate_says() {
+    for (flag, branch) in [("carry", "bcs.s"), ("zero", "beq.s")] {
+        for (mid, fires) in [
+            ("stop #$2700", true),
+            ("ori.w #$0700, sr", false),
+            ("andi.w #$F8FF, sr", false),
+            ("eori.w #$0700, sr", false),
+            ("ori.w #$0705, sr", true),
+            ("andi.w #$F8FA, sr", true),
+        ] {
+            let src = format!("module m\nproc P () clobbers(sr) {{\n    jbsr Queue\n    {mid}\n    {branch} .x\n.x:\n    rts\n}}\n");
+            let f = flag_unused(&src, flag);
+            assert_eq!(!f.is_empty(), fires, "{flag} across `{mid}`: {f:?}");
+        }
+    }
+    // `preserves(sr.ccr)`: each one rewrites the condition codes outside a bracket.
+    for line in ["stop #$2700", "ori.w #$0700, sr"] {
+        let d = diags("clobbers(sr.mask) preserves(sr.ccr)", &format!("    {line}\n    rts"));
+        assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "`{line}`: {d:?}");
+    }
+}

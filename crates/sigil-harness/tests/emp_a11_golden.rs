@@ -66,7 +66,7 @@ fn rtr_assembles() {
 /// A suffix the instruction does not have is refused, on both routes.
 #[test]
 fn a_size_suffix_the_instruction_lacks_is_refused() {
-    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6"] {
+    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6", "stop.w #$2700"] {
         let e = emp(line).unwrap_err();
         assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
         let a = asl(line).unwrap_err();
@@ -139,4 +139,13 @@ fn link_and_unlk_assemble() {
     let pair = framed(&[0x4E, 0x53, 0xED, 0xCC, 0x4E, 0x5B]);
     assert_eq!(emp("link a3, #-$1234\n    unlk a3"), Ok(pair.clone()));
     assert_eq!(asl("link a3,#-$1234\n\tunlk a3"), Ok(pair));
+}
+
+#[test]
+fn stop_and_the_sr_immediates_assemble() {
+    use Operand::*;
+    golden("stop #$2700", i(Mnemonic::Stop, Size::W, &[Imm(0x2700)]), &[0x4E, 0x72, 0x27, 0x00]);
+    golden("ori.w #$0700, sr", i(Mnemonic::OriSr, Size::W, &[Imm(0x0700), Sr]), &[0x00, 0x7C, 0x07, 0x00]);
+    golden("andi.w #$F8FF, sr", i(Mnemonic::AndiSr, Size::W, &[Imm(0xF8FF), Sr]), &[0x02, 0x7C, 0xF8, 0xFF]);
+    golden("eori.w #$0700, sr", i(Mnemonic::EoriSr, Size::W, &[Imm(0x0700), Sr]), &[0x0A, 0x7C, 0x07, 0x00]);
 }

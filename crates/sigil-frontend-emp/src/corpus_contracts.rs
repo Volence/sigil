@@ -1311,13 +1311,15 @@ pub fn analyze_corpus_with_contracts(
     // The SR-write authorship census: every write-form instruction whose
     // destination is SR, with the author the emitting construct recorded
     // (`ItemAuthor`). 68k `proc_bufs` only — SR is a 68k register, and the
-    // `[proc.sr-undeclared]` lint this census audits is 68k-only.
+    // `[proc.sr-undeclared]` lint this census audits is 68k-only. `stop #imm`
+    // loads SR with no `sr` operand, so it is named, as in `check_clobbers`.
     let mut sr_writes: Vec<(String, crate::value::ItemAuthor, Span)> = Vec::new();
     for pb in &proc_bufs {
         for item in &pb.buf.items {
             let CodeItem::Instr { mnemonic, ops, span, author, .. } = item else { continue };
-            if crate::lower::writes_dest_register(mnemonic)
-                && matches!(ops.last(), Some(crate::value::CodeOperand::Sr))
+            if (crate::lower::writes_dest_register(mnemonic)
+                && matches!(ops.last(), Some(crate::value::CodeOperand::Sr)))
+                || mnemonic == "stop"
             {
                 sr_writes.push((pb.name.clone(), author.clone(), *span));
             }
