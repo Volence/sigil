@@ -376,3 +376,48 @@ fn a_bare_game_toml_file_name_is_the_game_in_the_current_directory() {
     assert!(!err.contains("game directory"), "a bare file name must name the current directory, got:\n{err}");
     assert!(err.contains(PASSED), "the game loads and its gate runs, got:\n{err}");
 }
+
+/// G0b final review B-I1: `--report ram` for a game OUTSIDE the engine checkout. The report
+/// scanned the engine checkout whole (`Manifest::scan(checkout)`, no named roots), so the
+/// out-of-tree game's RAM module was in no scan, and the refusal was pinned to line 1 of an
+/// unrelated engine file (`no module `<game>.ram` under the scan root`). It must scan the
+/// build's two roots, as every other `--project` run does, and print both RAM regions.
+#[test]
+fn the_ram_report_reads_an_out_of_tree_games_ram() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = tmp.path().join("aeon");
+    tree(&engine, |_, t| t);
+    std::fs::write(
+        engine.join("engine/ram.emp"),
+        "module engine.ram\npub region upper_ram @ $FFFF8000 .. $FFFF9000, w_addressable\npub vars upper_ram {\n    Eng_Var: u16,\n}\n",
+    )
+    .unwrap();
+    let game = tmp.path().join("own-repo-game");
+    std::fs::create_dir_all(&game).unwrap();
+    for (rel, text) in [
+        ("game.toml", game_toml("g")),
+        ("map.toml", String::new()),
+        ("baseline.toml", G_BASELINE.to_string()),
+        ("gconst.emp", G_EMP.to_string()),
+        (
+            "ram.emp",
+            "module games.g.ram\npub region game_ram @ after(upper_ram) .. $FFFFFE00, w_addressable\npub vars game_ram {\n    Game_Var: u16,\n}\n"
+                .to_string(),
+        ),
+    ] {
+        std::fs::write(game.join(rel), text).unwrap();
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .current_dir(tmp.path())
+        .args(["build", "--project", "own-repo-game", "--shape", "release", "--report", "ram"])
+        .env("AEON_DIR", &engine)
+        .env_remove("SIGIL_CONTRACTS")
+        .output()
+        .expect("run sigil build");
+    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "the RAM report must run for an out-of-tree game:\nstderr:\n{stderr}\nstdout:\n{stdout}");
+    assert!(stdout.starts_with("RAM map, g release\n"), "{stdout}");
+    for region in ["upper_ram", "game_ram"] {
+        assert!(stdout.lines().any(|l| l.starts_with(region)), "the report lists `{region}`:\n{stdout}");
+    }
+}

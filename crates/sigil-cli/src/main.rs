@@ -1876,17 +1876,19 @@ fn run_build(entry: &Entry, args: &[String]) {
     run_project(&opts);
 }
 
-/// The RAM map of `region_ids` under `defines`: [`run_ram_report`]'s body, shared by both
-/// drivers (the game-as-data driver names the two modules from its descriptions).
-fn run_ram_report_over(aeon: &std::path::Path, label: &str, defines: &[(String, i128)], region_ids: &[&str]) {
+/// `--report ram`: the RAM map of the engine's and the game's RAM modules (`region_ids`)
+/// under `defines`, over the build's own scan of its two named roots and with its named
+/// roots (G0b final review B-I1: the report scanned the engine checkout whole, so an
+/// out-of-tree game's RAM module was in no scan and the refusal blamed an engine file).
+fn run_ram_report_over(project: &sigil_build::driver::Project, label: &str, defines: &[(String, i128)], region_ids: &[&str]) {
     use sigil_frontend_emp::resolve;
 
-    let manifest = scan_or_exit(aeon);
+    let manifest = scanned_or_exit(project.scan());
 
     let opts = sigil_frontend_emp::lower::LowerOptions {
-        roots: None,
+        roots: Some(project.source_roots(None)),
         initial_cpu: sigil_ir::Cpu::M68000,
-        include_root: std::fs::canonicalize(aeon).ok(),
+        include_root: None,
         embed_base: None,
         defines: defines.to_vec(),
     };
@@ -1907,16 +1909,11 @@ fn run_ram_report_over(aeon: &std::path::Path, label: &str, defines: &[(String, 
     print_ram_report(&rows);
 }
 
-/// Scan `aeon` for `.emp` modules, or render the reason and exit. Every report
-/// starts here: errors render in full and stop the run, and the scan's OWN warn
+/// A `--project` shape's scan of its named roots, or render the reason and exit. Every
+/// report starts here: errors render in full and stop the run, and the scan's OWN warn
 /// tier — the `[module.path-mismatch]` family, which no later stage re-reports —
 /// goes through the one `SIGIL_WARNINGS` channel. A report that swallows the
 /// manifest's warnings shows a cleaner tree than the build does.
-fn scan_or_exit(aeon: &std::path::Path) -> sigil_frontend_emp::resolve::manifest::Manifest {
-    scanned_or_exit(sigil_frontend_emp::resolve::manifest::Manifest::scan(aeon))
-}
-
-/// [`scan_or_exit`] over a scan already made (a `--project` shape's named roots).
 fn scanned_or_exit(
     scanned: (sigil_frontend_emp::resolve::manifest::Manifest, Vec<sigil_span::Diagnostic>),
 ) -> sigil_frontend_emp::resolve::manifest::Manifest {
@@ -3082,7 +3079,7 @@ fn run_project(opts: &ProjectOpts) {
                 );
                 process::exit(1);
             });
-            run_ram_report_over(&project.checkout, &s.label, &s.defines, &[ram.as_str(), project.game.entry.ram.as_str()]);
+            run_ram_report_over(&project, &s.label, &s.defines, &[ram.as_str(), project.game.entry.ram.as_str()]);
         }
         Some(ReportKind::NameEnv) => {
             let s = subject();
