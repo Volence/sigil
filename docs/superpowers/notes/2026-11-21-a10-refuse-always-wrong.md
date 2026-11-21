@@ -92,3 +92,39 @@ Result: 559 `test result:` lines, 6182 passed, 4 failed, 4 ignored (6182 + 4 = t
 No `.emp` fixture file, golden or corpus file in the sigil repo is refused: all four are inline source strings in tests.
 
 ## RF transcripts
+
+### Task 1: `[proc.repeated-clause]`
+
+Mutation (plan Task 1 Step 7): comment out the `self.note_contract_clause(...)` call in `proc_decl` only. The first run of this mutation against commit 1 did not compile (`E0282: type annotations needed for Vec<_>` on `let mut seen = Vec::new()`), so the declarations were given `Vec<&'static str>` in a follow-up commit and the transcript below is against that commit. (`--untracked-files=no` hides the pre-existing untracked `.target-a10/` build dir, not part of this branch.)
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-frontend-emp/src/parser.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'note_contract_clause' crates/sigil-frontend-emp/src/parser.rs
+2100:            // self.note_contract_clause(&mut seen, &name);
+2292:    fn note_contract_clause(&mut self, seen: &mut Vec<&'static str>, owner: &str) {
+2315:            self.note_contract_clause(&mut seen, "this signature");
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test proc_repeated_clause   # mutated
+test a_repeated_clause_on_a_signature_is_refused ... ok
+test a_repeated_clobbers_clause_is_refused ... FAILED
+test each_clause_once_stays_legal ... ok
+test every_clause_word_is_refused_when_repeated ... FAILED
+thread 'a_repeated_clobbers_clause_is_refused' (410024) panicked at crates/sigil-frontend-emp/tests/proc_repeated_clause.rs:15:5:
+  left: 0
+ right: 1
+thread 'every_clause_word_is_refused_when_repeated' (410026) panicked at crates/sigil-frontend-emp/tests/proc_repeated_clause.rs:23:9:
+  left: 0
+ right: 1
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test proc_repeated_clause`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/parser.rs
+$ git status --short --untracked-files=no
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test proc_repeated_clause   # restored
+test each_clause_once_stays_legal ... ok
+test every_clause_word_is_refused_when_repeated ... ok
+test a_repeated_clause_on_a_signature_is_refused ... ok
+test a_repeated_clobbers_clause_is_refused ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
