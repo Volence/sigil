@@ -13,8 +13,8 @@
 //! [`DigestRoot::Game`]) and scans each of them. A path inside the aeon tree is written
 //! aeon-relative whichever root it came from, so an in-tree game's rows are the rows it
 //! always wrote; a path outside the tree is written under the root that holds it
-//! (`root=game`), and a scan member there as `game:<path>`. The profile-driven driver
-//! names no roots and scans the tree itself.
+//! (`root=game`), and a scan member there as `game:<path>`. A build that names no root
+//! is refused (since G0b Task 11 every build names its engine and game roots).
 
 use sigil_link::{DigestOrigin, DigestPath, DigestRead, DigestRoot, SourceDigest};
 use sigil_span::read_set::Snapshot;
@@ -106,8 +106,7 @@ fn output_location(output: &Path) -> Result<PathBuf, String> {
 /// The digest of one build, from the recorder's `snapshot` taken after the build's last
 /// read. `rom` is the full shipped file exactly as it is about to be written to
 /// `rom_output`. `named` is the build's named source roots ([`DigestRoot::Engine`],
-/// [`DigestRoot::Game`]), each of which it scanned; empty for a build that scans the aeon
-/// tree itself.
+/// [`DigestRoot::Game`]), each of which it scanned; never empty.
 #[allow(clippy::too_many_arguments)]
 pub fn source_digest(
     aeon: &Path,
@@ -129,6 +128,9 @@ pub fn source_digest(
         let dir = std::fs::canonicalize(dir).map_err(|e| format!("resolve the {root:?} root {}: {e}", dir.display()))?;
         canon_named.push((*root, dir));
     }
+    if canon_named.is_empty() {
+        return Err("the build names no source root, and a digest names only the build's own roots".into());
+    }
     let roots = Roots { aeon: aeon_root.clone(), named: canon_named.clone(), sigil: sigil_source_root() };
 
     if !snapshot.conflicts.is_empty() {
@@ -139,15 +141,13 @@ pub fn source_digest(
         ));
     }
 
-    // The scans: a build that names roots scans each of them and nothing else; one that
-    // names none scans exactly its aeon tree.
-    let wanted: Vec<&PathBuf> =
-        if canon_named.is_empty() { vec![&aeon_root] } else { canon_named.iter().map(|(_, d)| d).collect() };
+    // The scans: a build scans each root it names and nothing else.
+    let wanted: Vec<&PathBuf> = canon_named.iter().map(|(_, d)| d).collect();
     for s in &snapshot.scans {
         // A walk of a directory inside a wanted root that found nothing that root's own
-        // walk did not is covered by it (the profile-driven driver's sound seams resolve
-        // their imports over the engine and sonic4 roots, inside the tree it scans whole):
-        // it adds no member and moves no row.
+        // walk did not is covered by it (the sound seams resolve their imports over the
+        // engine and sonic4 roots, inside the roots an in-tree build names): it adds no
+        // member and moves no row.
         let covered = wanted.iter().any(|w| {
             s.root.starts_with(w)
                 && snapshot.scans.iter().find(|o| &&o.root == w).is_some_and(|whole| {
@@ -327,9 +327,8 @@ mod tests {
         let err = digest(&named, &no_game_scan).expect_err("a named root never scanned is refused");
         assert!(err.contains(&format!("no module scan of {}", game.display())), "{err}");
 
-        // The profile-driven build names no roots and scans the tree: the game root's
-        // scan is then a stray, and an aeon-tree scan is the one it wants.
-        let err = digest(&[], &snapshot).expect_err("an unnamed build scanning two roots is refused");
-        assert!(err.contains("none of the roots it names"), "{err}");
+        // A build that names no root is refused outright.
+        let err = digest(&[], &snapshot).expect_err("a build naming no root is refused");
+        assert!(err.contains("names no source root"), "{err}");
     }
 }

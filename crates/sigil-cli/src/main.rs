@@ -2044,7 +2044,7 @@ fn run_indirect_cost_report(subject: &ClosureSubject) {
     );
 }
 
-/// Render the name-env rows (or the errors that stopped them): both drivers' printer.
+/// Render the name-env rows (or the errors that stopped them).
 fn print_name_env_report(
     label: &str,
     defines: &[(String, i128)],
@@ -2520,8 +2520,7 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) {
         process::exit(1);
     }
     // The pass is stated, not inferred from silence: a build log that lacks this line
-    // (and the SKIPPED warning) is a build whose gate did not run, and the G0b
-    // comparison job reads it from both drivers' logs.
+    // (and the SKIPPED warning) is a build whose gate did not run.
     eprintln!(
         "contract closure gate: passed ({}: {} module(s) analysed; baseline {})",
         subject.label,
@@ -3151,7 +3150,7 @@ fn run_project_check(project: &sigil_build::driver::Project, opts: &ProjectOpts)
     let sound = match sigil_build::describe::resolve_shape(&project.game, &opts.shape) {
         Ok(s) => s.features.sound,
         Err(e) => {
-            eprintln!("error: native check ({label}): {e}");
+            eprintln!("error: check ({label}): {e}");
             process::exit(1);
         }
     };
@@ -3175,7 +3174,7 @@ fn run_project_check(project: &sigil_build::driver::Project, opts: &ProjectOpts)
         match sigil_build::driver::check_project(project, &opts.shape, &bopts) {
             Ok(r) => r,
             Err(err) => {
-                eprintln!("error: native check ({label}): {err}");
+                eprintln!("error: check ({label}): {err}");
                 process::exit(1);
             }
         };
@@ -3387,10 +3386,9 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
 }
 
 /// Who a build says it is, wherever an artifact names it: the listing's source digest
-/// (`DIGEST-SHAPE`, `DIGEST-DEFINE`) and the build export's `shape` record. Both drivers
-/// fill one and hand it to [`write_build_artifacts`], so the two write their ROM, listing
-/// and export through one piece of code (G0b Task 7: the comparison job holds the two
-/// drivers to the same `.lst` and export).
+/// (`DIGEST-SHAPE`, `DIGEST-DEFINE`) and the build export's `shape` record. The driver
+/// fills one and hands it to [`write_build_artifacts`], which writes the ROM, listing and
+/// export through one piece of code (G0b Task 7).
 struct BuildIdentity {
     /// The shape's merged comptime define set.
     defines: Vec<(String, i128)>,
@@ -3440,7 +3438,7 @@ fn write_build_artifacts(
         Some(_) => match lst_source_digest(aeon, named_roots, identity, arts.output, full, generated) {
             Ok(section) => Some(section),
             Err(err) => {
-                eprintln!("error: native build ({label}) source digest: {err}");
+                eprintln!("error: build ({label}) source digest: {err}");
                 process::exit(1);
             }
         },
@@ -3464,7 +3462,7 @@ fn write_build_artifacts(
             {
                 Ok(text) => Some(text),
                 Err(err) => {
-                    eprintln!("error: native build ({label}) build export: {err}");
+                    eprintln!("error: build ({label}) build export: {err}");
                     process::exit(1);
                 }
             }
@@ -3507,7 +3505,7 @@ fn write_build_artifacts(
         // the point where a crash must leave NO sidecar. Nothing sets it outside the test
         // that proves the stale sidecar was removed first.
         if std::env::var_os("SIGIL_TEST_FAIL_BEFORE_SIDECAR").is_some_and(|v| v == "1") {
-            eprintln!("error: native build ({label}): SIGIL_TEST_FAIL_BEFORE_SIDECAR=1, stopping before the sidecar");
+            eprintln!("error: build ({label}): SIGIL_TEST_FAIL_BEFORE_SIDECAR=1, stopping before the sidecar");
             process::exit(1);
         }
         let path = sidecar_path(out);

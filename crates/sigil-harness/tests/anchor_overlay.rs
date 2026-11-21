@@ -136,8 +136,7 @@ fn an_overlay_nothing_can_place_fails_the_build() {
     match shapes::build(shadow.root(), &profile.with_anchor_overlay(bank_overlay(to_dac, to_snd))) {
         Ok(_) => panic!("banks moved to {to_dac:#x}/{to_snd:#x}, inside the packed run, built green"),
         // The DAC bank anchor is held at the overlay address and the packed run in front
-        // of it overruns it: the game-as-data driver's walk refuses that before any link
-        // (the profile-driven driver reported the resulting overlap at link time).
+        // of it overruns it: the driver's walk refuses that before any link.
         Err(e) => assert!(e.contains("[layout.anchor-overrun]") && e.contains(&format!("at {to_dac:#x}")), "{e}"),
     }
 }

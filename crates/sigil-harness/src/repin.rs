@@ -1534,8 +1534,8 @@ pub fn symbol_listing_of(resolved: &[sigil_ir::Section]) -> Result<(HashMap<Stri
     // Section-END markers (`<Base>_End`): the one-past-end boundary labels asl listed but
     // sigil emits IMPLICITLY (the `.emp` data modules carry no `_End` label; the `.asm`
     // twins that did are deleted). Synthesize each from its section's resolved geometry —
-    // the base (offset-0) label's name + `_End` at `lma + image_len` — matching P4a's
-    // `derive_frozen_table`. Real labels win (only added when absent).
+    // the base (offset-0) label's name + `_End` at `lma + image_len`. Real labels win
+    // (only added when absent).
     for s in resolved {
         if !sigil_build::place::is_rom_section(s) {
             continue;
@@ -1567,22 +1567,6 @@ pub fn section_extents_of(resolved: &[sigil_ir::Section]) -> Result<Vec<SectionE
 }
 
 
-/// Phase-bank label LOAD addresses (T4). For every PHASE-BANK ROM section — a
-/// `vma:`-windowed bank whose labels resolve at a VMA distinct from where its bytes
-/// physically land (`vma_base != lma && vma_base >= $8000`, the `soundbankhead`
-/// precedent) — map each label to its LMA (`lma + offset`), NOT the VMA that
-/// `sigil_native_symbol_listing` returns.
-///
-/// repin pins a `phase_bank` region's base to this LMA, so the emitted `Region` base
-/// is uniformly the PLACEMENT address in every shape — the same meaning a non-phase
-/// region's base already has (there `vma == lma`). Every consumer of a region base
-/// (the port gates' reference windows, `repin`'s own re-derivation) therefore reads a
-/// LOAD address and never has to ask which of the two a phase bank's pin holds. The
-/// phase VMA stays the SOLE property of the section's own `vma:` declaration in the
-/// `.emp`.
-///
-/// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
-/// already IS the LMA). Empty for a program with no phase-bank section.
 /// Which ROM SECTION DEFINES each label (parcel R6): `label name → section name`, plus
 /// each section's synthesized `<Base>_End` marker attributed to the section it measures.
 ///
@@ -1631,6 +1615,22 @@ pub fn section_label_owners_of(resolved: &[sigil_ir::Section]) -> Result<HashMap
 }
 
 
+/// Phase-bank label LOAD addresses (T4). For every PHASE-BANK ROM section — a
+/// `vma:`-windowed bank whose labels resolve at a VMA distinct from where its bytes
+/// physically land (`vma_base != lma && vma_base >= $8000`, the `soundbankhead`
+/// precedent) — map each label to its LMA (`lma + offset`), NOT the VMA that
+/// the symbol listing ([`symbol_listing_of`]) returns.
+///
+/// repin pins a `phase_bank` region's base to this LMA, so the emitted `Region` base
+/// is uniformly the PLACEMENT address in every shape — the same meaning a non-phase
+/// region's base already has (there `vma == lma`). Every consumer of a region base
+/// (the port gates' reference windows, `repin`'s own re-derivation) therefore reads a
+/// LOAD address and never has to ask which of the two a phase bank's pin holds. The
+/// phase VMA stays the SOLE property of the section's own `vma:` declaration in the
+/// `.emp`.
+///
+/// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
+/// already IS the LMA). Empty for a program with no phase-bank section.
 pub fn phase_bank_lmas_of(resolved: &[sigil_ir::Section]) -> Result<HashMap<String, u32>, String> {
     let mut out = HashMap::new();
     for s in resolved {

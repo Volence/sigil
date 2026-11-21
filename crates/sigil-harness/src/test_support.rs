@@ -1062,8 +1062,8 @@ pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String>
     // from all of them, so a shape nobody thought of is a failing row rather than a
     // sentence missing from this comment — which is how the third shape was lost.
     // read-set: not a build input. Git locates the suite root for the test and freeze
-    // tooling; a `sigil build` names its tree with `--aeon` (and, since G0b Task 6, no
-    // longer publishes it as AEON_DIR: its writes go to its own build directory).
+    // tooling; a `sigil build --project` names its game and finds the engine from it (and,
+    // since G0b Task 6, never publishes AEON_DIR: its writes go to its own build directory).
     let out = std::process::Command::new("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .current_dir(here)

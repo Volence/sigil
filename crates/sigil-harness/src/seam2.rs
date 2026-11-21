@@ -234,8 +234,8 @@ fn require_sound_inputs(aeon: &Path) -> Result<(), String> {
     }
     Err(format!(
         "reference tree not at {} (no {SOUND_PLACEMENT_MAP_REL}), set AEON_DIR to an aeon \
-         checkout. Nothing was created: a sound emitter writes UNDER this tree, and creating a \
-         directory inside an absent tree makes the tree's root exist, which turns every \
+         checkout. Nothing was created: a reference-tree provisioning emit writes UNDER this tree \
+         (a build writes its own generated root instead), and creating a directory inside an absent tree makes the tree's root exist, which turns every \
          root-probing skip guard in the suite into a run against an empty tree.",
         aeon.display()
     ))

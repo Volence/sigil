@@ -76,25 +76,10 @@
 //!
 //! A byte move is then an ordinary `--freeze` (no `--repin-aeon`) with real A/B evidence.
 //!
-//! THE G0b LANDING ORDER (controller ruling 2026-11-19; the same text is in
-//! `docs/OVERSEER-REFERENCE.md` and `docs/QUEUE.md` G0B-DESCRIBE-TASK2-RESIDUE item 6):
-//!
-//!   (a) sigil G0a lands on sigil master (fast-forward, owner-gated).
-//!   (b) FROM SIGIL MASTER (then the G0a tip, paired with aeon 99cb963d), with AEON_DIR at a
-//!       clean checkout of aeon 99cb963d: `refreeze --attest` of tip #209
-//!       `pin-advance-99cb963d`; commit its ledger change ON SIGIL MASTER. Evidence it should
-//!       be green, not proof: the G0a strict landing run at c9c43c73 against a 99cb963d copy
-//!       was green (`.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/
-//!       landing-20261119T064629Z.log`). NEVER attest #209 from the G0b tip: its
-//!       description tests need the descriptions, so it records RED, and a red tip can only
-//!       be superseded, never re-pinned.
-//!   (c) Merge or rebase `parcel/g0b-game-as-data` onto that master, so the G0b chain carries
-//!       the attestation; on the G0b branch `refreeze --check` must be clean and #209 attested.
-//!   (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated).
-//!   (e) From the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA:
-//!       `refreeze --freeze NAME --ab <evidence> --repin-aeon`; commit.
-//!   (f) `refreeze --attest` the new tip (same AEON_DIR); commit.
-//!   (g) The full strict landing bar is fully green; then sigil G0b lands.
+//! A landing that moves the aeon pin follows the order in `docs/OVERSEER-REFERENCE.md`
+//! (the cross-repo landing order): `--repin-aeon` runs against a clean checkout of the
+//! LANDED aeon SHA, then `--attest` the new tip, then the strict landing bar. Process text
+//! for one landing lives there, not in this module doc.
 //!
 //! `--freeze` REFUSES unless it can name the aeon revision honestly: `AEON_DIR` must be
 //! set, be a git repository, resolve `HEAD`, and be CLEAN. That revision is recorded in

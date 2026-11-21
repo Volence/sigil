@@ -1,6 +1,6 @@
-//! The harness side of the new driver's [`sigil_build::driver::Seams`]: the sound seams
+//! The harness side of the driver's [`sigil_build::driver::Seams`]: the sound seams
 //! (seam 1's resident link, seam 2's fold, the bank id constants) and the build-data side
-//! tables, which still live here. The old driver calls the same functions directly.
+//! tables, which still live here until G0c.
 
 use std::any::Any;
 use std::path::Path;

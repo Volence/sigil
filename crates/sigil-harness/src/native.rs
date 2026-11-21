@@ -10,8 +10,8 @@
 //!     calls with the build's own generated root, and [`emit_generated`] /
 //!     [`ensure_generated`], which provision a reference tree for a standalone port gate);
 //!   * the fold check ([`check_sound_fold`]) the sound seam runs over the resolved layout;
-//!   * the `native::` re-exports of the game-independent driver code `sigil-build` holds
-//!     (G0b Task 4), so its callers keep their paths.
+//!   * `native::` re-exports of the game-independent driver code `sigil-build` holds
+//!     (G0b Task 4), each one a path some caller still uses.
 
 use std::path::Path;
 
@@ -20,13 +20,14 @@ use sigil_ir::Section;
 use crate::{seam1, seam2};
 
 // G0b Task 4: the game-independent driver code moved, unchanged, to `sigil-build`.
-// Re-exported here so every caller keeps its `native::` path.
+// Re-exported here for the callers that still use the `native::` path (a re-export
+// nothing uses is deleted, not kept).
 pub use sigil_build::appendix::{
     append_deb2_appendix, check_error_handler_is_last, convsym_resolve, AppendixFacts, DEB2_MAGIC,
 };
 pub use sigil_build::diag::{collect_warnings, BuildWarning, ChainSources};
-pub use sigil_build::emit::{assembled_anchor_crc, crc32, RomBuild};
-pub use sigil_build::guards::{check_budgets, declared_chain_drift_verdict, validate_placement, CheckReport, GuardCensus};
+pub use sigil_build::emit::{assembled_anchor_crc, crc32};
+pub use sigil_build::guards::{check_budgets, declared_chain_drift_verdict, validate_placement, GuardCensus};
 use sigil_build::place::head_label;
 
 /// The tree directory [`emit_generated`] provisions (the old mount, written only for

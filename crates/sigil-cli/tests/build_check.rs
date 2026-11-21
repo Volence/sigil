@@ -178,7 +178,7 @@ fn a_failing_guard_fails_the_check_with_its_rendered_line() {
     let dir = fresh_dir("failing");
     let (out, stdout, stderr) = sigil_game(&aeon, "sonic4", &dir, &["--check", "--extra-entry", POISON_NESTED_PATH], &[]);
     assert_eq!(out.status.code(), Some(1), "output:\n{stdout}{stderr}");
-    assert!(stderr.contains("error: native check (sonic4 release): "), "{stderr}");
+    assert!(stderr.contains("error: check (sonic4 release): "), "{stderr}");
     assert!(stderr.contains(POISON_NESTED_FRAGMENT), "the guard's own message:\n{stderr}");
     let all = format!("{stdout}{stderr}");
     assert_eq!(all.matches("[Error]").count(), 1, "one firing guard, one [Error]:\n{all}");

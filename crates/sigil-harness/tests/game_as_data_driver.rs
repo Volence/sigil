@@ -4,8 +4,8 @@
 //!
 //! "Shipped" is read from the descriptions: every `[shapes.*]` row that is not a `fixture`.
 //! Every expectation is derived from source (the engine and game descriptions, the map, the
-//! build's own listing), never from a pinned measurement. Byte identity with the old driver is
-//! NOT asserted: it is not reached yet (QUEUE G0B-TASK5-WALK-IDENTITY).
+//! build's own listing), never from a pinned measurement. Byte identity is not asserted here:
+//! the goldens and step 0's `SHAPES 7/7 IDENTICAL` hold it.
 //!
 //! Per shape:
 //!   * the build succeeds;

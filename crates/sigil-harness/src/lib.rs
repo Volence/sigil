@@ -122,7 +122,7 @@ pub mod export_files;
 pub mod export_layouts;
 pub mod export_symbols;
 pub mod export_z80;
-/// The new driver's harness seams (G0b Task 5).
+/// The driver's harness seams (G0b Task 5; the sound seams go in G0c).
 pub mod driver_seams;
 
 /// A described shape built through the game-as-data driver, for the harness's tests and
