@@ -142,44 +142,47 @@ pub fn validate_placement(
         .collect();
     rows.sort_by_key(|r| r.2);
 
-    // ── Anchors: recover the inferred island set from the resolved layout ──
+    // ── Anchors: every anchor in force holds its section at its address ──
     //
-    // LEDGER (2026-08-03, found while diagnosing the config_a packed-remeasure abort):
-    // anchor NAMES are decorative here — the map is keyed by `a.at` (ADDRESS), which is
-    // what makes a section rename transparent (see the dac_banks note in
-    // games/sonic4/map.toml). That is load-bearing, because one declared name is
-    // already a FALSE FRIEND: sonic4's `[[anchor]] name = "boot_head" / at = 0x0` is
-    // commented "the run head (vectors + header), label-less" — it means the ROM's
-    // first island at 0x0, NOT the actual emitted section called `boot_head`
-    // (engine.boot_data, head label `BootData`, which lands at 0x39C/0x3A2 depending on
-    // shape). Two different things share the string "boot_head". Harmless today
-    // precisely because nothing matches anchors by name — but any future change that
-    // starts keying anchors by name would silently bind the 0x0 anchor to the
-    // boot_data section. Left as-is deliberately (aeon is not ours to edit from the
-    // sigil gate); recorded so the next reader does not have to rediscover it.
-    let declared: std::collections::HashMap<u32, &str> =
-        pmap.anchors_for(sound_on).map(|a| (a.at, a.name.as_str())).collect();
-    let mut inferred: std::collections::HashSet<u32> = std::collections::HashSet::new();
-    let mut prev_end: Option<u32> = None;
-    for (_, _, lma, len, pb) in &rows {
-        let is_anchor = prev_end.is_none() || *pb || *lma > prev_end.unwrap() + ANCHOR_GAP;
-        if is_anchor {
-            inferred.insert(*lma);
-            if !declared.contains_key(lma) {
-                return Err(format!(
-                    "[map.undeclared-island] ROM section at {lma:#X} is an ANCHOR_GAP-inferred island but no `[[anchor]] at = {lma:#X}` is declared, add it to the placement map"
-                ));
-            }
-        }
-        prev_end = Some(lma.saturating_add(*len as u32));
-    }
+    // An island is exactly the section an anchor in force HOLDS (`[[anchor]] holds`, the
+    // walk's rule, `crate::walk`): it must sit at the anchor's `at`. G0b final review A-I1:
+    // this check used to recover the islands from the layout by gap (a section starting
+    // more than `ANCHOR_GAP` past the previous section's end, or a phase bank), so a run
+    // that ended 0 to `ANCHOR_GAP` bytes short of a non-bank anchor (content the walk had
+    // placed correctly) was refused as `[map.anchor-absent]`, blaming the map. An anchor
+    // with no `holds` (an overlay row, a test map) is checked by address alone: some ROM
+    // section starts at its `at`.
+    let held_by = |a: &crate::map_placement::Anchor, id: &str, name: &str| match &a.holds {
+        Some(h) => h == id || *h == crate::map_placement::section_row_key(name),
+        None => true,
+    };
     for a in pmap.anchors_for(sound_on) {
-        if !inferred.contains(&a.at) {
+        if !rows.iter().any(|(id, name, lma, _, _)| *lma == a.at && held_by(a, id, name)) {
+            let what = match &a.holds {
+                Some(h) => format!("the section it holds, `{h}`, is not at that address in this build"),
+                None => "no ROM section starts at that address in this build".to_string(),
+            };
             return Err(format!(
-                "[map.anchor-absent] declared anchor `{}` at {:#X} is not an inferred island in this build, the layout no longer anchors it (stale map or shape gate)",
+                "[map.anchor-absent] declared anchor `{}` at {:#X}: {what}, the layout no longer anchors it (stale map or shape gate)",
                 a.name, a.at
             ));
         }
+    }
+    // ── Undeclared islands: a gap the map does not declare ──
+    //
+    // The converse, by inference: a section the layout leaves a gap of more than
+    // `ANCHOR_GAP` in front of (or a phase bank, or the run head) is an island, and an
+    // island needs an `[[anchor]]` at its address.
+    let declared: std::collections::HashSet<u32> = pmap.anchors_for(sound_on).map(|a| a.at).collect();
+    let mut prev_end: Option<u32> = None;
+    for (_, _, lma, len, pb) in &rows {
+        let is_island = prev_end.is_none() || *pb || *lma > prev_end.unwrap() + ANCHOR_GAP;
+        if is_island && !declared.contains(lma) {
+            return Err(format!(
+                "[map.undeclared-island] ROM section at {lma:#X} is an ANCHOR_GAP-inferred island but no `[[anchor]] at = {lma:#X}` is declared, add it to the placement map"
+            ));
+        }
+        prev_end = Some(lma.saturating_add(*len as u32));
     }
 
     // ── Order (K5 DRIVE-CONFIRMATION): every byte-emitting section must be DECLARED in

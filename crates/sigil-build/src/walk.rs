@@ -347,6 +347,37 @@ mod tests {
         assert_eq!(walk(0x30).unwrap()[4], Some(0x48));
     }
 
+    /// G0b final review A-I1: the walk's arms above stop at the walk. Carried through the
+    /// post-resolve placement contract ([`crate::guards::validate_placement`]), a run that
+    /// ends 0 to `$400` bytes short of a non-bank anchor (`Grow` ending at 0x3E or exactly at
+    /// 0x40, the island at 0x40) must build: the island is the section the anchor holds,
+    /// not a section that starts more than `ANCHOR_GAP` past the previous one. It was
+    /// refused as `[map.anchor-absent] ... stale map or shape gate`.
+    #[test]
+    fn growth_that_fits_before_an_island_passes_the_placement_contract() {
+        let map = crate::map_placement::load_placement_map(
+            "order = [\"Head\", \"Grow\", \"Island\", \"Tail\", \"After\"]\n\
+             [[anchor]]\nname = \"boot\"\nat = 0x0\nholds = \"Head\"\n\
+             [[anchor]]\nname = \"bank\"\nat = 0x40\nholds = \"Island\"\n",
+        )
+        .unwrap();
+        for growth in [0x2E, 0x30] {
+            let mut sections = vec![sec("Head", 0x10), sec("Grow", growth), sec("Island", 4), sec("Tail", 3), sec("After", 2)];
+            let bases = walk(growth).unwrap();
+            for (s, b) in sections.iter_mut().zip(&bases) {
+                s.lma = b.unwrap();
+            }
+            crate::guards::validate_placement(&sections, &map, false, &[])
+                .unwrap_or_else(|e| panic!("growth {growth:#x} fits in front of the island, yet: {e}"));
+            // The anchor is still checked: the held section moved off its address is refused.
+            sections[2].lma += 2;
+            sections[3].lma += 2;
+            sections[4].lma += 2;
+            let e = crate::guards::validate_placement(&sections, &map, false, &[]).unwrap_err();
+            assert!(e.contains("[map.anchor-absent]") && e.contains("`bank`") && e.contains("`Island`"), "{e}");
+        }
+    }
+
     #[test]
     fn an_unheld_run_head_and_an_unbound_anchor_are_refused() {
         let sections = vec![sec("Head", 4), sec("Next", 4)];
