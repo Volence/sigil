@@ -581,3 +581,47 @@ proc AllocDynamic() clobbers(d0/a1) out(a1 if eq) {
         errors(&diags)
     );
 }
+
+// ---- A10 W5: a binding to a proc with no contract clause is refused (for now) ----
+
+const ENGINE_TICK: &str = "module engine.c\npub interface Game {\n    hook tick () clobbers(d0-d1) = empty\n}\n";
+const UNCONTRACTED: &str = "[contract.binding-uncontracted]";
+
+#[test]
+fn probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused() {
+    let game = "module games.a.m\npub implement Game {\n    hook tick = Bare\n}\nproc Bare() {\n    moveq #0, d5\n    rts\n}\n";
+    let diags = bind_srcs(&[ENGINE_TICK, game], &[]);
+    let hits: Vec<_> = errors(&diags).into_iter().filter(|m| m.contains(UNCONTRACTED)).collect();
+    assert_eq!(hits.len(), 1, "{:?}", errors(&diags));
+    assert!(hits[0].contains("hook `Game.tick` is bound to `Bare`") && hits[0].contains("Refused for now"), "{}", hits[0]);
+}
+
+#[test]
+fn probe_proc_member_and_extern_targets_with_no_clause_are_refused() {
+    let engine = "module engine.c\npub type St = proc () clobbers(d0)\npub interface Game {\n    proc entry: St\n    hook tick () clobbers(d0) = empty\n}\n";
+    let game = "module games.a.m\npub implement Game {\n    proc entry = Bare\n    hook tick = Ext\n}\nproc Bare() {\n    rts\n}\nextern proc Ext ()\n";
+    let diags = bind_srcs(&[engine, game], &[]);
+    let e = errors(&diags);
+    assert!(e.iter().any(|m| m.contains(UNCONTRACTED) && m.contains("proc `Game.entry` is bound to `Bare`")), "{e:?}");
+    assert!(e.iter().any(|m| m.contains(UNCONTRACTED) && m.contains("hook `Game.tick` is bound to `Ext`")), "{e:?}");
+}
+
+/// Review Focus 4: `clobbers()` is a contract. This is the twin of the probe.
+#[test]
+fn a_binding_to_a_proc_declaring_the_empty_clause_conforms() {
+    let game = "module games.a.m\npub implement Game {\n    hook tick = Quiet\n}\nproc Quiet() clobbers() {\n    rts\n}\n";
+    let diags = bind_srcs(&[ENGINE_TICK, game], &[]);
+    assert!(errors(&diags).is_empty(), "{:?}", errors(&diags));
+}
+
+/// The limit: only a BOUND proc is refused. An unbound proc with no clause, a binding in a
+/// comptime group whose condition is false, and a target declared nowhere are left alone.
+#[test]
+fn the_refusal_reaches_only_a_live_binding_to_a_declared_proc() {
+    let game = "module games.a.m\npub implement Game {\n    if OFF == 1 {\n        hook tick = Bare\n    }\n}\nproc Bare() {\n    rts\n}\n";
+    let diags = bind_srcs(&[ENGINE_TICK, game], &[("OFF".to_string(), 0)]);
+    assert!(!has_tag(&diags, UNCONTRACTED), "{:?}", errors(&diags));
+    let game = "module games.a.m\npub implement Game {\n    hook tick = Elsewhere\n}\n";
+    let diags = bind_srcs(&[ENGINE_TICK, game], &[]);
+    assert!(!has_tag(&diags, UNCONTRACTED), "{:?}", errors(&diags));
+}

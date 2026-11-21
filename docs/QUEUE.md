@@ -3004,3 +3004,13 @@ until its row is removed.
   (`[layout.odd-item]`). Dispatch body k starts where body k-1 ended, so a body ending in an odd `dc` run after
   its last instruction shifts the next body with no diagnostic (read at `lower/mod.rs`, the dispatch-body loop
   that calls `lower_code_buf`; not probed).
+
+## EMP-BINDING-TARGET-UNDECLARED
+
+- state: open 2026-11-21 (A10, booked by Task 5)  size: `S`  project: `STEP0-A10`
+- A binding whose target is declared nowhere in the bound module set (`find_proc_contract` in
+  `crates/sigil-frontend-emp/src/resolve/contract.rs` finds no item) still skips the conformance check with no
+  diagnostic. A10 refused only the declared-without-a-clause case (`[contract.binding-uncontracted]`,
+  `refuse_uncontracted`), by the card's wording; an undeclared target may be a legitimate cross-seam symbol
+  (A10 plan, Open question 5). Pinned unrefused by `crates/sigil-frontend-emp/tests/game_contract.rs`
+  `the_refusal_reaches_only_a_live_binding_to_a_declared_proc`.

@@ -378,6 +378,9 @@ fn check_proc_type(
     diags: &mut Vec<Diagnostic>,
 ) {
     let ast::Type::Named(p) = ptype else { return };
+    if refuse_uncontracted(iface, member, bound_sym, "proc", all_items, span, diags) {
+        return;
+    }
     let tyname = p.segments.last().map(String::as_str).unwrap_or("");
     let Some(decl) = find_contract_type(all_items, tyname) else { return };
     let Some(bound) = find_proc_contract(all_items, bound_sym) else { return };
@@ -395,9 +398,46 @@ fn check_hook_sig(
     span: Span,
     diags: &mut Vec<Diagnostic>,
 ) {
+    if refuse_uncontracted(iface, member, bound_sym, "hook", all_items, span, diags) {
+        return;
+    }
     let Some(bound) = find_proc_contract(all_items, bound_sym) else { return };
     let declared = contract_of_sig(sig, diags, span);
     report_subcontract(iface, member, bound_sym, "hook", &bound, &declared, span, diags);
+}
+
+/// A10 W5, refused FOR NOW: review B Q3 decides whether an unwritten contract is inferred instead.
+///
+/// True, with one `[contract.binding-uncontracted]` pushed, when `bound_sym` is a body `proc`
+/// or an `extern proc` declared in the module set with NO `clobbers` clause (`clobbers()` is a
+/// contract and passes). A target declared nowhere is left alone (`EMP-BINDING-TARGET-UNDECLARED`).
+fn refuse_uncontracted(
+    iface: &str,
+    member: &str,
+    bound_sym: &str,
+    what: &str,
+    all_items: &[&ast::Item],
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) -> bool {
+    let uncontracted = all_items.iter().find_map(|item| match item {
+        ast::Item::Proc(p) if p.name == bound_sym => Some(p.clobbers.is_none()),
+        ast::Item::ExternProc(e) if e.name == bound_sym => Some(e.sig.clobbers.is_none()),
+        _ => None,
+    });
+    if uncontracted != Some(true) {
+        return false;
+    }
+    diags.push(err(
+        span,
+        format!(
+            "[contract.binding-uncontracted] {what} `{iface}.{member}` is bound to `{bound_sym}`, \
+             which declares no `clobbers(...)` clause, so its conformance to the declared \
+             signature cannot be checked. Refused for now: state `clobbers(...)` on \
+             `{bound_sym}` (`clobbers()` if it changes no register)"
+        ),
+    ));
+    true
 }
 
 /// Run the §4 subcontract relation (`bound ⊑ declared`) and, on any violation,
