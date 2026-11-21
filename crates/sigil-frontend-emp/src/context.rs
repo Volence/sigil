@@ -13,7 +13,8 @@
 //! used to carry are gone. (Other nets in the tree — `branch_const`,
 //! `type_slice`, `out_verify`, `preserves` — still carry their own worklists over
 //! that same CFG with their own lattices; unifying THOSE is a separate, wider
-//! job and is ledgered, not claimed here.)
+//! job and is ledgered, not claimed here: see the `STEPA-PRIVATE-WORKLISTS` row in
+//! `docs/QUEUE.md`.)
 //!
 //! **Why the declared tier is total where the inferred tier is not.** `z80_bus`
 //! seeds proc entry `Unknown`: a caller may already hold the bus and that is not
@@ -92,6 +93,11 @@ fn tri_meet(a: Tri, b: Tri) -> Tri {
 /// arriving at one instruction. It must be commutative, associative and
 /// idempotent, and repeated meets from any start must reach a fixed point in
 /// finitely many steps; the walk terminates only because of that.
+///
+/// `PartialEq` must be equality of MEANING: keep one representation per value.
+/// If two representations stand for one value (say, the full set of levels and
+/// an "unknown" variant), the loop sees them as two distinct heights, and a meet
+/// that alternates between them never settles.
 pub(crate) trait Lattice: Clone + PartialEq {
     fn meet(&self, other: &Self) -> Self;
 }
@@ -105,7 +111,23 @@ impl Lattice for Tri {
 /// The per-instruction IN-state fixpoint: forward over the shared CFG from
 /// `seeds`, transfer `step`, join = [`Lattice::meet`], worklist to a fixpoint.
 /// `step` receives the instruction's index as well as its mnemonic and
-/// operands.
+/// operands. It runs once per visit of an instruction, on whatever IN-state that
+/// instruction holds at the time (an intermediate one until the fixpoint), so it
+/// may run several times for one instruction. Its one result goes to every
+/// `Follow` successor; there is no separate state per edge.
+///
+/// `step` must be a pure, monotone function of its inputs; report from the
+/// returned map, never from inside `step`. Termination does not need monotone
+/// (a node's state only ever changes to `existing.meet(out)`), but a unique,
+/// order-independent result does. A `step` that records findings through a
+/// `RefCell` would record things that are not true at the fixpoint.
+///
+/// Seeds: each `(index, state)` is stored and queued without a meet, so two
+/// seeds on one index leave the last one's state (it overwrites). A seed is
+/// processed even where `follow` is false for its index, because `follow` only
+/// gates edges into successors. An empty seed list returns an empty map. A seed
+/// index past the end of the items panics (`Cfg::instr` indexes the items
+/// directly).
 ///
 /// `follow` GATES edge propagation. The inferred tier walks the whole proc
 /// (`|_| true`); a region-scoped instantiation stops at its own boundary, which

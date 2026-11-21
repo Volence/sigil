@@ -1,4 +1,4 @@
-# Step A piece 1, shared walker: Task 0 baseline
+# Step A piece 1, shared walker: working notes (baseline, tasks, final review)
 
 ## Values (every later task uses these)
 
@@ -48,3 +48,18 @@ Code tip `7500a887` (before this notes commit). Test total went from 2867 to 287
 - `cargo fmt --check` reports differences in files this branch did not touch (for example `ast.rs`); fmt was not run.
 - The saved `rn-cand-*.txt` files hold the `2>&1` form, so `rn-cand-sonic4.txt` has one extra stderr line (`warning: 15 warnings, module.path-mismatch 15; ...`) that the stdout-only base files lack. The base binary prints the same line under `2>&1`; the stdout-only candidate diff is empty.
 - The owed worklist move found eight private walkers, not the brief's seven (`preserves.rs` is the eighth); booked in `docs/QUEUE.md` as `STEPA-PRIVATE-WORKLISTS`.
+
+## Final review
+
+- Verdict: ready after fixes.
+- Important 1: the `STEPA-PRIVATE-WORKLISTS` entry in `docs/QUEUE.md` said eight walkers, a per-edge step, and
+  treated all as `forward_in_states` candidates. It is eight files holding fifteen loops (12 fixpoint walks, 3
+  visited-set searches), `step` is per instruction, and each loop must be classified before moving. Fixed in the
+  final-fix commit.
+- Important 2: the `Lattice` and `forward_in_states` doc comments in `context.rs` did not say that `step` must be
+  pure and monotone (report from the returned map, never inside `step`), or that `PartialEq` must be equality of
+  meaning (one representation per value). Fixed in the same commit, along with the seed-handling sentence and the
+  `STEPA-PRIVATE-WORKLISTS` name in the module header.
+- Left for piece 2 on purpose: borrow `st_in` instead of cloning it; a `debug_assert` that a meet settles; tests
+  for multi-seed, an out-of-range seed, the remaining `Tri` meet cases, and that non-`Follow` edges never call
+  `follow`.
