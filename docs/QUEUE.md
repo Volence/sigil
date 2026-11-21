@@ -2995,3 +2995,12 @@ until its row is removed.
   `{splice}` arm reaches `classify_operand_splice` directly and keeps the immediate, pinned by
   `crates/sigil-frontend-emp/tests/operand_bare_number.rs` `a_spliced_integer_stays_an_immediate`.
 - Count aeon's uses before changing it.
+
+## EMP-DISPATCH-BODY-PARITY
+
+- state: open 2026-11-21 (A10, booked by Task 4)  size: `S`  project: `STEP0-A10`
+- `[layout.odd-instruction]` (`lower/code.rs` `first_odd_instr`, called from `lower_code_buf`) is per code
+  stream, and only a named proc, a script and a dispatch TABLE have their start asserted even
+  (`[layout.odd-item]`). Dispatch body k starts where body k-1 ended, so a body ending in an odd `dc` run after
+  its last instruction shifts the next body with no diagnostic (read at `lower/mod.rs`, the dispatch-body loop
+  that calls `lower_code_buf`; not probed).

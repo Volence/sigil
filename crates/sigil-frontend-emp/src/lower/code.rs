@@ -69,6 +69,26 @@ pub fn lower_code_buf(
     for f in crate::cycle_budget::check_dispatch_targets(&code.items, cpu) {
         push_err(diags, f.span, format!("[{}]: {}", f.kind.lint_id(), f.kind.message()));
     }
+    // A10 W11: an instruction at an odd address is a guaranteed address-error crash
+    // on the 68000. Every 68000 instruction is an even number of bytes at every
+    // relaxation, so inside one stream an instruction's parity is the parity of the
+    // inline data before it (the stream's start is `[layout.odd-item]`'s to check).
+    // `@as_compat` does not exempt it: AS pads an instruction to even, so an odd one
+    // is never what a faithful port means. The Z80 has no alignment rule.
+    if cpu == Cpu::M68000 {
+        if let Some((span, n)) = first_odd_instr(&code.items) {
+            push_err(
+                diags,
+                span,
+                format!(
+                    "[layout.odd-instruction] this instruction lands on an odd address: {n} \
+                     byte(s) of inline `dc` data precede it in this body, and an odd \
+                     instruction address is a guaranteed address-error crash on 68k; pad the \
+                     data to an even length"
+                ),
+            );
+        }
+    }
     for item in &code.items {
         match item {
             CodeItem::Label { name, .. } => builder.define_label(name),
@@ -2346,6 +2366,27 @@ fn emit_data_frag(builder: &mut IrBuilder, df: DataFragment) {
 }
 
 /// Push an error diagnostic at `span`.
+/// The first instruction of `items` reached while the inline `dc` bytes before it
+/// sum to an odd count, with that count (A10 W11, `[layout.odd-instruction]`).
+/// One answer per stream: everything after it is shifted by the same byte. The
+/// zero-byte `assume_some` marker is not an instruction and is skipped; odd data
+/// after the last instruction is legal and never reported.
+fn first_odd_instr(items: &[CodeItem]) -> Option<(Span, usize)> {
+    let mut inline = 0usize;
+    for item in items {
+        match item {
+            CodeItem::Inline(buf, _) => inline += buf.size,
+            CodeItem::Instr { mnemonic, span, .. }
+                if mnemonic != "assume_some" && inline % 2 == 1 =>
+            {
+                return Some((*span, inline));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn push_err(diags: &mut Vec<Diagnostic>, span: Span, message: impl Into<String>) {
     diags.push(Diagnostic { level: Level::Error, message: message.into(), primary: span });
 }
