@@ -1396,3 +1396,123 @@ TC (after the last code edit): `sigil-isa` 16 suites, 152 passed, 0 failed, 0 ig
 suites, 2891 passed, 0 failed, 0 ignored; `sigil-backend-m68k` (re-exports the table) 2 suites, 19 passed. Clippy
 clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0` (the table feeds the strength-reduction tie-breaks; no byte
 moved).
+
+### Batch D fix round 1: the frame model fails safe (code commit ee3abb03)
+
+**I1, the signed displacement.** `apply_link` reads `$8000..=$FFFF` as `value - $10000` (the 68000's signed
+extension word: `#$FFF8` IS `#-8`, `4E56 FFF8` on both routes), and bails on a value outside the word. The bail also
+removes the second `[stack.unbalanced]` that used to sit beside the encoder's range error on `link a6, #-$8001`
+(review Minor 1). Boundaries: `#$8000` = `#-$8000` = -32768, an open frame of 32772 bytes, and `link a6, #$8000` /
+`unlk a6` is clean; `#$7FFF` is +32767, sp moves up into the caller's frame, and the model gives up as it does for `#8`.
+`EMP-LINK-UNSIGNED-DISPLACEMENT` keeps only that positive half (the name is kept: Task 12 greps for it).
+
+**I2, a write of the frame register inside its frame.** Each open frame now carries a "written since the link" bit,
+set by `mark_written_frames` at the top of `transfer` for every instruction except `link` / `unlk`. Which registers
+an instruction writes comes from the model's own answers, not a list of mnemonics: `instr_written_regs` (covering
+`movea`, `lea`, `adda`/`suba`/`addq`/`subq` to An, both `exg` operands, a `movem` load, an `(An)+`/`-(An)` advance and
+a pop or peek into a register); a `movem (sp)+` list, which that detector omits on purpose; and for a call, every
+register `call_preserves` (the oracle `apply_callee_effect` uses) does not prove preserved. A poisoned frame's `unlk`
+bails with "`unlk a6` after `a6` was written inside its frame, sp becomes an unmodeled value".
+
+A nested `link` on the same register is not a poisoning write. The frame stack already models it exactly: the inner
+`unlk` pops the outer frame's sp back into a6. Pinned: the paired nest is clean, and one `unlk` missing is
+`[stack.unbalanced]` 12 bytes.
+
+What the reviewer's two probes print after the fix (`sigil emp`, header `clobbers(d0, a5, sr) preserves(a6)`), for
+both `movea.l a0,a6` and `lea 4(a6),a6`:
+
+```
+p.emp:3:5: [proc.clobber-undeclared] `P` writes `a6`, ...      (the link)
+p.emp:4:5: [proc.clobber-undeclared] `P` writes `a6`, ...      (the write)
+p.emp:5:5: [proc.clobber-undeclared] `P` writes `a6`, ...      (the unlk)
+p.emp:2:1: [proc.preserves-unverifiable] `P` declares `preserves(a6)` but a6 not provably preserved, no `.l` save/restore round-trips its FULL entry value on every return path (individual push/pop, `movem.l` pair, or `(sp)` peek), or an unmodeled sp op blocks the proof. ...
+```
+
+There is no `[stack.unbalanced]`. That is the honest answer for the depth: sp after that `unlk` is whatever a0 held (or
+a6+4), a value the checker never computed. An error there would be a guess, and silence about a depth is how the model
+already treats an `unlk` with no open frame. `preserves(a6)` is an ERROR, not a pass. a6 is written, and the only
+restore the model could credit is the `unlk`'s pop, which now gives up, so the proof cannot be made. Before the fix
+both probes printed nothing. The three clobber warnings appear because a6 is no longer verified preserved, so the
+lint charges each write.
+
+A call inside a frame: the per-file byte gate verifies under `ClobberAll`, so a call poisons the frame there. The
+`PreserveAll` probe then verifies, and the register is deferred to the corpus closure, which re-verifies under the
+`Oracle` of verified callee effects. A callee that clobbers a6 poisons the frame (Unverifiable); one that leaves it
+alone keeps the pair (Verified). That is pinned at the unit level (`frame_tests`), the only level where the oracle is
+chosen. The stack check has no callee contracts (`ClobberAll`), so after an `unlk` whose frame held any call the path
+is not judged: a push left below such a frame is no longer reported (it was, as 4 bytes, before), while a frame still
+open at the return is. Booked in `EMP-LINK-FRAME-BOUNDS`.
+
+Also: the `frame_tests` module doc claimed no `.emp` source can reach `link`, which has been false since Task 6. It
+is corrected.
+
+**RF step 1, red before implementing.** `a11_checks.rs` (the two source-level tests, plus a module-level call test
+later replaced by the unit tests, because the byte gate defers a call-blocked register to the closure by design):
+
+```
+test a_link_displacement_is_its_signed_word ... FAILED
+thread 'a_link_displacement_is_its_signed_word' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:426:5:
+assertion `left == right` failed: `#$FFF8` is the same instruction as `#-8`
+  left: []
+ right: [(true, "[stack.unbalanced] in `P`: this path returns with 12 bytes still on the stack, sp is below its entry value, so the return reads its address from the wrong word")]
+test writing_the_frame_register_inside_its_frame_unpairs_the_unlk ... FAILED
+thread 'writing_the_frame_register_inside_its_frame_unpairs_the_unlk' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:455:9:
+`movea.l a0, a6`: preserves(a6) must not pass: []
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+The unit tests were written after the implementation. Their red came from the HEAD `preserves.rs` with only the two
+tests spliced in (the working file was copied aside, then put back):
+
+```
+test preserves::frame_tests::a_call_that_clobbers_the_frame_register_unpairs_the_unlk ... FAILED
+test preserves::frame_tests::the_stack_check_gives_up_after_an_unlk_whose_frame_held_a_call ... FAILED
+panicked at crates/sigil-frontend-emp/src/preserves.rs:1927:9:
+{A6: Verified}
+panicked at crates/sigil-frontend-emp/src/preserves.rs:1942:9:
+  left: [StackFinding { kind: Unbalanced { depth: 4 }, span: Span { source: SourceId(0), start: 4, end: 5 } }]
+ right: []
+test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 261 filtered out
+```
+
+**RF step 2, green.** `a11_checks` 23 passed, `frame_tests` 14 passed.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- crates/sigil-frontend-emp/src/preserves.rs`).
+
+M1, the signed read off:
+```
+-        d @ 0x8000..=0xFFFF => d - 0x10000,
++        d @ 0x8000..=0xFFFF => d,
+test a_link_displacement_is_its_signed_word ... FAILED
+assertion `left == right` failed: `#$FFF8` is the same instruction as `#-8`
+  left: []
+ right: [(true, "[stack.unbalanced] in `P`: this path returns with 12 bytes ...")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out
+```
+Restored: 1 passed.
+
+M2, the marking call deleted:
+```
+-        mark_written_frames(st, policy, mnem, ops);
+test writing_the_frame_register_inside_its_frame_unpairs_the_unlk ... FAILED
+`movea.l a0, a6`: preserves(a6) must not pass: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out
+test preserves::frame_tests::a_call_that_clobbers_the_frame_register_unpairs_the_unlk ... FAILED
+test preserves::frame_tests::the_stack_check_gives_up_after_an_unlk_whose_frame_held_a_call ... FAILED
+{A6: Verified}
+  left: [StackFinding { kind: Unbalanced { depth: 4 }, ... }]
+test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 261 filtered out
+```
+Restored: `a11_checks` 23 passed, `frame_tests` 14 passed.
+
+M3, the poisoned-frame arm of `apply_unlk` disabled (`if open == *fp && false`): still GREEN. This is an equivalent
+mutant. The next arm matches only an unpoisoned frame, so a poisoned frame falls through to the catch-all bail, and
+the path bails all the same with the "no matching `link`" reason. The arm only chooses the bail's text, which no
+diagnostic prints (the preserves message is the generic §5 one).
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2895 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 17 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`,
+`STEP0_CMP_END rc=0` (the first attempt ran with `AEON_DIR` exported and exited 2, `[engine.conflict]`, could not
+run; rerun with it unset).
