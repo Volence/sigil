@@ -2474,10 +2474,11 @@ until its row is removed.
   `generated/` path by name ([root.missing]). The record layer (`export_files::GeneratedRoot`) keeps G0a's
   equivalence `generated/<sub>/<rest>` = `engine/<sub>/generated/<rest>`, so digest and export rows for generated
   reads are unchanged.
-- Residue: the legacy driver keeps a legacy sound mount (`SourceRoots::with_legacy_sound_mount`: an
-  `engine/sound/generated/<rest>` spelling reads `generated/sound/<rest>`) because the step-0 reference tree (aeon
-  99cb963d) still spells the old path. It dies with the legacy driver (Task 11). The standalone port gates still
-  provision the tree's mount (`native::ensure_generated`); they go with the seams in G0c.
+- Residue: the legacy driver's sound mount (`SourceRoots::with_legacy_sound_mount`) was meant to die with that
+  driver at Task 11 and did not; it had no caller left and was deleted by the G0b final-review fix wave (C-I4).
+  The retired prefix is refused by name (`[root.stale-generated]`); `LEGACY_SOUND_MOUNT`, an aeon layout literal in
+  the language-level crate, stays only for that refusal and goes with the seams (G0c, `G0C-SOUND-SEAMS`). The
+  standalone port gates still provision the tree's mount (`native::ensure_generated`); they go with the seams in G0c.
 - The original text follows.
 - A build's generated root (`sigil_frontend_emp::generated_root`) is THREAD-SCOPED: the build enters it, and
   `run_on_eval_stack` carries it to the comptime evaluation thread. It is not a `LowerOptions` field because the

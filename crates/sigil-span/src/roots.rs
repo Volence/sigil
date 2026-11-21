@@ -33,14 +33,13 @@
 //!  * a build with no tree (a game in its own repository) refuses it by name, naming the
 //!    three spellings that would resolve.
 //!
-//! # The legacy driver's mount
+//! # The retired sound mount
 //!
-//! The old driver (`sigil build --aeon`, deleted by G0b Task 11) still builds the step-0
-//! reference tree (aeon 99cb963d), whose sources embed the sound seams' output as
-//! `engine/sound/generated/<file>`. [`SourceRoots::with_legacy_sound_mount`] maps exactly
-//! that prefix onto `generated/sound/`, for that driver only. The game-as-data driver
-//! never sets it: its sources name the `generated` root, and without the mount the old
-//! prefix is refused by name (`[root.stale-generated]`), never read from the tree.
+//! The sound seams' output once lived at `engine/sound/generated/<file>` inside the tree.
+//! That prefix is refused by name (`[root.stale-generated]`), never read: the tree's copy
+//! there is a stale leftover of aeon's `build.sh`, and a build's own output is the
+//! `generated` root (`generated/sound/<file>`). The old driver's mount that read it was
+//! deleted with that driver (G0b final review C-I4).
 
 use std::path::{Component, Path, PathBuf};
 
@@ -77,8 +76,7 @@ impl std::fmt::Display for RootName {
     }
 }
 
-/// The legacy prefix [`SourceRoots::with_legacy_sound_mount`] maps onto
-/// `generated/sound/`.
+/// The retired location of the sound seams' output, refused by name (module doc).
 const LEGACY_SOUND_MOUNT: &str = "engine/sound/generated";
 
 /// A build's named roots. See the module doc for the rule.
@@ -88,7 +86,6 @@ pub struct SourceRoots {
     game: PathBuf,
     generated: Option<PathBuf>,
     tree: Option<PathBuf>,
-    legacy_sound_mount: bool,
 }
 
 /// Where a path resolved.
@@ -119,7 +116,6 @@ impl SourceRoots {
             game: game.into(),
             generated: None,
             tree: None,
-            legacy_sound_mount: false,
         }
     }
 
@@ -133,13 +129,6 @@ impl SourceRoots {
     /// the engine root, for a game inside it).
     pub fn with_tree(mut self, tree: impl Into<PathBuf>) -> SourceRoots {
         self.tree = Some(tree.into());
-        self
-    }
-
-    /// The legacy driver's mount: `engine/sound/generated/<rest>` is
-    /// `generated/sound/<rest>`. Only the old driver sets it (module doc).
-    pub fn with_legacy_sound_mount(mut self) -> SourceRoots {
-        self.legacy_sound_mount = true;
         self
     }
 
@@ -175,34 +164,26 @@ impl SourceRoots {
                 Component::RootDir | Component::Prefix(_) => {}
             }
         }
+        // The retired prefix is refused by name, however it is spelled (judged on the
+        // `..`-folded path): the tree's copy there is rewritten by aeon's build.sh, so
+        // resolving it as an engine path would let a stale tree file stand in for this
+        // build's own seam output (Task 6's guarantee).
         let mount: Vec<&str> = LEGACY_SOUND_MOUNT.split('/').collect();
-        if self.legacy_sound_mount {
-            if segs.len() > mount.len() && segs[..mount.len()] == mount[..] {
-                let mut rest = vec!["sound"];
-                rest.extend_from_slice(&segs[mount.len()..]);
-                return self.inside(RootName::Generated, path, &rest);
+        let mut folded: Vec<&str> = Vec::new();
+        for s in &segs {
+            if *s == ".." {
+                folded.pop();
+            } else {
+                folded.push(s);
             }
-        } else {
-            // Without the mount the old prefix is refused by name, however it is spelled
-            // (judged on the `..`-folded path): the tree's copy there is rewritten by
-            // aeon's build.sh, so resolving it as an engine path would let a stale tree
-            // file stand in for this build's own seam output (Task 6's guarantee).
-            let mut folded: Vec<&str> = Vec::new();
-            for s in &segs {
-                if *s == ".." {
-                    folded.pop();
-                } else {
-                    folded.push(s);
-                }
-            }
-            if folded.len() >= mount.len() && folded[..mount.len()] == mount[..] {
-                let rest = folded[mount.len()..].join("/");
-                return Err(format!(
-                    "[root.stale-generated] `{path}` names the retired `{LEGACY_SOUND_MOUNT}/` location, which \
-                     is not this build's output (the tree's copy there is a stale leftover); the sound seams' \
-                     output is the `generated` root: spell it `generated/sound/{rest}`"
-                ));
-            }
+        }
+        if folded.len() >= mount.len() && folded[..mount.len()] == mount[..] {
+            let rest = folded[mount.len()..].join("/");
+            return Err(format!(
+                "[root.stale-generated] `{path}` names the retired `{LEGACY_SOUND_MOUNT}/` location, which \
+                 is not this build's output (the tree's copy there is a stale leftover); the sound seams' \
+                 output is the `generated` root: spell it `generated/sound/{rest}`"
+            ));
         }
         if let Some(root) = segs.first().and_then(|s| RootName::from_segment(s)) {
             return self.inside(root, path, &segs[1..]);
@@ -347,7 +328,7 @@ mod tests {
         let none = SourceRoots::new(t.root.join("aeon/engine"), t.root.join("aeon/games/g"));
         let err = none.locate("generated/sound/s.bin").unwrap_err();
         assert!(err.starts_with("[root.missing]"), "{err}");
-        // The old prefix is refused by name unless the legacy driver mounts it: the tree's
+        // The old prefix is refused by name: the tree's
         // copy there is rewritten by aeon's build.sh and must never stand in for this
         // build's own output (Task 6's guarantee). `..` spellings of it are refused too.
         for old in ["engine/sound/generated/s.bin", "engine/x/../sound/generated/s.bin", "engine/sound/generated"] {
@@ -360,8 +341,6 @@ mod tests {
         // A sibling of the old prefix is an ordinary engine path.
         let sib = roots(&t).locate("engine/sound/generated_not/s.bin").unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(sib.file(), t.root.join("aeon/engine/sound/generated_not/s.bin"));
-        let legacy = roots(&t).with_legacy_sound_mount().locate("engine/sound/generated/s.bin").unwrap();
-        assert_eq!(body(&legacy), "generated");
     }
 
     #[test]
