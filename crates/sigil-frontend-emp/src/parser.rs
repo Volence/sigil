@@ -2095,7 +2095,9 @@ impl Parser {
         let mut requires = Vec::new();
         let mut grants = Vec::new();
         let mut falls_into = None;
+        let mut seen = Vec::new();
         loop {
+            self.note_contract_clause(&mut seen, &name);
             if self.eat_kw("requires") {
                 requires = self.ctx_list("requires");
             } else if self.eat_kw("grants") {
@@ -2282,6 +2284,21 @@ impl Parser {
     /// [preserves(...)]`, clause order free — shared by `extern proc` (§3) and
     /// `type X = proc` contract types (§4). Unlike [`Parser::proc_decl`] there is
     /// no `falls_into` (a signature has no physical successor) and no body.
+    /// `[proc.repeated-clause]` (A10, W13): look at the next token without consuming it;
+    /// if it is a contract clause word already written on this header, refuse it,
+    /// otherwise record it. Called first in both clause loops (`proc_decl`, `proc_sig`),
+    /// whose arms each assign their clause's variable, so a second clause used to
+    /// replace the first silently. `owner` is the proc's name, or `this signature`.
+    fn note_contract_clause(&mut self, seen: &mut Vec<&'static str>, owner: &str) {
+        const CLAUSES: [&str; 7] = ["requires", "grants", "clobbers", "out", "inout", "preserves", "falls_into"];
+        let Some(kw) = CLAUSES.into_iter().find(|kw| self.at_kw(kw)) else { return };
+        if seen.contains(&kw) {
+            let span = self.span();
+            self.diag_at(span, format!("[proc.repeated-clause] `{kw}` is written twice on `{owner}`: a contract clause may appear once, and the later one used to replace the earlier silently. Merge them into one clause"));
+        } else {
+            seen.push(kw);
+        }
+    }
     fn proc_sig(&mut self) -> ProcSig {
         let params = self.sig_param_list();
         let mut clobbers = None;
@@ -2293,7 +2310,9 @@ impl Parser {
         let mut inout = None;
         let mut inout_types = Vec::new();
         let mut requires = Vec::new();
+        let mut seen = Vec::new();
         loop {
+            self.note_contract_clause(&mut seen, "this signature");
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 clobbers = Some(self.reg_list());
