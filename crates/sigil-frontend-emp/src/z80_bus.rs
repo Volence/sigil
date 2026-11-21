@@ -10,7 +10,7 @@
 //! [`Tri`] lattice — `Held` = the 68k provably owns the bus, `NotHeld` = the bus
 //! is provably not held, `Unknown` = caller-dependent entry or a join of
 //! disagreeing states. The forward MUST dataflow, the meet, and the worklist are
-//! [`crate::context::must_in_states`], shared with the DECLARED tier; this module
+//! [`crate::context::forward_in_states`], shared with the DECLARED tier; this module
 //! supplies only the transfer function and the firing rules.
 //!
 //! **Soundness stance — zero false positives (the item-4-rider polarity).** Every
@@ -46,7 +46,7 @@
 //! unverifiable paths. On the real aeon corpus E006 is therefore largely inert;
 //! `sound_api` (the sole bus-toggle file) is where E007/E008/E011 have teeth.
 
-use crate::context::{must_in_states, Tri};
+use crate::context::{forward_in_states, Tri};
 use crate::flag_check::Cfg;
 use crate::value::{CodeItem, CodeOperand};
 use sigil_ir::backend::Cpu;
@@ -221,11 +221,11 @@ pub fn check_bus_state(proc: &str, items: &[CodeItem], entry: BusEntry) -> Vec<B
         BusEntry::Unknown => BusState::Unknown,
         BusEntry::Held => STOPPED,
     };
-    let in_state: BTreeMap<usize, BusState> = must_in_states(
+    let in_state: BTreeMap<usize, BusState> = forward_in_states(
         &cfg,
         Cpu::M68000,
         &[(entry_idx, seed)],
-        &|st, mnem, ops| step(st, mnem, ops),
+        &|st, _, mnem, ops| step(*st, mnem, ops),
         &|_| true,
     );
 

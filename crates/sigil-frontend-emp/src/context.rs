@@ -8,7 +8,7 @@
 //! **Two tiers, one CFG, one lattice.** `z80_bus` infers bus ownership from the
 //! instruction stream over [`crate::flag_check::Cfg`]; a declared context
 //! generalizes that to a per-context [`Tri`] whose seed is a DECLARATION rather
-//! than an observation. Both machine-state tiers instantiate [`must_in_states`]
+//! than an observation. Both machine-state tiers instantiate [`forward_in_states`]
 //! over the one shared `Cfg` — the private lattice, meet and worklist `z80_bus`
 //! used to carry are gone. (Other nets in the tree — `branch_const`,
 //! `type_slice`, `out_verify`, `preserves` — still carry their own worklists over
@@ -88,58 +88,10 @@ fn tri_meet(a: Tri, b: Tri) -> Tri {
     }
 }
 
-/// The per-instruction IN-state fixpoint: a forward MUST dataflow over the
-/// shared CFG from `seeds`, transfer `step`, join = [`tri_meet`], worklist to a
-/// fixpoint. Monotone on a three-point lattice, so it terminates.
-///
-/// `follow` GATES edge propagation. The inferred tier walks the whole proc
-/// (`|_| true`); a region-scoped instantiation stops at its own boundary, which
-/// is what makes an edge leaving the region an EVENT the caller reports rather
-/// than a state it propagates.
-///
-/// `cpu` selects the CFG's successor model ([`Cfg::edges`] vs
-/// [`Cfg::z80_edges`]) — the same choice every other consumer of this CFG makes.
-pub(crate) fn must_in_states(
-    cfg: &Cfg,
-    cpu: Cpu,
-    seeds: &[(usize, Tri)],
-    step: &dyn Fn(Tri, &str, &[CodeOperand]) -> Tri,
-    follow: &dyn Fn(usize) -> bool,
-) -> BTreeMap<usize, Tri> {
-    let mut in_state: BTreeMap<usize, Tri> = BTreeMap::new();
-    let mut work: VecDeque<usize> = VecDeque::new();
-    for (idx, st) in seeds {
-        in_state.insert(*idx, *st);
-        work.push_back(*idx);
-    }
-    while let Some(idx) = work.pop_front() {
-        let st_in = in_state[&idx];
-        let Some((mnem, ops)) = cfg.instr(idx) else { continue };
-        let st_out = step(st_in, mnem, ops);
-        for edge in edges_for(cfg, cpu, idx) {
-            let Edge::Follow(succ) = edge else { continue };
-            if !follow(succ) {
-                continue;
-            }
-            let merged = match in_state.get(&succ) {
-                None => st_out,
-                Some(existing) => tri_meet(*existing, st_out),
-            };
-            if in_state.get(&succ) != Some(&merged) {
-                in_state.insert(succ, merged);
-                work.push_back(succ);
-            }
-        }
-    }
-    in_state
-}
-
 /// A state a forward walk can carry. `meet` combines the states of two paths
 /// arriving at one instruction. It must be commutative, associative and
 /// idempotent, and repeated meets from any start must reach a fixed point in
 /// finitely many steps; the walk terminates only because of that.
-// No non-test caller yet; the walker's callers move onto it in a later task.
-#[allow(dead_code)]
 pub(crate) trait Lattice: Clone + PartialEq {
     fn meet(&self, other: &Self) -> Self;
 }
@@ -153,9 +105,17 @@ impl Lattice for Tri {
 /// The per-instruction IN-state fixpoint: forward over the shared CFG from
 /// `seeds`, transfer `step`, join = [`Lattice::meet`], worklist to a fixpoint.
 /// `step` receives the instruction's index as well as its mnemonic and
-/// operands. `follow` gates edge propagation, as in [`must_in_states`].
-// No non-test caller yet (see `Lattice`). The `step` signature is the contract.
-#[allow(dead_code, clippy::type_complexity)]
+/// operands.
+///
+/// `follow` GATES edge propagation. The inferred tier walks the whole proc
+/// (`|_| true`); a region-scoped instantiation stops at its own boundary, which
+/// is what makes an edge leaving the region an EVENT the caller reports rather
+/// than a state it propagates.
+///
+/// `cpu` selects the CFG's successor model ([`Cfg::edges`] vs
+/// [`Cfg::z80_edges`]) — the same choice every other consumer of this CFG makes.
+// The `step` signature is the contract; an alias would only hide it.
+#[allow(clippy::type_complexity)]
 pub(crate) fn forward_in_states<S: Lattice>(
     cfg: &Cfg,
     cpu: Cpu,
@@ -359,7 +319,7 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
 /// Run the `with`-bracket proofs over one proc's evaluated CodeBuf (§3.2).
 ///
 /// Per region, over the instructions reachable from the acquire WITHIN the
-/// region (the [`must_in_states`] walk seeded [`Tri::Held`] and gated by
+/// region (the [`forward_in_states`] walk seeded [`Tri::Held`] and gated by
 /// [`Region::contains`]):
 ///
 /// - **escape** — an edge out of the acquire+body range that does not land back
@@ -416,7 +376,7 @@ pub fn check_regions(
                 span,
             });
         };
-        let state = must_in_states(
+        let state = forward_in_states(
             &cfg,
             cpu,
             &[(entry, Tri::Held)],
@@ -425,7 +385,7 @@ pub fn check_regions(
             // a declaration and no transfer can move it. What is actually proven
             // is stated in the module header, and it is a REACHABILITY property,
             // not a dominance one.
-            &|st, _, _| st,
+            &|st, _, _, _| *st,
             &|i| region.contains(i),
         );
         for &idx in state.keys() {
