@@ -236,3 +236,37 @@ test an_instruction_after_an_odd_data_run_is_refused ... ok
 test even_and_trailing_data_stay_legal ... ok
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+### Task 5: `[contract.binding-uncontracted]`
+
+Mutation (plan Task 5 Step 8): the `refuse_uncontracted` call in `check_hook_sig` is disabled. The call is a three-line `if ... { return; }` block, so the one-line form is `if false && refuse_uncontracted(...)` rather than commenting it out (same effect, still compiles). Both probes go red: the hook probe finds no refusal, and the mixed probe keeps its `proc` member refusal (still wired in `check_proc_type`, shown in the panic with the exact message) but loses the `hook` one bound to the `extern proc`. The `clobbers()` twin and the limit test stay green.
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-frontend-emp/src/resolve/contract.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'refuse_uncontracted(iface' crates/sigil-frontend-emp/src/resolve/contract.rs
+381:    if refuse_uncontracted(iface, member, bound_sym, "proc", all_items, span, diags) {
+401:    if false && refuse_uncontracted(iface, member, bound_sym, "hook", all_items, span, diags) {
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test game_contract   # mutated
+test a_binding_to_a_proc_declaring_the_empty_clause_conforms ... ok
+test probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused ... FAILED
+test probe_proc_member_and_extern_targets_with_no_clause_are_refused ... FAILED
+test the_refusal_reaches_only_a_live_binding_to_a_declared_proc ... ok
+thread 'probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused' (2921830) panicked at crates/sigil-frontend-emp/tests/game_contract.rs:595:5:
+  left: 0
+ right: 1
+thread 'probe_proc_member_and_extern_targets_with_no_clause_are_refused' (2921844) panicked at crates/sigil-frontend-emp/tests/game_contract.rs:606:5:
+["[contract.binding-uncontracted] proc `Game.entry` is bound to `Bare`, which declares no `clobbers(...)` clause, so its conformance to the declared signature cannot be checked. Refused for now: state `clobbers(...)` on `Bare` (`clobbers()` if it changes no register)"]
+test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test game_contract`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/resolve/contract.rs
+$ git status --short --untracked-files=no
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test game_contract   # restored
+test a_binding_to_a_proc_declaring_the_empty_clause_conforms ... ok
+test probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused ... ok
+test probe_proc_member_and_extern_targets_with_no_clause_are_refused ... ok
+test the_refusal_reaches_only_a_live_binding_to_a_declared_proc ... ok
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
