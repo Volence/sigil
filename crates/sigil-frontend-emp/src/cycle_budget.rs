@@ -1405,9 +1405,9 @@ mod tests {
     // 68000 but absent from the corpus and the table).
     #[test]
     fn an_off_table_68k_op_is_unknown() {
-        let items = vec![instr("link", vec![]), instr("rts", vec![])];
+        let items = vec![instr("trapv", vec![]), instr("rts", vec![])];
         let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
-        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "link".into() });
+        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "trapv".into() });
     }
 
     // The DMA drain group's own arithmetic, through the walk: 3× move.l

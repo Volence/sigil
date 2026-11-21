@@ -3157,3 +3157,18 @@ until its row is removed.
   `preserves(sr.ccr)` read a `trap` as a flag write.
 - Decide whether an exception gets an edge (a handler declared per vector, its contract checked at the raise site),
   and whether `trap #n` joins the flag-inert allowlists.
+
+## ISA-CYCLE-TABLE-GAPS
+
+- state: open 2026-11-22 (A11 Task 10)  size: `S`  project: `STEP0-A11`
+- `sigil-isa` `instr_cycles` has no arm for `roxl` / `roxr` / `bchg` (pre-existing, not A11's), nor for the `usp`
+  moves, which `.emp` gained in A11 (UM Ninth Edition, Table 8-12, p. 8-10: MOVE to / from USP 4(1/0)); `move` to
+  or from `usp` reaches the `Move` arm with an operand the front end cannot classify, so it is `Unmodeled`. The
+  SR/CCR moves and the SR/CCR immediates are priced only through the written `move` / `andi` / `ori` / `eori` arms
+  (matched on the `sr` / `ccr` operand); their refined enum names (`MoveToSr`, `MoveFromSr`, `MoveToCcr`, `EoriCcr`,
+  `AndiSr`, `OriSr`, `EoriSr`) have no arm of their own. `chk`, `trapv` and `stop` are `Unmodeled` on purpose (a
+  trap or a wait no budget can bound), pinned by `the_trapping_and_waiting_instructions_are_unmodeled`.
+- A missing arm is a loud `Unmodeled` refusal in `@budget` / `cycles()`, never a wrong number. No test sweeps the
+  table by family, so a new mnemonic gets no row unless someone adds one.
+- Decide whether to price the remaining fixed rows, and whether a family sweep (every `ALL_FAMILY_NAMES` entry
+  either priced or on a named refusal list) guards the table.

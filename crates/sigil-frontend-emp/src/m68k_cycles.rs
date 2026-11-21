@@ -326,10 +326,15 @@ mod tests {
         );
     }
 
-    // Forms the table refuses: an unrecognized mnemonic, a Z80 operand, a trap.
+    // Forms the table refuses: an instruction that waits for an interrupt, a
+    // Z80 operand, a trap. `exg` (UM Table 8-12, 6 clocks) has a row since A11.
     #[test]
     fn off_table_forms_refuse() {
-        assert_eq!(instr_cost("link", Some(Width::W), &[an()]), CycleCost::Unmodeled);
+        assert_eq!(instr_cost("stop", None, &[CodeOperand::Imm(0x2000)]), CycleCost::Unmodeled);
+        assert_eq!(
+            instr_cost("exg", Some(Width::L), &[dn(), CodeOperand::Reg(Reg::D1)]),
+            CycleCost::Fixed { cycles: 6, exact: true }
+        );
         assert_eq!(instr_cost("trap", None, &[CodeOperand::Imm(0)]), CycleCost::Unmodeled);
         assert_eq!(
             instr_cost("move", Some(Width::W), &[CodeOperand::Z80IndHl, dn()]),

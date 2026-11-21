@@ -276,11 +276,19 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
             EaCat::An => exact(8),
             d => exact(if long { 12 } else { 8 } + ea_time(*d, long)),
         },
-        // Table 8-4/8-9: ADDX Dn,Dn 4 / 8; -(An),-(An) 18 / 30.
-        (Addx, [CatOp::Ea(EaCat::Dn), CatOp::Ea(EaCat::Dn)]) => exact(if long { 8 } else { 4 }),
-        (Addx, [CatOp::Ea(EaCat::PreDec), CatOp::Ea(EaCat::PreDec)]) => {
+        // Table 8-4/8-9: ADDX Dn,Dn 4 / 8; -(An),-(An) 18 / 30. SUBX is the same
+        // row (UM Ninth Edition, Table 8-11, p. 8-9: "SUBX Byte, Word 4(1/0)
+        // 18(3/1); Long 8(1/0) 30(5/2)").
+        (Addx | Subx, [CatOp::Ea(EaCat::Dn), CatOp::Ea(EaCat::Dn)]) => {
+            exact(if long { 8 } else { 4 })
+        }
+        (Addx | Subx, [CatOp::Ea(EaCat::PreDec), CatOp::Ea(EaCat::PreDec)]) => {
             exact(if long { 30 } else { 18 })
         }
+        // UM Ninth Edition, Table 8-11 (p. 8-9): ABCD and SBCD (byte only)
+        // Dn,Dn 6(1/0); -(An),-(An) 18(3/1).
+        (Abcd | Sbcd, [CatOp::Ea(EaCat::Dn), CatOp::Ea(EaCat::Dn)]) => exact(6),
+        (Abcd | Sbcd, [CatOp::Ea(EaCat::PreDec), CatOp::Ea(EaCat::PreDec)]) => exact(18),
         // Table 8-9: CMPM (An)+,(An)+ 12 / 20.
         (Cmpm, _) => exact(if long { 20 } else { 12 }),
         // Table 8-4 (MULS/MULU/DIVS/DIVU): data-dependent, charged at the UM
@@ -318,10 +326,19 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         },
 
         // --- single-operand (Table 8-6) ------------------------------------
-        (Clr | Neg | Not, [CatOp::Ea(dst)]) => match dst {
+        // NEGX is the NEG row (UM Ninth Edition, Table 8-6, p. 8-6: "NEGX Byte,
+        // Word 4(1/0) 8(1/1)+; Long 6(1/0) 12(1/2)+").
+        (Clr | Neg | Negx | Not, [CatOp::Ea(dst)]) => match dst {
             EaCat::Dn => exact(if long { 6 } else { 4 }),
             EaCat::An | EaCat::Imm | EaCat::Pcd16 | EaCat::Pcd8Xn => CycleCost::Unmodeled,
             d => exact(if long { 12 } else { 8 } + ea_time(*d, long)),
+        },
+        // UM Ninth Edition, Table 8-6 (p. 8-6): NBCD (byte only) Dn 6(1/0),
+        // memory 8(1/1) + ea.
+        (Nbcd, [CatOp::Ea(dst)]) => match dst {
+            EaCat::Dn => exact(6),
+            EaCat::An | EaCat::Imm | EaCat::Pcd16 | EaCat::Pcd8Xn => CycleCost::Unmodeled,
+            d => exact(8 + ea_time(*d, false)),
         },
         (Tst, [CatOp::Ea(dst)]) => match dst {
             EaCat::An | EaCat::Imm => CycleCost::Unmodeled,
@@ -433,9 +450,21 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         (Nop, _) => exact(4),
         (Rts, _) => exact(16),
         (Rte, _) => exact(20),
+        // UM Ninth Edition, Table 8-12 (p. 8-10), each a fixed count with no
+        // effective-address term: EXG 6(1/0), LINK 16(2/2), UNLK 12(3/0),
+        // RTR 20(2/0), RESET 132(1/0) (the 124 clocks RESET is asserted for are
+        // included, Section 5 "Reset Operation").
+        (Exg, _) => exact(6),
+        (Link, _) => exact(16),
+        (Unlk, _) => exact(12),
+        (Rtr, _) => exact(20),
+        (Reset, _) => exact(132),
         // TRAP and ILLEGAL transfer into an exception handler whose cost is not
-        // this instruction's to state; MOVE from/to USP and STOP never appear in
-        // the corpus. All refuse.
+        // this instruction's to state; MOVE from/to USP never appears in the
+        // corpus. CHK and TRAPV may trap (Table 8-12 gives only their no-trap
+        // times, CHK 10 + ea and TRAPV 4; Table 8-14 the trap, 40 + ea and 34)
+        // and STOP waits for an interrupt (its 4 is the time to stop): a budget
+        // cannot bound them. All refuse, deliberately.
         _ => CycleCost::Unmodeled,
     }
 }
@@ -799,6 +828,63 @@ mod tests {
         assert_eq!(exact(And, Size::W, &[CatOp::ImmVal(1), ea(AbsW)]), 20); // 12 + 8
         assert_eq!(exact(Cmp, Size::W, &[ea(Dn), ea(An)]), 6); // cmpa row
         assert_eq!(exact(Cmp, Size::L, &[ea(Ind), ea(An)]), 14); // 6 + 8
+    }
+
+    // A11: the rows of the instructions `.emp` gained. Every number is from the
+    // M68000 8-/16-/32-Bit Microprocessors User's Manual, Ninth Edition, Section
+    // 8: Table 8-6 (p. 8-6, single operand), Table 8-11 (p. 8-9, multiprecision),
+    // Table 8-12 (p. 8-10, miscellaneous). Memory forms add the address time of
+    // Table 8-1 (p. 8-2), this file's `ea_time`.
+    #[test]
+    fn a11_rows_match_tables_8_6_8_11_and_8_12() {
+        use EaCat::*;
+        // Table 8-12: EXG 6, LINK 16, UNLK 12, RTR 20, RESET 132.
+        assert_eq!(exact(Exg, Size::L, &[ea(Dn), ea(Dn)]), 6);
+        assert_eq!(exact(Exg, Size::L, &[ea(An), ea(An)]), 6);
+        assert_eq!(exact(Exg, Size::L, &[ea(Dn), ea(An)]), 6);
+        assert_eq!(exact(Link, Size::W, &[ea(An), CatOp::ImmVal(-8)]), 16);
+        assert_eq!(exact(Unlk, Size::W, &[ea(An)]), 12);
+        assert_eq!(exact(Rtr, Size::W, &[]), 20);
+        assert_eq!(exact(Reset, Size::W, &[]), 132);
+        // Table 8-11: SUBX is the ADDX row, Dn,Dn 4 / 8 and -(An),-(An) 18 / 30.
+        for m in [Addx, Subx] {
+            assert_eq!(exact(m, Size::B, &[ea(Dn), ea(Dn)]), 4);
+            assert_eq!(exact(m, Size::W, &[ea(Dn), ea(Dn)]), 4);
+            assert_eq!(exact(m, Size::L, &[ea(Dn), ea(Dn)]), 8);
+            assert_eq!(exact(m, Size::B, &[ea(PreDec), ea(PreDec)]), 18);
+            assert_eq!(exact(m, Size::W, &[ea(PreDec), ea(PreDec)]), 18);
+            assert_eq!(exact(m, Size::L, &[ea(PreDec), ea(PreDec)]), 30);
+        }
+        // Table 8-11: ABCD, SBCD (byte only) Dn,Dn 6, -(An),-(An) 18.
+        for m in [Abcd, Sbcd] {
+            assert_eq!(exact(m, Size::B, &[ea(Dn), ea(Dn)]), 6);
+            assert_eq!(exact(m, Size::B, &[ea(PreDec), ea(PreDec)]), 18);
+        }
+        // Table 8-6: NEGX is the NEG row, Dn 4 / 6, memory 8 / 12 + ea.
+        assert_eq!(exact(Negx, Size::B, &[ea(Dn)]), 4);
+        assert_eq!(exact(Negx, Size::W, &[ea(Dn)]), 4);
+        assert_eq!(exact(Negx, Size::L, &[ea(Dn)]), 6);
+        assert_eq!(exact(Negx, Size::B, &[ea(PostInc)]), 12); // 8 + 4
+        assert_eq!(exact(Negx, Size::W, &[ea(Ind)]), 12); // 8 + 4
+        assert_eq!(exact(Negx, Size::L, &[ea(AbsW)]), 24); // 12 + 12
+        assert_eq!(instr_cycles(Negx, Size::W, &[ea(An)]), CycleCost::Unmodeled);
+        // Table 8-6: NBCD (byte only) Dn 6, memory 8 + ea.
+        assert_eq!(exact(Nbcd, Size::B, &[ea(Dn)]), 6);
+        assert_eq!(exact(Nbcd, Size::B, &[ea(Ind)]), 12); // 8 + 4
+        assert_eq!(exact(Nbcd, Size::B, &[ea(Disp16An)]), 16); // 8 + 8
+        assert_eq!(instr_cycles(Nbcd, Size::B, &[ea(An)]), CycleCost::Unmodeled);
+    }
+
+    // CHK and TRAPV may trap (data-dependent: Table 8-12 gives only the no-trap
+    // times, CHK 10 + ea and TRAPV 4; Table 8-14 the trap's 40 + ea / 34), and
+    // STOP waits for an interrupt (Table 8-12's 4 is the time to stop, not to
+    // resume). A budget cannot bound any of them, so they refuse, deliberately.
+    #[test]
+    fn the_trapping_and_waiting_instructions_are_unmodeled() {
+        use EaCat::*;
+        assert_eq!(instr_cycles(Chk, Size::W, &[ea(Dn), ea(Dn)]), CycleCost::Unmodeled);
+        assert_eq!(instr_cycles(Trapv, Size::W, &[]), CycleCost::Unmodeled);
+        assert_eq!(instr_cycles(Stop, Size::W, &[CatOp::ImmVal(0x2000)]), CycleCost::Unmodeled);
     }
 
     // Off-table forms refuse: no default cost exists.
