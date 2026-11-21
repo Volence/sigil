@@ -2292,20 +2292,8 @@ until its row is removed.
      `golden/provenance.toml` are untouched. A standalone copy also needs full git history and every `suite_path()`
      sibling linked beside it. **Ruled (proxy, 2026-11-19): re-pin at landing with `refreeze --freeze NAME --ab REF
      --repin-aeon`** (built and unit-tested in T-REPIN, `tests/repin_aeon.rs`; never run against the real chain yet).
-     **Landing order** (controller ruling 2026-11-19; the same text is in the `refreeze.rs` header and
-     `docs/OVERSEER-REFERENCE.md`; every precondition is enforced by the tool):
-     (a) sigil G0a lands on sigil master (fast-forward, owner-gated); (b) FROM SIGIL MASTER (then the G0a
-     tip, paired with aeon 99cb963d), with AEON_DIR at a clean checkout of aeon 99cb963d, `refreeze --attest`
-     tip #209 `pin-advance-99cb963d` and commit its ledger change ON SIGIL MASTER (evidence it should be green,
-     not proof: the G0a strict landing at c9c43c73 against a 99cb963d copy was GREEN,
-     `.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/landing-20261119T064629Z.log`); NEVER attest
-     #209 from the G0b tip, whose description tests need the descriptions, so it records RED, and a red tip can
-     only be superseded, never re-pinned; (c) merge or rebase `parcel/g0b-game-as-data` onto that master so the
-     G0b chain carries the attestation, and on the G0b branch `refreeze --check` must be clean with #209
-     attested; (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated); (e)
-     from the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA, `refreeze --freeze NAME --ab
-     <evidence> --repin-aeon`, commit; (f) `refreeze --attest` the new tip, commit; (g) the full strict landing
-     bar is fully green, then sigil G0b lands.
+     **Landing order:** written once, in `docs/OVERSEER-REFERENCE.md` ("The G0b landing order"; amended by the G0b
+     final review D-I1: empyrean first, then aeon (d), sigil (e)-(g), oracle, Cherub).
   2. **SUITE_PATHS step 3.** `resolve_engine_dir` takes steps 1, 2 and 4 only. Step 3 (derive from the calling repo)
      has no meaning for an installed binary, and deriving from the game's location would find the owner's live aeon
      for a game inside an aeon worktree. A game inside the engine's own checkout (sonic4, demo) is the "own checkout
@@ -2632,12 +2620,13 @@ until its row is removed.
 
 ## G0B-DIGEST-OUT-OF-TREE-ROOTS
 
-- state: open 2026-11-20 (found in G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- state: closed 2026-11-21 (found in G0b Task 9)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **closed** 2026-11-21 (G0b final review D-M2): Task 13a settled the export side (`G0B-EXPORT-BY-ROOTS`, closed:
+  every export row is root plus root-relative path, Cherub's export proves it). What remains of the listing side is
+  `G0B-LISTING-ROOT-SPELLING`.
 - The listing digest names a file outside the aeon tree under its build root (`root=engine|game|generated`,
-  `origin=source`) and a scan member there as `<root>:<path>` (`digest_names_each_root`). No shipped shape writes
-  such a row (both games are in the tree); the first is Cherub (Task 13). The G0a EXPORT has no equivalent yet: its
-  `files` roots are computed against the aeon tree, so an out-of-tree game's export placement is Task 13's to
-  settle (the listing grammar is ready, FORMAT unchanged).
+  `origin=source`) and a scan member there as `<root>:<path>` (`digest_names_each_root`). The new `root=` tokens
+  ride FORMAT 1; an older parser refuses an unknown token loudly.
 
 ## G0B-ORACLE-PIN-DRIFT
 
@@ -2693,11 +2682,12 @@ until its row is removed.
   3. ~~**`/./` in rendered game-root paths.**~~ Already fixed in 87540c32 (`Project::sources_root` drops `.`
      components; `build_check`'s unreachable-row assertion pins the clean path). Kept as a number so the
      Task 11 report's references hold.
-  4. **Old-driver surface still `pub` in `sigil-build`:** `place.rs` was written for the profile-driven driver;
-     after the deletion every `pub fn` there has a caller in the new driver or walk except `lens_pinned` (called
-     only inside `place.rs`, so it can be private). `game_defines`'s builtin-merge machinery is game-independent
-     and still used by tests and the define audit, so it stays, but its "built-in row" has one caller now. A
-     visibility pass, no behaviour change.
+  4. **Old-driver surface still `pub` in `sigil-build`** (corrected by the G0b final review A-M10): `lens_pinned`
+     is called only inside `place.rs`, so it can be private; `roots::gate_scan` had no caller at all and is deleted
+     (fix wave); `map_placement::move_island_rows` and `game_defines::merge_builtin_and_game` /
+     `define_listing_rows` are called only by their own unit tests (`define_listing_rows`'s tests are what cover
+     the live `define_listing_rows_from`, so moving them onto it comes first). A visibility pass, no behaviour
+     change.
   5. **`scripts/walk_inplace_proof.sh` is historical.** It drives `--aeon`, which no longer parses;
      `golden/provenance.toml` cites it, so it is kept with a HISTORICAL header note rather than rewritten.
   6. **`driver_comparison`'s listing column went red at 87540c32 and stayed red through ec859616**, and the prep
@@ -2734,6 +2724,10 @@ until its row is removed.
      the engine's S4LZ codec, which no allow row can exempt honestly under the G0c-exit rule). Exit: G0c removes
      the `test_support` reference-listing helper with the seams' port gates, or a `test-support` feature (item 2)
      takes it out of the closure; then derive `[outputs]` stems into the fixture with a codec-name exemption.
+  5. **Binaries outside the closure still name games** (G0b final review B-M13, deferred 221/236):
+     `crates/sigil-harness/src/bin/cycle_fraction.rs:594` `if label != "sonic4 debug" { continue; }`. The gate does
+     not reach `src/bin` by design (nothing the driver links declares it); a renamed row silently prints no detail
+     section. Exit: key the detail on a shape the descriptions mark, or drop the filter.
 
 ## G0B-AS-FEATURE-DEFINES-INERT
 
@@ -2879,7 +2873,10 @@ until its row is removed.
 - Also (Task 13/13a review, minor 1): the listing digest's `game` root is `project.sources_root()` while the export's
   is `project.game_dir` (`sigil-cli/src/main.rs` ~3247-3248), so for a game whose `game.toml` sets `sources.root` to
   anything but `"."` the listing's `root=game path=` and the export's `game` row name the same file relative to
-  different directories; one root must win when the spellings are unified.
+  different directories; one root must win when the spellings are unified. A further effect (G0b final review
+  B-M15): with `sources.root != "."` on an out-of-tree game, `game.toml`, `map.toml` and `baseline.toml` sit under
+  no named root, so by `source_digest.rs`'s placement order they are written `root=/` with an absolute path, which
+  puts a machine path in the listing. No game does this today (all three use `"."`).
 
 ## G0B-BLIND-REFUSAL-UNNAMED
 
@@ -2892,3 +2889,81 @@ until its row is removed.
   (`dropped_by_proc: Vec<(String, usize)>`, ~201) keeps only proc and count, so naming the symbol there needs the span
   recorded first. Fix: render file:line and the unresolved name in both refusals. Pre-G0b gate code with pinned
   message text, so not landing work for G0b.
+
+## G0C-SOUND-SEAM-GAME-IDENTITY
+
+- state: open 2026-11-21 (G0b final review A-I3, controller ruling: BOOK)  size: `S`  project: `G0B-GAME-AS-DATA`
+- `Seams::emit_sound` (and `validate_sound`) carry no game identity: the harness seams (`seam1.rs`, `seam2.rs`,
+  `import_check::seam_roots`) serve sonic4's sound data by literal path (the five G0c allow-list rows in
+  `tests/no_game_names.rs`). A second game with `sound = true` would be fed sonic4's banks, or fail late in sonic4's
+  terms at whichever check trips first (`source_digest.rs`'s stray-scan refusal, a seam path), never by a refusal
+  that names the seam (seat B Minor 14 is the same finding from the harness side).
+- **G0c entry criterion:** a second game with `sound = true` either builds from its own descriptions, or is refused
+  up front by a named refusal saying the sound seams serve only the game they were written for. The fix wave judged
+  the up-front refusal over the ruling's 30-line bar (it needs a game identity on the `Seams` trait: the signature,
+  its three driver call sites, both impls, and a test that forges a sound-on shape for a game the seams do not
+  serve), so it is booked rather than added. G0c should start from that refusal as its red test.
+
+## G0B-FINAL-REVIEW-RESIDUE
+
+- state: open 2026-11-21 (G0b final review fix wave)  size: `M`  project: `G0B-GAME-AS-DATA`
+- The four final-review seats' Minor findings and deferred-triage lines that the fix wave neither fixed nor saw
+  dropped by the reviewer. Each cites its report id (`final-review-<seat>.md`, Minor n, or the deferred ledger
+  line); none moves a ROM byte today. The fix-wave report's table holds the full disposition.
+  - **A-M2** `describe.rs` `UnknownShape`, `MissingFeatures`, `ExtendsCycle`, `DerivedDefine`, `UndeclaredShape`,
+    `BadAlign` carry no file path, and `UnknownShape` does not list the declared shapes (`no shape named `relase``).
+  - **A-M4** `DERIVED_DEFINES` (`describe.rs:37`) spells `__DEBUG__` / `__MDDBG__` in Rust although `engine.toml`
+    `as_feature_defines` now produces them; the rule that follows the data is "a define may not use a name an
+    `as_feature_defines` row produces".
+  - **A-M5** `driver.rs` `declares_island` restates `debug || crash_report` beside the engine gate rows.
+  - **A-M6 / B-I1 note** `entry_seeds` is positional (contract, then RAM; `seeds[2]` reused by the RAM harvest).
+    Named keys would be self-describing; FORMAT-bump question, so not in the fix wave.
+  - **A-M7 / deferred 103** `walk.rs:168` an anchor whose `holds` matches more than one ROM section binds the first
+    silently; refuse `hit.len() > 1`.
+  - **A-M8** `align.rs` an `[[align]]` row whose label heads no section is silently inert.
+  - **A-M10 rest** see `G0B-TASK11-RESIDUE` item 4 (corrected).
+  - **A-M13** a residual-AS failure prints the first diagnostic in `{:?}` form, not rendered.
+  - **A-M14 / deferred 229** the sound-emission block is written three times in `driver.rs` (G0c, with the seams).
+  - **A-M15** engine and game trees scanned and parsed three times per build.
+  - **A-M16** `build_dir::check_outside` checks only the engine checkout, not an out-of-tree game's own directory.
+  - **A-M17** `--extra-entry <path>` is tried against the engine checkout and cwd, never the game directory.
+  - **A-M18** the engine is found by walking every ancestor up to `/`; bound it at the enclosing repository root.
+  - **A-M19** `driver_units.rs` modules all `#[cfg(test)]` behind `pub use` globs (harmless).
+  - **A deferred 91** broken rustdoc links in `harvest.rs` (no `cargo doc` run); **deferred 101/102/221**
+    `AsSymbols` in the public API, `Seams` returning `Box<dyn Any>` (also **B-M20**), `allow(too_many_arguments)`
+    on `validate_sound`: all G0c, with the seams. **Deferred 128** `BuildDir` cleaned only on drop (with
+    `G0B-TASK11-RESIDUE` item 2).
+  - **B-M3** `Artifacts.output` is always `Some` (dead `None` arms); `BuildIdentity.target` always equals the shape.
+  - **B-M7 rest** `section_extents_of`, `section_label_owners_of`, `phase_bank_lmas_of` return `Result` and cannot
+    fail (text half fixed in the wave).
+  - **B-M12** committed `pins.rs` header says "sigil-native canonical resolve" while the generator now writes the
+    `sigil build --project` provenance; `pins.rs` is a generated, refreeze-listed file, so it is not hand-edited:
+    landing step (3) `--repin-aeon` regenerates it.
+  - **B-M16 / C deferred** `shipped_shapes.rs` set pin is reference-dependent (declared, strict-gated).
+  - **B-M17 / deferred 225** `sound_fold_heads.rs` re-implements the seam's head selection (G0c).
+  - **B-M18, C-M10, deferred 237 / Task 11** hand-listed games or shapes not held to the shipped set:
+    `listing_defines.rs` `shape_pairs`, `build_export_layouts_crosscheck.rs` `seven()` with its copied
+    `census.len() == 7`, `game_contract_env_coverage.rs` `shipped()`, `installed_binary_needs_no_build_tree.rs:37`,
+    `lst_source_digest.rs:37`.
+  - **B-M19** the export's hash-only root name is the literal `aeon` (pre-existing G0a format).
+  - **B-M21** test and message names still say "profile" (`listing_defines.rs`, `listing_equ_shape_aware.rs`,
+    `sound_fold_heads.rs`, `sound_bank_id_check.rs`; "plain" in `m68k_roundtrip_stream.rs:190-205`).
+  - **B deferred 175 M6** `seam_roots` bound to sonic4 (G0c; `G0B-NO-GAME-NAMES-RESIDUE` item 1);
+    **175 M7** new `root=` tokens under FORMAT 1 (noted in the closed `G0B-DIGEST-OUT-OF-TREE-ROOTS`);
+    **229** `SOUND_GAME_DESC_REL` literal (G0c, allow row); **246/247** `freeze_journal` `#[path]` and module-wide
+    `allow(dead_code)` (`G0B-NO-GAME-NAMES-RESIDUE` item 2).
+  - **B deferred 236, C deferred Task 11 → 12** no red-first for `assert_lists_every_shipped_shape` (five gates lean
+    on it) or the `golden_write_gate` stub `-*)` arm.
+  - **C-M1** `.emp` and AS disagree on a `..` inside a root (`sandbox.rs` joins the unfolded `Located::Root.rel`);
+    fold `rel` in `inside()`.
+  - **C-M2** `resolve_rooted_path` swallows two canonicalize errors, skipping the escape check; refuse when it
+    cannot decide.
+  - **C-M4** `LEGACY_SOUND_MOUNT` in `sigil-span` stays for the `[root.stale-generated]` refusal until G0c.
+  - **C-M11** `build_check.rs:108` `census()` accepts either game's `checked:` line; pass the game in.
+  - **C-M12** `p5_constants_flip.rs` renders any `shapes::as_inputs` error as `skip:` outside strict mode.
+  - **C-M13 / C deferred Task 6** `build_hermetic.rs` tracks files only (an empty directory a build creates is
+    unseen), and its identical-bytes "rewrote" arm has never been shown red.
+  - **C-M15** new scratch-tree writers under `CARGO_TARGET_TMPDIR` (`extra_entry.rs:91` `probe_tree`, never
+    removed; `build_check.rs`, removed only on success): adds to `G0B-TASK11-RESIDUE` item 2.
+  - **C deferred Task 9 M3** symlink-escape check exists only on the `.emp` side; the AS side goes with the residual
+    AS (`G0B-UNROOTED-TREE-READS`).

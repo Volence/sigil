@@ -727,20 +727,32 @@ happens to sit at the tip, which is the point of deriving rather than listing.
   tip's or does not descend from it; one not reachable from aeon `origin/master` (the
   `rev_reachability` rule); a tip that is not green and attested; and `--supersede-tip` beside
   it, and `--ab` that is not evidence (`ab_witness_fault`). **The G0b landing order** (controller
-  ruling 2026-11-19; the same text is in the `refreeze.rs` header and QUEUE
-  G0B-DESCRIBE-TASK2-RESIDUE item 6):
-  (a) sigil G0a lands on sigil master (fast-forward, owner-gated); (b) FROM SIGIL MASTER (then the G0a
-  tip, paired with aeon 99cb963d), with AEON_DIR at a clean checkout of aeon 99cb963d, `refreeze --attest`
-  tip #209 `pin-advance-99cb963d` and commit its ledger change ON SIGIL MASTER (evidence it should be green,
-  not proof: the G0a strict landing at c9c43c73 against a 99cb963d copy was GREEN,
-  `.sigil-g0a/.superpowers/sdd/2026-11-17-g0a-build-data-export/landing-20261119T064629Z.log`); NEVER attest
-  #209 from the G0b tip, whose description tests need the descriptions, so it records RED, and a red tip can
-  only be superseded, never re-pinned; (c) merge or rebase `parcel/g0b-game-as-data` onto that master so the
-  G0b chain carries the attestation, and on the G0b branch `refreeze --check` must be clean with #209
-  attested; (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated); (e)
-  from the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA, `refreeze --freeze NAME --ab
-  <evidence> --repin-aeon`, commit; (f) `refreeze --attest` the new tip, commit; (g) the full strict landing
-  bar is fully green, then sigil G0b lands.
+  ruling 2026-11-19, amended by the G0b final review D-I1, 2026-11-21; QUEUE G0B-DESCRIBE-TASK2-RESIDUE
+  item 6 and the `refreeze.rs` header point here). Steps (a) to (c) are done: sigil G0a landed on master,
+  #209 was attested there, and `parcel/g0b-game-as-data` carries master (87b5c195). What remains, in order:
+  (1) **empyrean first**: `feat/g0b-cherub-path` fast-forwards to empyrean `main` and is pushed (owner-gated).
+  It goes first because two vendor-drift checks read the LIVE sibling empyrean checkout, not a pin: aeon's
+  `tools/test_contract_build_vendor.py` (in the pytest lane `build.sh`, `landing_build.sh` and step (3)'s
+  freeze all run) and sigil's `scripts/check-vendored-contract.sh` (`STEP_CONTRACT_VENDOR`). With empyrean
+  `main` still holding the old schema bytes, both go red `VENDOR DRIFT` for a reason unrelated to the work,
+  unless `EMPYREAN_DIR` points at the branch checkout.
+  (2) = (d) aeon `feat/g0b-descriptions` fast-forwards to aeon master and is pushed (owner-gated). Every edit to a
+  file the build export names (a comment included) moves oracle's export pins and the aeon SHA the repin and
+  Cherub name: none after this step until (6).
+  (3) = (e) from the G0b branch, AEON_DIR at a clean checkout of that aeon master SHA: `refreeze --freeze NAME
+  --ab <evidence> --repin-aeon`; commit.
+  (4) = (f) `refreeze --attest` the new tip (same AEON_DIR); commit.
+  (5) = (g) the full strict landing bar is fully green (the one by-design red is gone after (3)); the final pair
+  run also runs aeon's helper-closure tests against the branch sigil (ledger, Task 10/11); then sigil G0b lands
+  (push owner-gated).
+  (6) oracle: regenerate the pinned exports and the trimmed fixture with the LANDED sigil against the LANDED
+  aeon SHA (`tools/g0a-real-exports.sh`, `tools/g0a_trim_export.py`, strict runner `ORACLE_G0A_STRICT=1`,
+  `cargo test -p oracle-aether`), then oracle lands. Decide here, and record, QUEUE `G0B-ORACLE-PIN-DRIFT`'s open
+  question: whether a sigil or aeon landing lane runs oracle's runner from now on.
+  (7) Cherub re-pins its sigil, aeon, empyrean and oracle pins to the landed SHAs, re-runs `ci/build.sh` (ROM
+  sha256 still `797d41b9...`), and records the transcript in `ci/evidence/`.
+  Also at landing: confirm the vendored `contract/build/SOURCE` commit (b7717eca or its successor) is reachable from
+  empyrean `main` (its `empyrean-branch:` line names a branch that will not exist; re-vendor or accept).
   After a refusal at the append (a byte move) the rebuild has rewritten blobs, size tables and
   `pins.rs`: the exact restore command is in the `refreeze.rs` header.
 - **AEON-REV-WELL-FORMED** in `provenance::check` — an entry carrying an `aeon_rev` at all must
