@@ -164,3 +164,39 @@ test pub_typed_and_section_nested_duplicates_are_refused ... ok
 test distinct_names_and_other_kinds_stay_legal ... ok
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+### Task 3: `[operand.bare-number]`
+
+Mutation (plan Task 3 Step 8): `if let Some(n) = v.as_stored_int()` becomes `if let (false, Some(n)) = (true, v.as_stored_int())` in `map_plain`. It compiled as written (no warning surfaced in the filtered output; the plan sample and the real code agree here).
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'if let (false, Some(n))\|if let Some(n) = v.as_stored_int()' crates/sigil-frontend-emp/src/eval/asm.rs
+3562:        if let (false, Some(n)) = (true, v.as_stored_int()) {
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test operand_bare_number   # mutated
+test a_z80_bare_number_is_untouched ... ok
+test a_number_valued_expression_is_refused_too ... FAILED
+test a_bare_number_operand_is_refused ... FAILED
+test the_immediate_and_the_sized_absolute_stay_legal ... ok
+test a_spliced_integer_stays_an_immediate ... ok
+thread 'a_number_valued_expression_is_refused_too' (669114) panicked at crates/sigil-frontend-emp/tests/operand_bare_number.rs:61:5:
+  left: 0
+ right: 1
+thread 'a_bare_number_operand_is_refused' (669113) panicked at crates/sigil-frontend-emp/tests/operand_bare_number.rs:53:5:
+  left: 0
+ right: 1
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test operand_bare_number`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/asm.rs
+$ git status --short --untracked-files=no
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test operand_bare_number   # restored
+test a_bare_number_operand_is_refused ... ok
+test the_immediate_and_the_sized_absolute_stay_legal ... ok
+test a_number_valued_expression_is_refused_too ... ok
+test a_z80_bare_number_is_untouched ... ok
+test a_spliced_integer_stays_an_immediate ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
