@@ -100,9 +100,10 @@ fn resolve(aeon: &Path, r: &DigestRead) -> PathBuf {
         DigestRoot::Aeon => aeon.to_path_buf(),
         DigestRoot::Sigil => sigil_harness::source_digest::sigil_source_root(),
         DigestRoot::Filesystem => PathBuf::from("/"),
-        // The profile-driven builds this file runs name no source roots (G0b Task 9).
+        // Every build this file runs is an in-tree game, whose rows are written
+        // tree-relative (G0b Task 9; QUEUE G0B-LISTING-ROOT-SPELLING).
         other @ (DigestRoot::Engine | DigestRoot::Game | DigestRoot::Generated) => {
-            panic!("a profile-driven build wrote a {other:?} row for {}", r.file.path)
+            panic!("an in-tree build wrote a {other:?} row for {}", r.file.path)
         }
     };
     base.join(&r.file.path)

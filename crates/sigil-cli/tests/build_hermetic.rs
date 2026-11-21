@@ -14,10 +14,8 @@
 //! removed from its environment, so the gate also proves no build needs the variable.
 //!
 //! Asserted, each after its own step, on the same tree:
-//!   - `sigil build --check` (sonic4, sound on);
-//!   - two full `sigil build` runs of the same shape;
-//!   - two full `sigil build --project games/sonic4 --shape release` runs (the
-//!     game-as-data driver; it has no `--check` yet).
+//!   - `sigil build --project games/sonic4 --shape release --check` (sound on);
+//!   - two full `sigil build --project games/sonic4 --shape release` runs.
 //!
 //! Reference tree: `AEON_DIR` (the house pattern; `SIGIL_STRICT_GATE` hard-fails a
 //! missing tree).

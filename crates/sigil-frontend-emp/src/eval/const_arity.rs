@@ -119,7 +119,7 @@ impl Evaluator<'_> {
         // newtype is a distinct NAME for the same cells, not a wider value set, so
         // `newtype SfxId = u8` holds 0..=255 exactly as `u8` does.
         let through = match &resolved {
-            Ty::Newtype(name) => self.newtype_prim(name, span).map(|p| (name.clone(), p)),
+            Ty::Newtype(name) => self.newtype_prim(name).map(|p| (name.clone(), p)),
             _ => None,
         };
         let scalar = matches!(resolved, Ty::Prim { .. }) || through.is_some();
@@ -172,7 +172,7 @@ impl Evaluator<'_> {
     /// so a cyclic chain, which the layout pass reports, ends here silently). `None` when
     /// the chain ends anywhere but a primitive (a struct, an array, a refinement: their
     /// contracts are their own).
-    fn newtype_prim(&mut self, name: &str, _span: Span) -> Option<Ty> {
+    fn newtype_prim(&mut self, name: &str) -> Option<Ty> {
         let mut current = name.to_string();
         for _ in 0..32 {
             let decl = self.newtypes.get(current.as_str()).copied()?;

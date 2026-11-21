@@ -240,7 +240,9 @@ pub enum DigestRoot {
 }
 
 impl DigestRoot {
-    fn token(self) -> Option<&'static str> {
+    /// The `root=` token, `None` for the aeon tree (a scan member outside the tree is
+    /// written `<token>:<path>`).
+    pub fn name(self) -> Option<&'static str> {
         match self {
             DigestRoot::Aeon => None,
             DigestRoot::Engine => Some("engine"),
@@ -249,12 +251,6 @@ impl DigestRoot {
             DigestRoot::Generated => Some("generated"),
             DigestRoot::Sigil => Some("sigil"),
         }
-    }
-
-    /// The `root=` token, `None` for the aeon tree (a scan member outside the tree is
-    /// written `<token>:<path>`).
-    pub fn name(self) -> Option<&'static str> {
-        self.token()
     }
 
     fn from_token(token: &str) -> Option<DigestRoot> {
@@ -413,7 +409,7 @@ fn digest_path(p: &DigestPath) -> Result<(), String> {
 /// ` path=<p>`, preceded by ` root=<name>` when the root is a named one. `path=` is last
 /// and runs to the end of the line, which is what lets a path contain a space.
 fn digest_path_fields(p: &DigestPath) -> String {
-    match p.root.token() {
+    match p.root.name() {
         Some(root) => format!(" root={root} path={}", p.path),
         None => format!(" path={}", p.path),
     }

@@ -344,7 +344,7 @@ fn the_project_contract_report_prints_the_census() {
 
 /// The mode pairings refuse with these words.
 #[test]
-fn project_report_and_check_refuse_what_the_legacy_grammar_refuses() {
+fn project_report_and_check_mode_pairings_are_refused_by_name() {
     let tmp = tempfile::tempdir().unwrap();
     let cases: [(&[&str], &str); 4] = [
         (&["--report", "contracts", "-o", "x.bin"], "--report prints instead of building; drop -o / --emit-lst"),

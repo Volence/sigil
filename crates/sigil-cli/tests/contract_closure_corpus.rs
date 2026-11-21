@@ -1976,17 +1976,15 @@ section s (cpu: m68000) {
 }
 
 /// THE FROZEN CONTRACT BASELINES, PER SHIPPED SHAPE — the CI half of the same
-/// pin the build-integrated closure gate enforces, reading the SAME constants
-/// from `sigil_harness::contract_baseline` so the two cannot fork.
+/// pin the build-integrated closure gate enforces, reading the SAME rows (each
+/// game's and the engine's `baseline.toml`) so the two cannot fork.
 ///
 /// Per SHAPE, not once: `[call.live-clobbered]` is shape-dependent (the debug
 /// family assembles debug-gated code the plain family never sees), and a
 /// define-free walk would see neither arm of any gated `if`. Walking every shape
-/// under its own profile is what makes this pin a statement about shipped code —
-/// and it is what exercises `d1c_baseline`'s DEBUG arm — and, since 2026-09-02, its
-/// DEMO arm too (`D1C_DEMO_EXTRA`, a capability-gated body one shipped game declares
-/// and the other does not) — which no define-free gate can
-/// reach.
+/// under its own defines is what makes this pin a statement about shipped code —
+/// it is what reaches the debug-only rows and the capability-gated rows one shipped
+/// game declares and the other does not — which no define-free gate can reach.
 ///
 /// RATCHET, both directions: a firing outside the baseline is a new violation; a
 /// baseline row that stops firing is a stale pin, and possibly an analysis that

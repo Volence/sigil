@@ -328,8 +328,8 @@ fn crate_graph_is_one_way() {
     // (c) only the top-level consumers may depend on sigil-frontend-as: sigil-cli,
     // sigil-harness (it drives the same front-end→link pipeline for the byte-exact diff
     // gate), and sigil-build, the build driver G0b moves out of the harness (since G0b
-    // Task 5 its game-as-data driver assembles a game's residual AS side itself, as the
-    // harness's old driver does). A library BELOW the drivers still may not.
+    // Task 5 its game-as-data driver assembles a game's residual AS side itself). A
+    // library BELOW the driver still may not.
     const AS_CONSUMERS: [&str; 3] = ["sigil-cli", "sigil-harness", "sigil-build"];
     for (pkg, deps) in &deps_of {
         if deps.iter().any(|d| d == "sigil-frontend-as") {
@@ -342,7 +342,7 @@ fn crate_graph_is_one_way() {
     }
 
     // Positive wiring check so (c) is non-vacuous: sigil-cli AND sigil-harness
-    // (the two whitelisted consumers) DO pull in the frontend.
+    // (two of the three whitelisted consumers) DO pull in the frontend.
     assert!(
         get("sigil-cli").contains(&"sigil-frontend-as".to_string()),
         "sigil-cli must depend on sigil-frontend-as"
