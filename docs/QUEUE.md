@@ -2717,6 +2717,8 @@ until its row is removed.
   3. **Comments are not gated.** They are prose examples, not driver decisions. Since the G0b final-review fix wave
      (C-I1) the gate COUNTS them and its line says exactly what: comment lines naming a game (an id or a games path),
      test-only items left out, 29 doc (`///`, `//!`, `/** */`) and 14 plain (`//`, `/* */`) at that wave.
+     Label vs code: `no_game_names.rs:269-274` (`StripTestOnly::keep_items`) leaves test-only code out of the
+     plain-comment count only for whole items, though the label says test-only items are left out.
   4. **Output stems are not needles (C-I3 stem half, stopped by the ruling's bar).** Adding sonic4's `[outputs]`
      stem `s4` as a needle measured 5 new hits: `crates/sigil-harness/src/test_support.rs:520` `listing_path`'s
      `"s4.debug.lst"` / `"s4.lst"` (a real game fact in the linked library; deriving it from `[outputs]` would need

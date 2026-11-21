@@ -60,7 +60,9 @@ gates' last output) follows the parcel record unchanged.
   no comparison normalisation; #209 attested as that branch's first commit.
 - `sigil-build` may depend on `sigil-frontend-as` (the driver assembles the residual AS side itself).
 - `cp -a` copies of `.aeon-g0b` drop `__pycache__` (later: never `cp -a` a worktree; `git clone --no-hardlinks`).
-- WALK player_climb: `end = section:player_climb`; the `end_measures = "allotment"` kind retired.
+- WALK player_climb: `end = section:player_climb`; the `end_measures = "allotment"` kind retired; the
+  `region_end_contracts` parse-guard re-grounded on every `[[region]]` row (its floor derived from `repin.toml`), with
+  a negative control on a region ending at the next section's head, red-first, in its own commit.
 - Task 6: "7/7 (old and new driver)" means old 7/7 plus new byte-neutral across the task; the global `AEON_DIR` write
   removed.
 - WALK M1: deb2 appendix names differing only within shared-address groups accepted as the same name set.
@@ -74,8 +76,10 @@ gates' last output) follows the parcel record unchanged.
 - Task 10: no `--legacy` flip (Task 11 deletes the old grammar); oracle re-pinned on `.oracle-g0b`
   `feat/g0b-shape-names`; `gate_cut_shape`'s (game, game) spelling dropped; oracle e6c6fb78 (WALK byte move re-pin)
   accepted.
-- Task 11: "one commit" is the deletion itself, preparatory moves first; its 7/7 is cross-driver; the "each green"
-  red window (87540c32..a265daf1) waived, no history rewrite (QUEUE G0B-TASK11-RESIDUE items 6-7).
+- Task 11: "one commit" is the deletion itself, preparatory moves first; its 7/7 is cross-driver; a golden needing
+  `provenance.toml`, `refreeze` or pairing-test edits is a STOP item for the controller (the chain is appended once,
+  at landing); the "each green" red window (87540c32..a265daf1) waived, no history rewrite (QUEUE
+  G0B-TASK11-RESIDUE items 6-7).
 - Task 11 `as_feature_defines` (proxy, Fable): the three rows stay in `engine.toml` and go with the residual AS;
   the anti-goal meant the port-gate defines (`SIGIL_EMP_*`, `extra_as_defines`).
 - Task 12: comments are not gated, on condition the printed count is honest (done in the fix wave);
