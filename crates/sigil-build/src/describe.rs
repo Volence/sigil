@@ -31,6 +31,18 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 /// The one description format version this reader accepts.
+///
+/// ── FORMAT RULE ──
+///
+/// `format` names a key set, and every struct here is closed, so a reader can only read the
+/// key set it was built for. The number is checked FIRST, from the untyped table, before the
+/// closed typed parse ([`check_format_text`]): an older Sigil reading a newer file must be
+/// told "this file is format N, this reader accepts format 1", not "unknown field `x`"
+/// (G0b final review A-I4). After the first landing, ANY change to the key set of
+/// `game.toml`, `engine.toml` or `baseline.toml` (a key added, optional ones included,
+/// removed, renamed or re-typed) bumps `format` in the same change, together with every
+/// committed description. Before that landing (G0b), the number stayed 1 while Tasks 5,
+/// 9a and 11 added required `engine.toml` keys.
 pub const FORMAT: u32 = 1;
 
 /// Defines a description may not write, because the driver derives them from [`Features`].
@@ -548,7 +560,27 @@ impl std::error::Error for DescError {}
 fn read_toml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, DescError> {
     let text = sigil_span::read_set::read_to_string(path)
         .map_err(|e| DescError::Io { path: path.to_path_buf(), message: e.to_string() })?;
-    toml::from_str(&text).map_err(|e| DescError::Parse { path: path.to_path_buf(), message: e.to_string() })
+    parse_typed(path, &text)
+}
+
+/// The format check ([`check_format_text`]), then the closed typed parse.
+fn parse_typed<T: for<'de> Deserialize<'de>>(path: &Path, text: &str) -> Result<T, DescError> {
+    check_format_text(path, text)?;
+    toml::from_str(text).map_err(|e| DescError::Parse { path: path.to_path_buf(), message: e.to_string() })
+}
+
+/// Refuse a description whose `format` is not [`FORMAT`], read from the untyped table so the
+/// refusal comes before any unknown or missing key of the closed typed parse (the
+/// [`FORMAT`] rule). A file that is not TOML, or has no integer `format`, is left to the typed
+/// parse, which names what is wrong.
+fn check_format_text(path: &Path, text: &str) -> Result<(), DescError> {
+    let Ok(table) = text.parse::<toml::Table>() else { return Ok(()) };
+    match table.get("format").and_then(toml::Value::as_integer) {
+        Some(n) if n != i64::from(FORMAT) => {
+            Err(DescError::Format { path: path.to_path_buf(), found: u32::try_from(n).unwrap_or(u32::MAX) })
+        }
+        _ => Ok(()),
+    }
 }
 
 fn check_format(path: &Path, found: u32) -> Result<(), DescError> {
@@ -577,8 +609,7 @@ fn check_align(rows: &[AlignRow]) -> Result<(), DescError> {
 /// check: the format, no derived define, every shape reference declared, a root shape has
 /// features, alignments are powers of two.
 pub fn parse_game(path: &Path, text: &str) -> Result<GameDesc, DescError> {
-    let mut g: GameDesc =
-        toml::from_str(text).map_err(|e| DescError::Parse { path: path.to_path_buf(), message: e.to_string() })?;
+    let mut g: GameDesc = parse_typed(path, text)?;
     stamp_gate_rows(path, &mut g.gate)?;
     check_format(path, g.format)?;
     check_defines("[defines]", &g.defines)?;
@@ -897,6 +928,31 @@ mod tests {
         // Control: the same file with a defined pattern reads.
         let ok = format!("{MINI}\n        [[gate]]\n        modules = \"games.mini.**\"\n        place_in = \"all\"\n");
         assert_eq!(parse_game(Path::new("mini/game.toml"), &ok).unwrap().gate.len(), 1);
+    }
+
+    /// G0b final review A-I4: an older reader meeting a newer file is told the format, not
+    /// an unknown or missing key. A `format = 2` file that also adds a key, or drops one, is
+    /// refused as a format mismatch; so is a newer engine.toml and baseline.toml.
+    #[test]
+    fn a_format_mismatch_is_named_before_any_key_error() {
+        let added = MINI.replace("format = 1", "format = 2\nnew_in_format_two = true");
+        let dropped = MINI.replace("format = 1", "format = 2").replace("require_one_text = false\n", "");
+        for (what, text) in [("an added key", added), ("a dropped key", dropped)] {
+            assert!(text.contains("format = 2"), "{what}: the mutation did not apply");
+            let err = parse_game(Path::new("mini/game.toml"), &text).expect_err(what);
+            assert!(matches!(err, DescError::Format { found: 2, .. }), "{what}: {err}");
+            assert!(err.to_string().contains("this reader accepts format = 1"), "{what}: {err}");
+        }
+        let dir = crate::build_dir::BuildDir::create().unwrap();
+        for (name, text) in [("engine.toml", "format = 3\nfrom_the_future = 1\n"), ("baseline.toml", "format = 3\nnew_list = []\n")] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            let err = if name == "engine.toml" { load_engine(&path).map(|_| ()) } else { load_baseline(&path).map(|_| ()) };
+            assert!(matches!(err, Err(DescError::Format { found: 3, .. })), "{name}: {err:?}");
+        }
+        // Control: format 1 with an unknown key is still refused by the key's name.
+        let unknown = MINI.replace("format = 1", "format = 1\nnew_in_format_two = true");
+        assert!(parse_game(Path::new("g"), &unknown).unwrap_err().to_string().contains("new_in_format_two"));
     }
 
     #[test]
