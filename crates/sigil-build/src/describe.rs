@@ -170,11 +170,17 @@ pub struct GateRule {
     pub row: usize,
 }
 
-fn stamp_gate_rows(path: &Path, rules: &mut [GateRule]) {
+/// Stamp each rule with its file and 1-based row, and refuse a pattern spelling the matcher
+/// does not define ([`crate::gating::check_pattern`]) naming the file and the row: matched
+/// literally, such a pattern would match nothing (G0b final review A-I6).
+fn stamp_gate_rows(path: &Path, rules: &mut [GateRule]) -> Result<(), DescError> {
     for (i, r) in rules.iter_mut().enumerate() {
         r.origin = path.display().to_string();
         r.row = i + 1;
+        crate::gating::check_pattern(&r.modules)
+            .map_err(|m| DescError::Parse { path: path.to_path_buf(), message: format!("[[gate]] row {}: {m}", r.row) })?;
     }
+    Ok(())
 }
 
 /// Where a gated module is placed. TOML: `"all"`, `{ shapes = [..] }`, `{ feature = ".." }`.
@@ -573,7 +579,7 @@ fn check_align(rows: &[AlignRow]) -> Result<(), DescError> {
 pub fn parse_game(path: &Path, text: &str) -> Result<GameDesc, DescError> {
     let mut g: GameDesc =
         toml::from_str(text).map_err(|e| DescError::Parse { path: path.to_path_buf(), message: e.to_string() })?;
-    stamp_gate_rows(path, &mut g.gate);
+    stamp_gate_rows(path, &mut g.gate)?;
     check_format(path, g.format)?;
     check_defines("[defines]", &g.defines)?;
     let declared = |place: String, name: &str| -> Result<(), DescError> {
@@ -615,7 +621,7 @@ pub fn load_game(path: &Path) -> Result<GameDesc, DescError> {
 /// Load and check an `engine.toml`.
 pub fn load_engine(path: &Path) -> Result<EngineDesc, DescError> {
     let mut e: EngineDesc = read_toml(path)?;
-    stamp_gate_rows(path, &mut e.gate);
+    stamp_gate_rows(path, &mut e.gate)?;
     check_format(path, e.format)?;
     check_defines("[defines]", &e.defines)?;
     check_align(&e.align)?;
@@ -870,6 +876,27 @@ mod tests {
         assert_eq!(parse_game(Path::new("g"), &rootless), Err(DescError::MissingFeatures("release".into())));
         let fmt2 = MINI.replace("format = 1", "format = 2");
         assert!(matches!(parse_game(Path::new("g"), &fmt2), Err(DescError::Format { found: 2, .. })));
+    }
+
+    /// G0b final review A-I6: a `[[gate]]` pattern the matcher does not define (`?`, `[`,
+    /// `***`, an empty `modules`) is refused when the file is read, naming the file, the row
+    /// and the pattern. It used to be matched literally, so it matched nothing and the
+    /// module its author meant surfaced later as `[gate.ungated]`.
+    #[test]
+    fn a_gate_pattern_the_matcher_does_not_define_is_refused_at_read() {
+        for bad in ["games.mini.te?t", "games.mini.***", "games.mini.[ab]", ""] {
+            let text = format!(
+                "{MINI}\n        [[gate]]\n        modules = \"games.mini.ok\"\n        place_in = \"all\"\n        [[gate]]\n        modules = \"{bad}\"\n        place_in = \"all\"\n"
+            );
+            let err = parse_game(Path::new("mini/game.toml"), &text).expect_err(bad).to_string();
+            assert!(err.contains("mini/game.toml") && err.contains("[[gate]] row 2"), "names the file and row: {err}");
+            if !bad.is_empty() {
+                assert!(err.contains(&format!("`{bad}`")), "names the pattern: {err}");
+            }
+        }
+        // Control: the same file with a defined pattern reads.
+        let ok = format!("{MINI}\n        [[gate]]\n        modules = \"games.mini.**\"\n        place_in = \"all\"\n");
+        assert_eq!(parse_game(Path::new("mini/game.toml"), &ok).unwrap().gate.len(), 1);
     }
 
     #[test]

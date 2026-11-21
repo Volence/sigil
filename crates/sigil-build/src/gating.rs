@@ -18,7 +18,8 @@
 //!
 //! So `games.sonic4.ojz_*_act1` names the generated act modules and nothing deeper, and
 //! `engine.**` names the whole engine tree. A pattern with any other wildcard spelling
-//! (`***`, `?`, `[`) is refused when the rule is read ([`check_pattern`](crate::gating::check_pattern)).
+//! (`***`, `?`, `[`), or an empty one, is refused when the description is read
+//! ([`check_pattern`](crate::gating::check_pattern), called by the loaders for every row).
 
 use std::path::PathBuf;
 
