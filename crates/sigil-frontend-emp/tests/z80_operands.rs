@@ -245,7 +245,7 @@ fn module_cpu_z80_opening_m68000_section_mismatches() {
 fn module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized() {
     let src = "module m\n\
                proc P() {\n\
-                 ld a, 5\n\
+                 ld a, b\n\
                }\n";
     let (_module, diags) = lower(src);
     assert!(

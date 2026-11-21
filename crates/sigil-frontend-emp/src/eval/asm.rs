@@ -3554,6 +3554,20 @@ impl Evaluator<'_> {
             return Some(op);
         }
         let v = self.eval_expr(expr, env);
+        // A10 W1: a number written in a 68000 operand position is refused — the
+        // author meant the value (`#n`) or the memory at that address
+        // (`(n).w` / `(n).l`), and guessing the immediate hid which. A `{splice}`
+        // operand reaches `classify_operand_splice` by its own arm and keeps the
+        // immediate (EMP-SPLICED-INT-OPERAND); Z80 never reaches `map_plain`.
+        if let Some(n) = v.as_stored_int() {
+            self.error(
+                expr_span(expr),
+                format!(
+                    "[operand.bare-number] a bare number ({n}) is not a 68000 operand: write `#` before it for the value, or `(addr).w` / `(addr).l` for the memory at that address"
+                ),
+            );
+            return None;
+        }
         self.classify_operand_splice(v, expr_span(expr))
     }
 

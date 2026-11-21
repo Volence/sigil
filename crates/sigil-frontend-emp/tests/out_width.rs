@@ -861,7 +861,7 @@ fn an_out_type_the_corpus_cannot_resolve_is_reported() {
          proc Typo () out(d1: AlsoNotOne) {\n move.w #1, d1\n rts\n}\n\
          proc Fine () out(d2: Good) {\n move.w #1, d2\n rts\n}\n\
          proc Prim () out(d3: u8) {\n move.b #1, d3\n rts\n}\n\
-         proc Ptr () out(a0: *Good) {\n lea 4, a0\n rts\n}\n",
+         proc Ptr () out(a0: *Good) {\n lea (4).w, a0\n rts\n}\n",
     ]);
     let got: Vec<(&str, &str, &str)> = r
         .unresolvable_out_types

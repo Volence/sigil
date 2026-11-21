@@ -103,5 +103,16 @@ fn a_width_suffix_on_a_name_is_what_it_was() {
              (a missing import or type in scope?)",
         ],
     );
-    assert_unchanged("jmp $1234.w", &["illegal destination EA: #imm"]);
+    // Moved by A10 on purpose (W1, `[operand.bare-number]`): was
+    // `illegal destination EA: #imm`. A bare number in a 68000 operand position
+    // is now refused before encoding, so the front end gives its own message.
+    assert_unchanged(
+        "jmp $1234.w",
+        &[
+            "[operand.bare-number] a bare number (4660) is not a 68000 operand: write `#` \
+             before it for the value, or `(addr).w` / `(addr).l` for the memory at that address",
+            "instruction dropped, a mnemonic, size, or operand did not resolve \
+             (a missing import or type in scope?)",
+        ],
+    );
 }

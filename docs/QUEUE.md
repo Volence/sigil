@@ -2985,3 +2985,13 @@ until its row is removed.
   `crates/sigil-frontend-emp/tests/name_duplicate_const.rs` `a_const_beside_an_equ_of_the_same_name_is_not_this_refusal`.
 - The same last-wins shape exists for repeated `data`/`table` attributes and `context` fields (language review A,
   stage I1 row 8).
+
+## EMP-SPLICED-INT-OPERAND
+
+- state: open 2026-11-21 (A10, booked by Task 3)  size: `S`  project: `STEP0-A10`
+- `move.w {n}, d0` with an integer `n` still assembles as an immediate with no `#` in the template; refused
+  nowhere, by decision in the A10 plan (Open question 2: a spliced integer is the macro idiom). A10 refuses only
+  a number written in a 68000 operand position (`[operand.bare-number]`, `eval/asm.rs` `map_plain`); the
+  `{splice}` arm reaches `classify_operand_splice` directly and keeps the immediate, pinned by
+  `crates/sigil-frontend-emp/tests/operand_bare_number.rs` `a_spliced_integer_stays_an_immediate`.
+- Count aeon's uses before changing it.
