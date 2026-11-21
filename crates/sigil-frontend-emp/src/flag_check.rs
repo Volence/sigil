@@ -224,13 +224,6 @@ fn m68k_carry_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
         "jbsr" => return Some(FlagRole::Writes),
         // The tail idioms.
         "jbra" | "jra" => return Some(FlagRole::Untouched),
-        // SUBX, NEGX: "C: Set if a borrow occurs; cleared otherwise." SBCD, NBCD:
-        // set by a decimal borrow; ABCD: "Set if a decimal carry was generated".
-        // Each adds or subtracts the EXTEND bit, not C, so for a carry result it
-        // is a writer and never a reader (the G2.6 rider). `.emp`'s mnemonic
-        // table spells only ADDX of this family, so the rest are classified here
-        // by name; the ISA enum's arms below carry the same roles.
-        "subx" | "negx" | "abcd" | "sbcd" | "nbcd" => return Some(FlagRole::Writes),
         _ => {}
     }
     let m = crate::lower::m68k_mnemonic(mnem)?;
@@ -507,10 +500,6 @@ fn m68k_zero_role(mnem: &str, ops: &[CodeOperand]) -> Option<FlagRole> {
         "jbsr" => return Some(FlagRole::Writes),
         // The tail idioms and the niche-option marker, which emits no bytes.
         "jbra" | "jra" | "assume_some" => return Some(FlagRole::Untouched),
-        // SUBX, NEGX, ABCD, SBCD, NBCD: "Cleared if the result is nonzero;
-        // unchanged otherwise". Classified by name because `.emp`'s mnemonic
-        // table spells only ADDX of this family; the enum arms carry the same.
-        "subx" | "negx" | "abcd" | "sbcd" | "nbcd" => return Some(FlagRole::ClearsOnly),
         _ => {}
     }
     let m = crate::lower::m68k_mnemonic(mnem)?;

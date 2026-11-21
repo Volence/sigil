@@ -579,14 +579,14 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
         "emp-requires-a-size-suffix",
         "An unsized spelling of a form whose size `.emp` does not default (`m68k_default_size`, \
          `lower/code.rs`: shifts/rotates on memory, `move`/`andi`/`ori`/`eori` to sr/ccr, \
-         `bchg`, `exg`, `addx`). `.emp` refuses `instruction needs an explicit size suffix`; asl \
-         and the AS route default the size (word; `exg` long; `bchg` byte on memory, long on Dn).",
+         `bchg`, `addx`, `subx`, `negx`). `.emp` refuses `instruction needs an explicit size suffix`; asl \
+         and the AS route default the size (word; `bchg` byte on memory, long on Dn).",
     ),
     (
         "emp-lacks-mnemonic",
-        "`.emp` has no `abcd`, `sbcd`, `nbcd`, `negx`, `subx`, `chk`, `stop`, `link`, `unlk` \
+        "`.emp` has no `chk`, `stop`, `link`, `unlk` \
          (`m68k_mnemonic`, `lower/code.rs`: `is not a recognized 68000 mnemonic`); asl and the AS \
-         route assemble them (the ISA encodes all nine).",
+         route assemble them (the ISA encodes all four).",
     ),
     (
         "emp-lacks-sr-ccr-form",
@@ -648,12 +648,12 @@ fn is_branch_family(f: &str) -> bool {
 /// The mnemonics `.emp` does not recognise (row `emp-lacks-mnemonic`). A
 /// closed list: a newly unrecognised mnemonic is a new disagreement.
 pub const EMP_ABSENT_MNEMONICS: &[&str] =
-    &["abcd", "sbcd", "nbcd", "negx", "subx", "chk", "stop", "link", "unlk"];
+    &["chk", "stop", "link", "unlk"];
 
 /// The families row `emp-requires-a-size-suffix` may name: those `.emp` has no
 /// default size for. Closed, so a NEW unsized refusal is a new disagreement.
 pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
-    "addx", "asl", "asr", "lsl", "lsr", "rol", "ror", "roxl", "roxr", "bchg", "exg",
+    "addx", "subx", "negx", "asl", "asr", "lsl", "lsr", "rol", "ror", "roxl", "roxr", "bchg",
     "andi-ccr", "andi-sr", "ori-ccr", "ori-sr", "eori-ccr", "eori-sr",
     "move-to-sr", "move-from-sr", "move-to-ccr",
 ];
