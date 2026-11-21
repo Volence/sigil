@@ -333,3 +333,82 @@ test a_binding_to_a_proc_with_no_clause_stops_the_build ... ok
 test the_same_binding_with_a_clause_builds_and_so_does_the_unplanted_tree ... ok
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.42s
 ```
+
+## Task 7: all shapes byte-identical, and the strict landing run
+
+Candidate: `sigil 0.1.0 (32dc756a)`, built `CARGO_TARGET_DIR=.target-land cargo build --release --locked -p sigil-cli -p sigil-harness --bins`; base `.a10-base-1e200e1b/sigil`; free disk 342G.
+
+### Step 2: BN, the seven shipped shapes
+
+```
+SHAPE plain 142a39b9/850262 142a39b9/850262 SAME
+SHAPE debug 20acdb67/870606 20acdb67/870606 SAME
+SHAPE demo 4587df52/99980 4587df52/99980 SAME
+SHAPE demo_debug 37d66535/106981 37d66535/106981 SAME
+SHAPE config_a 2ce7438f/870972 2ce7438f/870972 SAME
+SHAPE config_b 128361b3/617715 128361b3/617715 SAME
+SHAPE lean f6b07847/798198 f6b07847/798198 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+(sonic4 release/debug/config-a/config-b/lean, demo release/debug.)
+
+### Step 3: the three fixture rows (copy of the reference tree, `--project games/sonic4 --shape`)
+
+```
+FIXTURE config-a-keystones-flipped SAME
+FIXTURE stress-evict SAME
+FIXTURE stress-art SAME
+```
+
+No `COULD NOT RUN`. Copy deleted.
+
+### Step 4: aeon builds with the candidate (copy of the reference tree; SIGIL_BUILD and SIGIL_EMIT at `.target-land/release`)
+
+```
+./build.sh              exit 0   emp_expect_fail: OK, 56/56 cases (54 comptime + 2 link)
+DEBUG=1 ./build.sh      exit 0   emp_expect_fail: OK, 56/56 cases (54 comptime + 2 link)
+./build.sh demo         exit 0   emp_expect_fail: OK, 56/56 cases (54 comptime + 2 link)
+DEBUG=1 ./build.sh demo exit 0   emp_expect_fail: OK, 56/56 cases (54 comptime + 2 link)
+```
+
+No `NO_LINT`/`FAST` line in any log. Copy deleted.
+
+### Step 5: strict landing run
+
+Tests added, counted from the diff: `git diff 1e200e1b..HEAD -- crates | grep -c '^+#\[test\]'` gives 28 (column 0); two more are indented inside `mod tests` in `crates/sigil-cli/src/main.rs` (the `gated_warning_refusal_*` pair), so 30 added, 0 deleted, 0 new `#[ignore]`. The plan's 28 plus the fix round's.
+
+Command: `ORACLE_DIR=.../oracle-old landing-run.sh --baseline 6186 --aeon <cp -a of reference tree, HEAD 9b80db1d>`.
+
+```
+tree            .sigil-a10 @ 32dc756a (parcel/a10-refuse-always-wrong, clean)
+reference       .a10-land-<pid> @ 9b80db1d (HEAD, clean), all four present
+started/ended   2026-11-21T14:27:00Z -> 2026-11-21T14:48:01Z (UTC)
+CARGO_EXIT      0
+CLIPPY_EXIT     0   (lint bar clean)
+LEDGER_EXIT     0   (ledger gate clean)
+ci-shaped leg   0   (CI shape green: 563 suite(s), 6216 passed, 0 failed)
+  suites          563
+  passed          6216
+  failed          0
+  ignored         4
+  skip lines      0
+  binaries        563 launched, 563 reported
+  test targets    563 expected launches (549 runnable + 14 doctest, 0 excluded for required-features; cargo metadata --no-deps), all launched
+  reconciles      6186 baseline + 30 new = 6216 observed
+  RESULT          GREEN
+```
+
+Note: the raw log carries `skip: ... SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named` text lines; those are printed by tests that deliberately run with a nonexistent tree, and the gate's own `skip lines 0` is the verdict. No pin, golden or attestation was touched. `.target-land/tmp` and the copies deleted.
+
+### Per-refusal evidence (probe test / control test / RF transcript above)
+
+- `[proc.repeated-clause]`: probe `a_repeated_clobbers_clause_is_refused`, `every_clause_word_is_refused_when_repeated`, `a_repeated_clause_on_a_signature_is_refused`; control `each_clause_once_stays_legal`; RF "Task 1".
+- `[name.duplicate-const]`: probe `a_const_declared_twice_is_refused_at_the_later_one`, `pub_typed_and_section_nested_duplicates_are_refused`; controls `distinct_names_and_other_kinds_stay_legal`, `a_const_beside_an_equ_of_the_same_name_is_not_this_refusal`; RF "Task 2".
+- `[operand.bare-number]`: probe `a_bare_number_operand_is_refused`, `a_number_valued_expression_is_refused_too`; controls `the_immediate_and_the_sized_absolute_stay_legal`, `a_spliced_integer_stays_an_immediate`, `a_z80_bare_number_is_untouched`; RF "Task 3".
+- `[layout.odd-instruction]`: probe `an_instruction_after_an_odd_data_run_is_refused`, `as_compat_does_not_exempt_it`; controls `even_and_trailing_data_stay_legal`, `a_z80_body_is_untouched`; RF "Task 4".
+- `[contract.binding-uncontracted]`: probe `probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused`, `probe_proc_member_and_extern_targets_with_no_clause_are_refused`, gated `a_binding_to_a_proc_with_no_clause_stops_the_build`; controls `a_binding_to_a_proc_declaring_the_empty_clause_conforms`, `the_refusal_reaches_only_a_live_binding_to_a_declared_proc` (the limit pin), `the_same_binding_with_a_clause_builds_and_so_does_the_unplanted_tree`; RF "Task 5" and "Task 5, fix round 1".
+- `[proc.sr-undeclared]` (gated build): probe `an_undeclared_sr_write_stops_the_gated_build`, `warnings_off_does_not_hide_the_refusal`, unit `gated_warning_refusal_lists_each_sr_firing_and_nothing_else`; controls `a_declared_sr_write_builds`, `outside_the_gate_it_stays_a_warning`, `the_single_file_path_stays_a_warning` (the limit pin), unit `gated_warning_refusal_is_empty_when_no_gated_id_fired`; RF "Task 6".
+
+Branch is ready; merge and push are the overseer's and owner-gated.

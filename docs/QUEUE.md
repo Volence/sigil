@@ -3014,3 +3014,12 @@ until its row is removed.
   `refuse_uncontracted`), by the card's wording; an undeclared target may be a legitimate cross-seam symbol
   (A10 plan, Open question 5). Pinned unrefused by `crates/sigil-frontend-emp/tests/game_contract.rs`
   `the_refusal_reaches_only_a_live_binding_to_a_declared_proc`.
+
+## STEP0-A10-REFUSALS
+
+- state: built, awaiting landing 2026-11-21 (A10, branch `parcel/a10-refuse-always-wrong` @ 32dc756a)  size: `M`  project: `STEP0-A10`
+- Six `.emp` constructs a green build accepted are now refusals (`[proc.repeated-clause]`, `[name.duplicate-const]`,
+  `[operand.bare-number]`, `[layout.odd-instruction]`, `[contract.binding-uncontracted]`, `[proc.sr-undeclared]` in the
+  gated build). Proof: 7/7 shipped shapes and the three fixture rows byte-identical to `1e200e1b`; four aeon builds exit 0;
+  landing run GREEN (6186 baseline + 30 new = 6216 observed, 0 failed, 4 ignored). Evidence in
+  `docs/superpowers/notes/2026-11-21-a10-refuse-always-wrong.md`. Merge, push and the card's Progress line are the overseer's.
