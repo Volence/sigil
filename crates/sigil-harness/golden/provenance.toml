@@ -12115,3 +12115,24 @@ full_crc = "20acdb67"
 full_size = 870606
 anchor_crc = "2172953d"
 anchor_end = 0xc5c8a
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "42ab4968fdae7384926f4944ebd63163c1989451"
+aeon_rev = "9b80db1d237b43d945fcef676a848e7007cfb839"
+strict_bodies = 29
+suites = 557
+passed = 6186
+failed = 0
+ignored = 4
+skips = 0
+ran_at = "unix:1795259784"
+
+[entry.strict.goldens]
+config_a = "2ce7438f/870972"
+config_b = "128361b3/617715"
+demo = "4587df52/99980"
+demo_debug = "37d66535/106981"
+lean = "f6b07847/798198"
+s4 = "142a39b9/850262"
+s4_debug = "20acdb67/870606"
