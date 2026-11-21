@@ -270,3 +270,67 @@ needs `SEAM2_REGION_AEON`). Clippy `--workspace --all-targets -D warnings`: clea
 SHAPES 7/7 IDENTICAL
 STEP0_CMP_END rc=0
 ```
+
+### Task 2: `abcd`, `sbcd`, `nbcd`, `negx`, `subx`, bare `exg` (code commit df161434)
+
+The brief's code blocks compiled and ran as given.
+
+**RF step 1, red before implementing.** Rows `("abcd", 2), ("sbcd", 2), ("nbcd", 8), ("negx", 24), ("subx", 6)`
+deleted from `KNOWN_REFUSED`, `emp_a11_golden.rs` and `a11_checks.rs` created, nothing else changed:
+
+```
+test exg_assembles_with_and_without_its_suffix ... FAILED
+test the_extended_and_decimal_arithmetic_assembles ... FAILED
+thread 'exg_assembles_with_and_without_its_suffix' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:53:9:
+assertion `left == right` failed: `.emp`, `exg d0, d1`
+  left: Err(["instruction needs an explicit size suffix (.b/.w/.l)"])
+ right: Ok([78, 113, 193, 65, 78, 117])
+thread 'the_extended_and_decimal_arithmetic_assembles' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:38:5:
+assertion `left == right` failed: `.emp`, `abcd d0, d1`
+  left: Err(["`abcd` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 195, 0, 78, 117])
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+assertion `left == right` failed: refused instructions per family differ from KNOWN_REFUSED:
+  left: {"abcd": 2, "andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "nbcd": 8, "negx": 24, "ori-sr": 1, "reset": 1, "rtr": 1, "sbcd": 2, "stop": 1, "subx": 6, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "ori-sr": 1, "reset": 1, "rtr": 1, "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test the_new_arithmetic_writes_its_destination_register ... FAILED
+thread 'the_new_arithmetic_writes_its_destination_register' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:30:5:
+[(true, "`abcd` is not a recognized 68000 mnemonic")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+(The walk's dump listed the 42 refused forms of the five families, each `` `x` is not a recognized 68000 mnemonic ``, as in Task 1's table.)
+
+**RF step 2, green.** Same three files after the wiring: golden 2 passed, walk 3 passed, checks 1 passed.
+
+**RF step 3, mutation on the clean committed HEAD.** `git status --short` empty; comment out the `subx` line:
+
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-        "subx" => Subx,
++        // "subx" => Subx,
+```
+
+`cargo test --release -p sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --no-fail-fast`:
+
+```
+test exg_assembles_with_and_without_its_suffix ... ok
+test the_extended_and_decimal_arithmetic_assembles ... FAILED
+thread 'the_extended_and_decimal_arithmetic_assembles' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:45:5:
+  left: Err(["`subx` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 147, 64, 78, 117])
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "subx": [ ... 6 rows, e.g. "`subx.w -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic  ||  `subx -(a5), -(a5)`: ..." ],
+  left: {..., "stop": 1, "subx": 6, "trapv": 1, "unlk": 1}
+ right: {..., "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+`git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs`, re-run: golden 2 passed, walk 3 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2868 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 6 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
