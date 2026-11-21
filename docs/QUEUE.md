@@ -3065,3 +3065,23 @@ until its row is removed.
   - **M8** `name_duplicate_const.rs`'s `use other.{Foo}` control is parse-only; booked in `EMP-CONST-EQU-SAME-NAME`.
   - **M9** `crates/sigil-cli/src/main.rs` prints the gated-refusal header and FAILED line with a hardcoded
     `[proc.sr-undeclared]` while `GATED_WARNING_IDS` is a list; a second id would print under the wrong name.
+
+## ISA-Z80-DEAD-MNEMONICS
+
+- state: open 2026-11-22 (A11 Task 1, found by the Z80 walk)  size: `S`  project: `STEP0-A11`
+- `sigil_isa::z80::Mnemonic::LdIA` and `Mnemonic::LdRA` are variants `z80::encode` never accepts: `ld i, a` and
+  `ld r, a` encode through `Mnemonic::Ld` (`ED 47`, `ED 4F`, both in the walk's demand). The walk
+  (`crates/sigil-harness/tests/emp_isa_walk_z80.rs`, `the_walk_demands_every_z80_mnemonic`) pins exactly these two as
+  unreached. Either delete the two variants or route them; the walk's expected list then shrinks to empty. A11 does
+  not touch `z80.rs` (plan Global Constraints).
+
+## EMP-Z80-SYMBOLIC-BYTE-OPERAND
+
+- state: open 2026-11-22 (A11 Task 1)  size: `S`  project: `STEP0-A11`
+- A Z80 8-bit operand cannot be a link-time symbol in `.emp`: `in a, (Sym)` and `out (Sym), a` refuse with
+  `unknown name` then `[lower.z80-unsupported] a Z80 indirect base must be ... got poison`; `ld a, Sym`, `cp Sym` and
+  `rst Sym` refuse with `[lower.z80-unsupported] a symbolic operand is only supported as the 16-bit immediate of
+  ld rr, Label / jp Label / call Label` (probed 2026-11-22 at `55c6ec32`, `Sym` defined to `$10`; the literal
+  spellings assemble). The port of `in`/`out` is one byte, so these are not 16-bit address fields and stay out of A11
+  (plan: "Not here: a symbolic 8-bit Z80 operand"). The walk's `SYM_REFUSED` carries `in mem` / `out mem` until this
+  row decides them. Needs a link-time 8-bit fixup with a range check, not a truncation.
