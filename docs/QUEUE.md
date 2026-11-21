@@ -2683,7 +2683,10 @@ until its row is removed.
      `G0B-AS-FEATURE-DEFINES-INERT` (controller ruling, Task 11 fix round 1).
   2. **`.target-land/tmp` leaks.** Measured 39G early in Task 11 and 44G at its end; test scratch trees under `CARGO_TARGET_TMPDIR`
      are not removed on success. Find the writers (`grep -rn CARGO_TARGET_TMPDIR crates/*/tests`) and drop on
-     success, or have `scripts/landing-run.sh` clear it first.
+     success, or have `scripts/landing-run.sh` clear it first. Still true after A10 (booked by the A10 final review,
+     deferred line 13): `build_export_*`, `extra_entry_probe_*` and `lst_source_digest_*` tests leave pid-suffixed
+     folders under the target tmp dir on every run (A10's own `sr_undeclared_gate`/`binding_uncontracted_gate`
+     trees are wiped by `gate_tree.rs` and do not).
   3. ~~**`/./` in rendered game-root paths.**~~ Already fixed in 87540c32 (`Project::sources_root` drops `.`
      components; `build_check`'s unreachable-row assertion pins the clean path). Kept as a number so the
      Task 11 report's references hold.
@@ -2985,14 +2988,18 @@ until its row is removed.
   `crates/sigil-frontend-emp/tests/name_duplicate_const.rs` `a_const_beside_an_equ_of_the_same_name_is_not_this_refusal`.
 - The same last-wins shape exists for repeated `data`/`table` attributes and `context` fields (language review A,
   stage I1 row 8).
+- The imported-name pair (`use other.{Foo}` beside `const Foo`) is unpinned: the control in
+  `name_duplicate_const.rs` (`distinct_names_and_other_kinds_stay_legal`) is parse-only, so it cannot fail on an
+  import; a resolve-level test is owed with this entry (A10 final review M8, deferred line 2).
 
 ## EMP-SPLICED-INT-OPERAND
 
 - state: open 2026-11-21 (A10, booked by Task 3)  size: `S`  project: `STEP0-A10`
 - `move.w {n}, d0` with an integer `n` still assembles as an immediate with no `#` in the template; refused
-  nowhere, by decision in the A10 plan (Open question 2: a spliced integer is the macro idiom). A10 refuses only
-  a number written in a 68000 operand position (`[operand.bare-number]`, `eval/asm.rs` `map_plain`); the
-  `{splice}` arm reaches `classify_operand_splice` directly and keeps the immediate, pinned by
+  nowhere, by decision in the A10 plan (Open question 2: a spliced integer is the macro idiom). A10 refuses any
+  integer-valued expression written without `#` in a 68000 operand position (`[operand.bare-number]`,
+  `eval/asm.rs` `map_plain`); the `{splice}` arm reaches `classify_operand_splice` directly and keeps the
+  immediate, pinned by bytes (`30 3C 00 05 4E 75`) in
   `crates/sigil-frontend-emp/tests/operand_bare_number.rs` `a_spliced_integer_stays_an_immediate`.
 - Count aeon's uses before changing it.
 
@@ -3017,9 +3024,44 @@ until its row is removed.
 
 ## STEP0-A10-REFUSALS
 
-- state: built, awaiting landing 2026-11-21 (A10, branch `parcel/a10-refuse-always-wrong` @ 32dc756a)  size: `M`  project: `STEP0-A10`
+- state: built, awaiting landing 2026-11-21 (A10, branch `parcel/a10-refuse-always-wrong` @ the fix-wave tip)  size: `M`  project: `STEP0-A10`
 - Six `.emp` constructs a green build accepted are now refusals (`[proc.repeated-clause]`, `[name.duplicate-const]`,
   `[operand.bare-number]`, `[layout.odd-instruction]`, `[contract.binding-uncontracted]`, `[proc.sr-undeclared]` in the
   gated build). Proof: 7/7 shipped shapes and the three fixture rows byte-identical to `1e200e1b`; four aeon builds exit 0;
-  landing run GREEN (6186 baseline + 30 new = 6216 observed, 0 failed, 4 ignored). Evidence in
+  landing run GREEN at b6b32362 (6186 baseline + 30 new = 6216 observed, 0 failed, 4 ignored); the fix wave re-proves
+  7/7 and the landing run at its own tip (note, "Final review fix wave"). Evidence in
   `docs/superpowers/notes/2026-11-21-a10-refuse-always-wrong.md`. Merge, push and the card's Progress line are the overseer's.
+- **Width of `[operand.bare-number]` (for the owner).** It refuses any integer-valued, non-path expression written
+  without `#` in a 68000 operand position, not only a literal: `move.w sizeof(u16), d0`, `move.w 2+2, d0` and
+  `move.w K*2, d0` (`K` a `const`) are refused as "a bare number". Ruled to stand (same defect: each assembled as an
+  immediate); aeon exposure 0 by build measure. Narrowing to literals is a small follow-up. It does not fire when the
+  line's mnemonic is not a 68000 mnemonic (`align 2`, `mvoe.w 5, d0`, `ld a, 5` with no `cpu: z80`): the existing
+  "not a recognized 68000 mnemonic" is what the author sees (final review I1).
+- **Owed in aeon: one sentence in `docs/EMP_PITFALLS.md`.** No pitfall is retired (none of the 14 entries describes
+  one of the six constructs), but §6 Trap B (lines 203-204), "(`move.w sr, dN` is fine on 68000 supervisor and does
+  not trip `[proc.sr-undeclared]` — that fires only with SR as destination.)", becomes incomplete. Extend the
+  parenthesis to end: "— that fires only with SR as destination, and since sigil A10 a firing stops `./build.sh` (it
+  stays a warning under `CONTRACTS=0` and for a single file)." Not written in A10 (ruling on plan Open question 6):
+  it lands with the next aeon change that re-pins anyway, since landing it alone costs a `--repin-aeon` and an
+  attest.
+
+## A10-FINAL-REVIEW-RESIDUE
+
+- state: open 2026-11-21 (A10 final review, Minor findings not fixed in the fix wave)  size: `S`  project: `STEP0-A10`
+- One line each; none moves a byte.
+  - **M4** `const _ = ...` written twice is refused by `[name.duplicate-const]` (`parser.rs` `refuse_duplicate_consts`;
+    the base built it): `_` is treated as an ordinary name. Aeon and sigil use no `const _` (exposure 0). Exempt `_` or
+    rule that it is a name.
+  - **M5** `[layout.odd-instruction]` can land on a line that is not an instruction: `dc.b 1` / `even` / `nop` gives the
+    odd-address error AT `even` plus `` `even` is not a recognized 68000 mnemonic`` at the same span
+    (`lower/code.rs` `first_odd_instr` counts any `CodeItem::Instr`). Skip unrecognised mnemonics there, or leave it.
+  - **M6** A number written inside a template fires `[operand.bare-number]` once per expansion (two calls, two identical
+    errors at one span, each with its `[prov.comptime]` note). Every template error behaves this way today.
+  - **M7** The Z80 exemption of `[operand.bare-number]` rests on `self.cpu == Some(Z80)` (`eval/asm.rs` `map_operand`);
+    an evaluator with `cpu: None` (a raw `asm {}` template not evaluated under a proc body) takes the 68000 path. No Z80
+    case reaching it was found (three template shapes probed clean); after the fix wave a Z80-only mnemonic such as
+    `ld` no longer reaches the refusal at all, but the shared words (`add`, `and`, `or`, `sub`, `nop`) would. Add the
+    template shapes as controls.
+  - **M8** `name_duplicate_const.rs`'s `use other.{Foo}` control is parse-only; booked in `EMP-CONST-EQU-SAME-NAME`.
+  - **M9** `crates/sigil-cli/src/main.rs` prints the gated-refusal header and FAILED line with a hardcoded
+    `[proc.sr-undeclared]` while `GATED_WARNING_IDS` is a list; a second id would print under the wrong name.

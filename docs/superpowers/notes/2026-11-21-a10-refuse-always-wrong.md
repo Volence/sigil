@@ -406,9 +406,136 @@ Note: the raw log carries `skip: ... SIGIL_ALLOW_PARTIAL-no-reference-tree-was-n
 
 - `[proc.repeated-clause]`: probe `a_repeated_clobbers_clause_is_refused`, `every_clause_word_is_refused_when_repeated`, `a_repeated_clause_on_a_signature_is_refused`; control `each_clause_once_stays_legal`; RF "Task 1".
 - `[name.duplicate-const]`: probe `a_const_declared_twice_is_refused_at_the_later_one`, `pub_typed_and_section_nested_duplicates_are_refused`; controls `distinct_names_and_other_kinds_stay_legal`, `a_const_beside_an_equ_of_the_same_name_is_not_this_refusal`; RF "Task 2".
-- `[operand.bare-number]`: probe `a_bare_number_operand_is_refused`, `a_number_valued_expression_is_refused_too`; controls `the_immediate_and_the_sized_absolute_stay_legal`, `a_spliced_integer_stays_an_immediate`, `a_z80_bare_number_is_untouched`; RF "Task 3".
+- `[operand.bare-number]`: probe `a_bare_number_operand_is_refused`, `a_number_valued_expression_is_refused_too`; controls `the_immediate_and_the_sized_absolute_stay_legal`, `a_spliced_integer_stays_an_immediate` (bytes since the fix wave), `a_z80_bare_number_is_untouched`, `an_unrecognized_mnemonic_keeps_its_own_diagnostic` and `z80_operands.rs` `module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized` (the fix-wave guard); RF "Task 3" and "Final review fix wave".
 - `[layout.odd-instruction]`: probe `an_instruction_after_an_odd_data_run_is_refused`, `as_compat_does_not_exempt_it`; controls `even_and_trailing_data_stay_legal`, `a_z80_body_is_untouched`; RF "Task 4".
 - `[contract.binding-uncontracted]`: probe `probe_hook_bound_to_a_proc_with_no_clobbers_clause_is_refused`, `probe_proc_member_and_extern_targets_with_no_clause_are_refused`, gated `a_binding_to_a_proc_with_no_clause_stops_the_build`; controls `a_binding_to_a_proc_declaring_the_empty_clause_conforms`, `the_refusal_reaches_only_a_live_binding_to_a_declared_proc` (the limit pin), `the_same_binding_with_a_clause_builds_and_so_does_the_unplanted_tree`; RF "Task 5" and "Task 5, fix round 1".
 - `[proc.sr-undeclared]` (gated build): probe `an_undeclared_sr_write_stops_the_gated_build`, `warnings_off_does_not_hide_the_refusal`, unit `gated_warning_refusal_lists_each_sr_firing_and_nothing_else`; controls `a_declared_sr_write_builds`, `outside_the_gate_it_stays_a_warning`, `the_single_file_path_stays_a_warning` (the limit pin), unit `gated_warning_refusal_is_empty_when_no_gated_id_fired`; RF "Task 6".
 
-Branch is ready; merge and push are the overseer's and owner-gated.
+## Final review fix wave
+
+The whole-branch review (`1e200e1b..b6b32362`) found two Important items and nine Minor ones. This section is
+the fix wave's evidence; the booked residue is in `docs/QUEUE.md` (`STEP0-A10-REFUSALS`,
+`A10-FINAL-REVIEW-RESIDUE`, `EMP-CONST-EQU-SAME-NAME`, `EMP-SPLICED-INT-OPERAND`, `G0B-TASK11-RESIDUE` item 2).
+
+### I1: the unknown-mnemonic diagnostic wins over `[operand.bare-number]`
+
+The refusal ran during operand mapping, before the mnemonic was looked up, and dropped the line, so
+`ld a, 5` in a module without `cpu: z80`, `align 2` and `mvoe.w 5, d0` told the author to write `#`. The test
+that pinned the first case had been edited (`ld a, 5` to `ld a, b`, plan Task 3 Step 5) so it no longer
+exercised it. Now `lower_instr_to_item` computes
+`refuse_bare_number = is_recognized_mnemonic(&mnemonic, Cpu::M68000)` once and passes it through
+`map_operand` / `map_movem_operands` to `map_plain`; when it is false the operand falls through to
+`classify_operand_splice` as on the base, and the lowering prints "not a recognized 68000 mnemonic". Every
+recognised 68000 mnemonic (including the reserved `jbra`/`jbsr` and the multiply constructs) still refuses.
+
+Tests written first (`z80_operands.rs` back to `ld a, 5`, plus the absence of the id;
+`operand_bare_number.rs` `an_unrecognized_mnemonic_keeps_its_own_diagnostic` over `align 2` and
+`mvoe.w 5, d0`), red before the code change:
+
+```
+test an_unrecognized_mnemonic_keeps_its_own_diagnostic ... FAILED
+thread 'an_unrecognized_mnemonic_keeps_its_own_diagnostic' (2204443) panicked at crates/sigil-frontend-emp/tests/operand_bare_number.rs:105:9:
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized ... FAILED
+thread 'module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized' (2204690) panicked at crates/sigil-frontend-emp/tests/z80_operands.rs:251:5:
+test result: FAILED. 37 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+RF for the guard, after its commit: mutation `(refuse_bare_number, v.as_stored_int())` becomes
+`(true, v.as_stored_int())` in `map_plain`.
+
+```
+$ git status --short
+$ git diff --stat
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n "if let (true, Some(n))" crates/sigil-frontend-emp/src/eval/asm.rs
+3576:        if let (true, Some(n)) = (true, v.as_stored_int()) {
+$ cargo test --release -p sigil-frontend-emp --no-fail-fast --test operand_bare_number --test z80_operands
+test an_unrecognized_mnemonic_keeps_its_own_diagnostic ... FAILED
+thread 'an_unrecognized_mnemonic_keeps_its_own_diagnostic' (2250420) panicked at crates/sigil-frontend-emp/tests/operand_bare_number.rs:105:9:
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test operand_bare_number`
+test module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized ... FAILED
+thread 'module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized' (2250518) panicked at crates/sigil-frontend-emp/tests/z80_operands.rs:251:5:
+test result: FAILED. 37 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test z80_operands`
+error: 2 targets failed:
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/asm.rs
+$ git status --short
+$ cargo test --release -p sigil-frontend-emp --no-fail-fast --test operand_bare_number --test z80_operands
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+```
+
+Candidate against base, `sigil emp` on a one-line proc body (same rc, same output hash, one line each):
+
+```
+== ld a, 5        base rc=1 cf998a03   cand rc=1 cf998a03   `ld` is not a recognized 68000 mnemonic
+== align 2        base rc=1 dee29123   cand rc=1 dee29123   `align` is not a recognized 68000 mnemonic
+== mvoe.w 5, d0   base rc=1 c08b6c7b   cand rc=1 c08b6c7b   `mvoe` is not a recognized 68000 mnemonic
+```
+
+and the candidate still refuses `move.w $1234, d0` ("a bare number (4660)"), `move.w sizeof(u16), d0` (2),
+`move.w 2+2, d0` (4) and `move.w K*2, d0` with `const K = 3` (6).
+
+### M1, M2, M3
+
+- M1: `proc_sig` (`parser.rs`) and `push_err` (`lower/code.rs`) get their doc comments back; the A10 helpers
+  `note_contract_clause` and `first_odd_instr` had been inserted between each doc and its fn.
+- M2: `out_width.rs` `a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form` used
+  `lea 4, a0` (now refused) in both arms; both are `lea (4).w, a0`, so the PERMITTED arm is on a source that
+  builds.
+- M3: `a_spliced_integer_stays_an_immediate` now lowers into a `(cpu: m68000, vma: $0)` section and asserts the
+  linked bytes `30 3C 00 05 4E 75` (`move.w #5, d0` / `rts`), the pin `EMP-SPLICED-INT-OPERAND` cites.
+
+## Owed and booked (from the controller's ledger, which is deleted after landing)
+
+- **Aeon `docs/EMP_PITFALLS.md` §6 Trap B sentence, deliberately not written.** No pitfall is retired (none of
+  the 14 entries describes one of the six constructs), so the card's third "Done means" line needs no edit. But
+  lines 203-204, "(`move.w sr, dN` is fine on 68000 supervisor and does not trip `[proc.sr-undeclared]` — that
+  fires only with SR as destination.)", become incomplete. The sentence owed (plan Task 8 Step 1): extend the
+  parenthesis to end "— that fires only with SR as destination, and since sigil A10 a firing stops `./build.sh`
+  (it stays a warning under `CONTRACTS=0` and for a single file)." It lands with the next aeon change that
+  re-pins anyway (landing it alone costs a `--repin-aeon` and an attest). Booked in `STEP0-A10-REFUSALS`.
+- **Pre-existing tests leave pid-suffixed folders under the target tmp dir:** `build_export_*`,
+  `extra_entry_probe_*`, `lst_source_digest_*`. Out of A10's scope; booked in `G0B-TASK11-RESIDUE` item 2.
+- **Width of `[operand.bare-number]`, for the owner.** Any integer-valued, non-path expression written without
+  `#` in a 68000 operand position is refused, not only a literal: `move.w sizeof(u16), d0`, `move.w 2+2, d0`,
+  `move.w K*2, d0`. Ruled to stand (below); aeon exposure 0 by build measure. Booked in `STEP0-A10-REFUSALS`.
+
+## Rulings
+
+One line per ruling in the controller's ledger.
+
+- Start A10 now: the task card is owner-approved (2026-11-19, card 1), its only blocker was G0b landing, and the
+  owner said to keep going; cost if wrong, a branch to discard (nothing merged or pushed).
+- The plan's nine open questions are taken at the plan author's recommendation (table below): each is the narrow
+  reading of the card; cost if wrong, each is a one-task follow-up. All nine go to the owner.
+- Open question 6: Task 8 (the aeon pitfalls sentence) is not run now: no pitfall is retired, and landing it alone
+  costs a `--repin-aeon`; booked above and in `STEP0-A10-REFUSALS`.
+- Batching: three implementer dispatches (Tasks 0+1+2, 3+4, 5+6) then Task 7 alone, one review per batch; each task
+  still has its own commit, RF transcript and BN line.
+- The bare-number refusal's width (any integer-valued operand expression without `#`) stands: the same defect as
+  the literal case, and aeon is unaffected by build measure; narrowing to literals is a small follow-up.
+- Fix wave scope: I1, I2, M1, M2, M3 and the deferred lines marked FIX BEFORE MERGE are fixed; BOOK lines are booked in
+  `docs/QUEUE.md`; M4-M9 are booked under `A10-FINAL-REVIEW-RESIDUE` unless trivially fixed in a file already open.
+
+## Open questions (plan), and the recommendation taken
+
+| # | Question | Taken |
+|---|---|---|
+| 1 | SR refusal: where does "the gate" promote it, and does the context form count? | (a): the gated `sigil build` refuses its own `[proc.sr-undeclared]` warnings after the link, both emission sites |
+| 2 | Is a spliced integer (`move.w {n}, d0`) refused too? | Leave; booked `EMP-SPLICED-INT-OPERAND` |
+| 3 | Does `@as_compat` exempt `[layout.odd-instruction]`? | Refuse (no exemption) |
+| 4 | Duplicate const: does `const` against `equ` count? | `const`/`const` only; mixed pair booked `EMP-CONST-EQU-SAME-NAME` |
+| 5 | Binding: is a target declared nowhere refused too? | Leave; booked `EMP-BINDING-TARGET-UNDECLARED` |
+| 6 | Is the aeon pitfalls sentence (Task 8) wanted now? | With the next aeon change that re-pins; not written in A10 (owed, above) |
+| 7 | Do the single-file paths get the five non-SR refusals? | All paths; only the SR one is limited to the gated build |
+| 8 | AS front end | Leave for all six |
+| 9 | Diagnostic wording and ids | As written |
+
+## Final proof (fix-wave tip)
+
+Recorded in the next commit, after the strict landing run at this tip.
