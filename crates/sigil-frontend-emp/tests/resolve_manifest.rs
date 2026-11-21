@@ -163,3 +163,30 @@ fn path_mismatch_lint_carries_its_id() {
         "got {diags:?}"
     );
 }
+
+/// G0b final review C-I6: a build's named roots are refused by the scan when a root is
+/// named twice (`[root.twice]`) or lies inside another (`[root.nested]`): its files would be
+/// scanned twice, under two roots. The refusal is an error and an empty manifest.
+/// CONTROL: the same two directories as disjoint `engine` and `game` roots scan both.
+#[test]
+fn a_root_named_twice_or_nested_in_another_is_refused() {
+    use sigil_span::roots::RootName;
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "engine/a.emp", "module engine.a\n");
+    write(dir.path(), "game/b.emp", "module game.b\n");
+    let (e, g) = (dir.path().join("engine"), dir.path().join("game"));
+    let (m, diags) = Manifest::scan_roots(&[(RootName::Engine, e.clone()), (RootName::Game, g.clone())]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "{diags:?}");
+    assert_eq!(m.modules.len(), 2, "CONTROL: disjoint roots scan both");
+    for (roots, code) in [
+        (vec![(RootName::Engine, e.clone()), (RootName::Engine, g.clone())], "[root.twice]"),
+        (vec![(RootName::Engine, dir.path().to_path_buf()), (RootName::Game, g.clone())], "[root.nested]"),
+    ] {
+        let (m, diags) = Manifest::scan_roots(&roots);
+        assert!(
+            diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.starts_with(code)),
+            "{code}: {diags:?}"
+        );
+        assert!(m.modules.is_empty(), "{code}: a refused scan is an empty manifest");
+    }
+}

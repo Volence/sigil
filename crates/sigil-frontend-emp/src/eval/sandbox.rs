@@ -862,6 +862,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// G0b final review C-I6: under a build's named roots, a link inside a root that leads
+    /// out of it is refused (`[root.escape] ... is a link`), the only containment check on a
+    /// named root; a link that stays inside resolves (CONTROL); and an unrooted spelling two
+    /// roots hold is `[root.ambiguous]`.
+    #[test]
+    #[cfg(unix)]
+    fn a_link_out_of_a_named_root_is_refused() {
+        use std::os::unix::fs::symlink;
+        let base = scratch_dir("named-root-link");
+        let (engine, game, outside) = (base.join("engine"), base.join("game"), base.join("outside"));
+        for d in [&engine, &game, &outside] {
+            std::fs::create_dir_all(d).expect("create dir");
+        }
+        std::fs::write(outside.join("secret.bin"), b"outside").expect("write secret");
+        std::fs::write(game.join("own.bin"), b"inside").expect("write own");
+        std::fs::write(engine.join("same.bin"), b"e").expect("write same");
+        std::fs::write(game.join("same.bin"), b"g").expect("write same");
+        symlink(outside.join("secret.bin"), game.join("leak.bin")).expect("link out");
+        symlink(game.join("own.bin"), game.join("stay.bin")).expect("link in");
+        let roots = sigil_span::roots::SourceRoots::new(engine.clone(), game.clone()).with_tree(base.clone());
+        let mut ev = Evaluator::new();
+        ev.set_include_root(crate::Sandbox::Roots(std::sync::Arc::new(roots)));
+        assert!(ev.resolve_sandbox_path("game/stay.bin", span()).is_some(), "CONTROL: {:?}", ev.diags);
+        assert!(ev.diags.is_empty(), "{:?}", ev.diags);
+        assert!(ev.resolve_sandbox_path("game/leak.bin", span()).is_none(), "the escaping link resolved");
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("[root.escape] `game/leak.bin` is a link that leads out of the root it names")),
+            "{:?}",
+            ev.diags
+        );
+        assert!(ev.resolve_sandbox_path("same.bin", span()).is_none());
+        assert!(ev.diags.iter().any(|d| d.message.starts_with("[root.ambiguous] `same.bin`")), "{:?}", ev.diags);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     #[cfg(unix)]
     fn resolve_sandbox_path_allows_symlink_staying_in_root() {
