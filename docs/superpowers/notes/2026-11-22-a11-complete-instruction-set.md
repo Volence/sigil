@@ -810,3 +810,96 @@ test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
 TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2881 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 12 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 6: `link` / `unlk` (code commit d771447b)
+
+The brief's code blocks compiled. One did not run as written: the suffix test's AS-route assertion built its
+expected text from the whole line (`` `unlk.l a6` is refused ``), and the AS route names the written mnemonic only:
+`` `unlk.l` is refused, as asl refuses it: `unlk` has no size field, write `unlk` with no suffix ``. The test now
+takes the first word of the line (same strength: the named refusal on both routes).
+
+One addition the brief did not list (the batch C lesson, a correct answer in every flag table): `link` and `unlk`
+join the shared flag-inert allowlist `out_verify::cc_inert_data_op` (LINK / UNLK: "Condition Codes: Not
+affected."). Without it `preserves(sr.ccr)` refused a closed frame and a conditional out lost its flags across
+`unlk`; `branch_const`'s copy already listed both. Pinned by `a_frame_op_leaves_the_condition_codes_alone`.
+
+What each table says: written registers, `link aN` writes `aN` (first operand, new arm) and `unlk aN` writes `aN`
+(last operand); a7 is the stack model's (`apply_link` pushes 4 and moves sp by the displacement, `apply_unlk` closes
+it), and neither instruction is charged a7 by the clobber lint, except `link a7, #d`, which is charged `a7` (the
+model bails on it). Carry and zero: Untouched (ISA enum arms, now reached). Terminator: neither. Cycles: Task 10.
+
+Probed (not committed): `link a6, #$FFF8` assembles `4E56 FFF8` on both routes, and the stack model reads it as
++65528 and bails, so `link a6, #$FFF8` then `rts` is silent where `link a6, #-8` then `rts` is `[stack.unbalanced]`;
+`link a6, #8` assembles `4E56 0008` and bails; `link a6, #-$8001` is refused by the encoder (`operand -32769 out of
+range`), and on `.emp` also prints a `[stack.unbalanced]` for the same line. Booked in `EMP-LINK-UNSIGNED-DISPLACEMENT`.
+
+Golden: the brief's `a6, #-8` vectors plus `link a3, #-$1234` / `unlk a3`, derived: LINK.W is `0100 1110 0101 0rrr`
+then the displacement word, so a3 is `$4E53` and -$1234 is `$EDCC`; UNLK is `0100 1110 0101 1rrr`, a3 is `$4E5B`.
+The shared encoder and both front ends agreed with the literal on the first run.
+
+**RF step 1, red before implementing.** `("link", 1), ("unlk", 1)` deleted from `KNOWN_REFUSED`, the golden test,
+the suffix lines and the two check tests appended:
+
+```
+test link_and_unlk_assemble ... FAILED
+thread 'link_and_unlk_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:128:5:
+  left: Err(["`link` is not a recognized 68000 mnemonic", "`unlk` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 86, 255, 248, 78, 94, 78, 117])
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+thread 'a_size_suffix_the_instruction_lacks_is_refused' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:71:9:
+`unlk.l a6`: ["`unlk` is not a recognized 68000 mnemonic"]
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "link": [
+        "`link.w a2, #1`: `link` is not a recognized 68000 mnemonic  ||  `link a2, #1`: `link` is not a recognized 68000 mnemonic",
+    ],
+    "unlk": [
+        "`unlk.w a2`: `unlk` is not a recognized 68000 mnemonic  ||  `unlk a2`: `unlk` is not a recognized 68000 mnemonic",
+    ],
+  left: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "link": 1, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test a_frame_is_balanced_only_when_it_is_closed ... FAILED
+test a_frame_op_leaves_the_condition_codes_alone ... FAILED
+thread 'a_frame_is_balanced_only_when_it_is_closed' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:198:5:
+  left: [(true, "`link` is not a recognized 68000 mnemonic"), (true, "`unlk` is not a recognized 68000 mnemonic")]
+ right: []
+thread 'a_frame_op_leaves_the_condition_codes_alone' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:220:5:
+flags across `unlk a6`
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**RF step 2, green.** golden 9 passed, walk 3 passed, `a11_checks` 13 passed, `as_author_forms_stay_off_emp` 4
+passed, differential 7 passed (`link` compares `SameBytes` in the allowed frame).
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- <file>`).
+
+M1 (the brief's), `link` out of the first-operand arm:
+```
+ crates/sigil-frontend-emp/src/lower/proc.rs | 2 +-
+-    if mnemonic == "exg" || mnemonic == "link" {
++    if mnemonic == "exg" {
+test a_frame_is_balanced_only_when_it_is_closed ... FAILED
+assertion `left == right` failed: one for `link`, one for `unlk`: [(false, "[proc.clobber-undeclared] `P` writes `a6`, ...")]
+  left: 1
+ right: 2
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out
+```
+Restored: 1 passed.
+
+M2 (extra), `link` / `unlk` out of the flag-inert allowlist:
+```
+ crates/sigil-frontend-emp/src/out_verify.rs | 2 +-
+-        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "link" | "unlk"
++        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba"
+test a_frame_op_leaves_the_condition_codes_alone ... FAILED
+thread 'a_frame_op_leaves_the_condition_codes_alone' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:220:5:
+flags across `unlk a6`
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out
+```
+Restored: `a11_checks` 13 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2883 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 13 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
