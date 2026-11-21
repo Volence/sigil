@@ -15,7 +15,10 @@
 //! | `generated` | the build's own generated directory                             |
 //! | `sigil`     | the sigil source checkout                                       |
 //!
-//! A read under more than one root's directory belongs to the LONGEST one. No path carries
+//! A read under more than one root's directory belongs to the LONGEST one, and the engine's
+//! checkout competes as well: an engine tree copied INSIDE a root's directory (a test copy
+//! under the sigil checkout's target dir) keeps its unrooted reads as the checkout's, never
+//! as rows of the root it happens to sit in, which would name where the copy was. No path carries
 //! a game id or a checkout-layout segment: the export's `shape.game` names the game, so
 //! aeon's `games/sonic4/config/header.emp` and a game in its own repository's
 //! `config/header.emp` are both the row `game config/header.emp`.
@@ -169,12 +172,16 @@ fn generated_mount(under_engine: &Path) -> Option<PathBuf> {
 
 fn place_path(roots: &ExportRoots<'_>, path: &Path) -> Result<Placed, String> {
     let lang = lang_of(path);
-    // The longest root directory holding the path owns it.
+    // The longest root directory holding the path owns it. The engine checkout competes
+    // too: when it is nested in a root (an engine tree copied under the sigil checkout)
+    // and holds the path, the root does not own it; it is the checkout's unrooted read.
+    let under_checkout = path.starts_with(roots.checkout).then(|| roots.checkout.components().count());
     let owner = roots
         .dirs()
         .into_iter()
         .filter(|(_, d)| path.starts_with(d))
-        .max_by_key(|(_, d)| d.components().count());
+        .max_by_key(|(_, d)| d.components().count())
+        .filter(|(_, d)| under_checkout.is_none_or(|c| d.components().count() > c));
     if let Some((root, dir)) = owner {
         let rel = path.strip_prefix(dir).expect("filtered on starts_with");
         if root == RootName::Engine {
@@ -401,6 +408,25 @@ mod tests {
             .map(|f| (f.root, f.path))
             .collect();
         assert_eq!(got, vec![(RootName::Engine, "sub/e.emp".to_string()), (RootName::Game, "g.emp".to_string())]);
+    }
+
+    /// An engine checkout INSIDE the sigil checkout (a test copy under the target dir, as
+    /// `build_export_gates`' determinism gate makes them): a read under the checkout but under
+    /// no engine/game root is the checkout's, never a `sigil` row named by where the copy sits.
+    #[test]
+    fn a_checkout_inside_the_sigil_checkout_owns_its_unrooted_reads() {
+        let roots = SourceRoots::new("/s/target/tmp/r1/tree/engine", "/s/target/tmp/r1/tree/games/demo");
+        let er = ExportRoots { roots: &roots, checkout: Path::new("/s/target/tmp/r1/tree"), sigil: Path::new("/s") };
+        let snap = Snapshot {
+            reads: vec![read("/s/target/tmp/r1/tree/art/pal/s.bin"), read("/s/crates/x/std.emp")],
+            ..Default::default()
+        };
+        let e = export_files(&er, &snap).unwrap();
+        let got: Vec<(&str, &str)> = e.inputs.iter().map(|i| (i.root.as_str(), i.path.as_str())).collect();
+        assert_eq!(got, vec![("aeon", "art/pal/s.bin"), ("sigil", "crates/x/std.emp")]);
+        let src = "/s/target/tmp/r1/tree/other/x.emp";
+        let err = export_files(&er, &Snapshot { reads: vec![read(src)], ..Default::default() }).unwrap_err();
+        assert!(err.contains(src) && err.contains("under no export root"), "{err}");
     }
 
     #[test]

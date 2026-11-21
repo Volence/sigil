@@ -1,0 +1,55 @@
+# RF-4 (G0b Task 13a fix round): an engine checkout nested inside the sigil checkout
+# Found by the strict landing run at 13b0a38d: build_export_gates::five_builds_one_export_hash_per_shape
+# went red (sonic4 shapes' export hashes differ across the 5 tree copies under .target-land/tmp; demo stayed equal).
+# Cause: aeon's art/ data under the copied checkout but under no engine/game root was placed by the
+# longest ROOT, which was the sigil checkout holding the copy, so inputsSha256 hashed 'sigil target/tmp/...'.
+# Landing run 1 excerpt:
+thread 'five_builds_one_export_hash_per_shape' (256248) panicked at crates/sigil-cli/tests/build_export_gates.rs:301:5:
+nondeterministic export:
+shape plain: export hashes differ across builds: ["051da59c8dedb595f27ab3dc6b3e4d7d40d48f482b73e7ea354b57a9563d3af3", "cdb659aa823c6d3dbd563c7eb11fe7e28011e34419f1cc45a9f4e7f47be912c6", "58789a12bd81eddb8176f4d93b664e83e
+shape debug: export hashes differ across builds: ["956aee6d5c9f3ccafbb61e7c419ac066dfd03ddd6d4ab9365977b039eb707aee", "a005b9c1511817e7ca45bb2770143c1b675721ff7b97590be0be2d30044be041", "5e183cb5783b188abf53d31ac2efc7904
+
+# Unit test written first, RED on 13b0a38d's place_path:
+---- export_files::tests::a_checkout_inside_the_sigil_checkout_owns_its_unrooted_reads stdout ----
+
+thread 'export_files::tests::a_checkout_inside_the_sigil_checkout_owns_its_unrooted_reads' (3851016) panicked at crates/sigil-harness/src/export_files.rs:419:9:
+assertion `left == right` failed
+  left: [("sigil", "crates/x/std.emp"), ("sigil", "target/tmp/r1/tree/art/pal/s.bin")]
+ right: [("aeon", "art/pal/s.bin"), ("sigil", "crates/x/std.emp")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    export_files::tests::a_checkout_inside_the_sigil_checkout_owns_its_unrooted_reads
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 133 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p sigil-harness --lib`
+
+# After the fix (the checkout competes in the longest-match): export_files unit tests
+test export_files::tests::a_conflict_is_an_error ... ok
+test export_files::tests::a_game_outside_the_engine_checkout_is_placed_by_its_own_directory ... ok
+test export_files::tests::a_checkout_inside_the_sigil_checkout_owns_its_unrooted_reads ... ok
+test export_files::tests::a_source_read_outside_every_root_is_an_error_naming_the_path_and_the_roots ... ok
+test export_files::tests::a_read_of_the_generated_root_is_placed_at_its_mount ... ok
+test export_files::tests::a_tree_read_at_the_mount_beside_its_generated_file_is_refused ... ok
+test export_files::tests::each_read_lands_in_its_root_with_a_relative_path ... ok
+test export_files::tests::the_longest_root_holding_a_read_owns_it ... ok
+test export_files::tests::the_tool_executable_is_identity_by_name_only ... ok
+test export_files::tests::an_external_data_file_is_hashed_by_name_only ... ok
+test export_files::tests::the_row_key_is_the_files_placement ... ok
+test export_files::tests::blobs_and_toml_are_hashed_inputs_but_not_file_rows ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s
+
+# The gate itself after the fix (AEON_DIR = aeon 727ae46b clone, SIGIL_STRICT_GATE=1):
+test five_builds_one_export_hash_per_shape has been running for over 60 seconds
+G7 shape=plain export_sha256=85583c044b786d1952c6c08cc6161bcde38af9f91c2348fd1c881db087129edf rom_sha256=884838a436174eee13a6b0cbd41e8074cf412fa1afa2b7d504c35491de895210 builds=5
+G7 shape=debug export_sha256=4c5b8f4aa99bc52aada8dcac0e120adfe6d38e736d308f5dd66fe8552ba94e5d rom_sha256=4615c71a29caa82f85314b1a129b3e2569d28153aca97e7782244054a9c95f29 builds=5
+G7 shape=demo export_sha256=9f054c1c79e0b78d3e84da6d10c59c6fb925f5fbc587c049d4e58bfbd270870e rom_sha256=bb36f7a7a9ad89c242f759e634caa95ebb6b3cc2cd012333a5f8f03c724d06ad builds=5
+G7 shape=demo_debug export_sha256=72e79881e4ec6a5582416ceccbb33f29dec44c41daa81b41ad003f2e7b9ac108 rom_sha256=f7b391546270ae6b854606592be35ba09c5443bf6990845bd2246dfc2f8ab204 builds=5
+G7 shape=config_a export_sha256=1d2c1cc8ca6c80c2464f76a2716454e604d635c959d754048c4e335b58e97466 rom_sha256=dec6e05738692369cd6dd39ee2ee9303fed5b45ffe9bbe4b967b886d6594baf7 builds=5
+G7 shape=config_b export_sha256=863ad4d0db8ce76b469bc4773e85de8ed34daeccdb21f92b0850e2995e52cdd8 rom_sha256=f0fd1f120b1471fd601ec71824102cf46779a0d4f397d28969fae24827ef71c5 builds=5
+G7 shape=lean export_sha256=8004b9ac9f1c23497e1cb8c00e62907f7ed00de95edeb99f4c7a0ba363c06875 rom_sha256=66e8e58b5d7c7f2d36995ab4e6958d17619a2e1883630ef37296eff1ed5f2228 builds=5
+G7 7/7 shapes: 5 builds, one export hash and one rom.sha256 each
+test five_builds_one_export_hash_per_shape ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 86.02s
