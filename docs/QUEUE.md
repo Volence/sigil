@@ -2676,10 +2676,9 @@ until its row is removed.
   2. **`.target-land/tmp` leaks.** Measured 39G during Task 11; test scratch trees under `CARGO_TARGET_TMPDIR`
      are not removed on success. Find the writers (`grep -rn CARGO_TARGET_TMPDIR crates/*/tests`) and drop on
      success, or have `scripts/landing-run.sh` clear it first.
-  3. **`/./` in rendered game-root paths.** The game-as-data driver renders game-root paths as
-     `games/sonic4/./data/...` because the description's `sources.root = "."` is joined unnormalised; digest rows
-     carry no `/./`. Cosmetic, but it is listing/diagnostic text a consumer may key on: normalise in one place
-     (`Project::sources_root`) and re-pin what that moves, as its own change.
+  3. ~~**`/./` in rendered game-root paths.**~~ Already fixed in 87540c32 (`Project::sources_root` drops `.`
+     components; `build_check`'s unreachable-row assertion pins the clean path). Kept as a number so the
+     Task 11 report's references hold.
   4. **Old-driver surface still `pub` in `sigil-build`:** `place.rs` was written for the profile-driven driver;
      after the deletion every `pub fn` there has a caller in the new driver or walk except `lens_pinned` (called
      only inside `place.rs`, so it can be private). `game_defines`'s builtin-merge machinery is game-independent
