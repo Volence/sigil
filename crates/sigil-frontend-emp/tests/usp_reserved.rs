@@ -119,7 +119,9 @@ fn names_containing_usp_are_ordinary() {
 /// `usp` in the link environment so a regression would assemble rather than
 /// fail to link.
 /// - `(usp).w` / `(usp).l`: the sized-absolute path (`[operand.usp-unsupported]`).
-/// - `dc.l usp` / `dc.w usp`: a register word is not a `dc` element (`unknown name`).
+/// - `dc.l usp` / `dc.w usp`: a register word is not a `dc` element. Since the A11
+///   final-review fix wave the label fallback refuses `usp` by name
+///   (`[operand.usp-unsupported]`, was `unknown name`).
 /// - `usp+0`, `usp-0`, `0+usp`: `bare_symbol_seg` skips `usp`, so the sum never
 ///   becomes a `SymOff` (`unknown name`).
 #[test]
@@ -131,7 +133,12 @@ fn sized_absolute_dc_and_offset_spellings_of_usp_are_refused() {
         let e = refused(&src, &env);
         assert!(has(&e, OPERAND), "`{inst}`: {e:?}");
     }
-    for inst in ["dc.l usp", "dc.w usp", "move.l a2, usp+0", "move.l a2, usp-0", "move.l a2, 0+usp"] {
+    for inst in ["dc.l usp", "dc.w usp"] {
+        let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
+        let e = refused(&src, &env);
+        assert!(has(&e, OPERAND), "`{inst}`: {e:?}");
+    }
+    for inst in ["move.l a2, usp+0", "move.l a2, usp-0", "move.l a2, 0+usp"] {
         let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
         let e = refused(&src, &env);
         assert!(has(&e, "unknown name `usp`"), "`{inst}`: {e:?}");

@@ -1709,10 +1709,15 @@ this differs from what the plan predicted, the difference is named.
   suffix the instruction does not have (`rtr.w`, `unlk.l`, `link.l`, `stop.w`, `reset.w`, `trapv.w`, `chk.l`,
   `chk.b`) is refused as `[lower.size-suffix]`, as the AS route and asl refuse it. `subx` / `negx` / `chk`
   get no default size (plan Open questions 7, 8).
-- **The `usp` moves** `move.l aN, usp` / `move.l usp, aN` (Task 4). `usp` anywhere else is still the named
-  refusal `[operand.usp-unsupported]`, never a symbol. Added in fix round C (not in the plan): the two moves
-  are flag-inert (a flag result computed before one survives it, for conditional outs and for
-  `preserves(sr.ccr)`), and `movem.l usp(pc), ...` is refused by name rather than read as a label.
+- **The `usp` moves** `move.l aN, usp` / `move.l usp, aN` (Task 4). `usp` anywhere else is never read as a
+  symbol: bare `usp` in any other instruction, `(usp).w` / `(usp).l`, a spliced `usp`, an immediate `#usp`
+  (and `dc.l usp`), and every PC-relative target `usp(pc)` / `usp(pc,Xn)` are the named refusal
+  `[operand.usp-unsupported]` (the immediate and PC-relative halves since the final-review fix wave; before it
+  they linked to an outside symbol named `usp`). The rest are refused UNNAMED (`unknown name \`usp\``):
+  `(usp)`, `-(usp)`, `(usp)+`, `usp(a0)`, `4(usp)`, `usp+0`, `0+usp`, a data field `= usp`; see
+  `EMP-IMM-REGISTER-WORD`. Added in fix round C (not in the plan): the two moves are flag-inert (a flag result
+  computed before one survives it, for conditional outs and for `preserves(sr.ccr)`), and
+  `movem.l usp(pc), ...` is refused by name rather than read as a label.
 - **The status-register forms** `move <ea>, ccr`, `eori #, ccr` (Task 5) and `ori` / `andi` / `eori #, sr`,
   `stop #imm` (Task 7). The ccr forms are flag writes, not mask writes. Every sr form, `stop` included, is an
   undeclared mask write (`[proc.sr-undeclared]`) unless the proc declares `clobbers(sr)`; `stop` cannot hide

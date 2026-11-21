@@ -568,3 +568,53 @@ fn a_frame_around_a_call_is_judged_by_the_declared_preserves() {
     let charged = d.iter().filter(|(_, m)| m.starts_with("[proc.clobber-undeclared] `P` writes `a6`")).count();
     assert_eq!(charged, 2, "{d:?}");
 }
+
+/// `module_src` lowered for the 68000 and linked against `env`: the bytes, or
+/// every error message (lowering, then link).
+fn link_m68k(src: &str, env: &sigil_ir::SymbolTable) -> Result<Vec<u8>, Vec<String>> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
+    let opts = LowerOptions { roots: None, initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
+    let (m, d) = lower_module(&file, &opts);
+    let errs: Vec<String> = d.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect();
+    if !errs.is_empty() {
+        return Err(errs);
+    }
+    let resolved = sigil_link::resolve_layout(&m.sections, env, true).map_err(|e| vec![format!("resolve_layout: {e:?}")])?;
+    let linked = sigil_link::link(&resolved, env).map_err(|e| vec![format!("link: {e:?}")])?;
+    sigil_link::flatten(&linked, 0x00).map_err(|e| vec![format!("flatten: {e}")])
+}
+
+/// `usp` is the user stack pointer everywhere, never a symbol (Review Focus 4).
+/// No item can be named `usp` (`[name.reserved-register]`), but an OUTSIDE
+/// symbol can: against one, `#usp` and `usp(pc)` used to link silently to its
+/// address. Each spelling is now the named usp refusal; names that merely
+/// contain the word, and the two real moves, are unchanged.
+#[test]
+fn usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name() {
+    let mut env = sigil_ir::SymbolTable::new();
+    for name in ["usp", "usp_save", "my.usp"] {
+        env.define(name, sigil_ir::SymbolValue::Int(0x1234));
+    }
+    let one = |line: &str| link_m68k(&format!("module m\nproc P () clobbers(d0, a0) {{\n    {line}\n    rts\n}}\n"), &env);
+    let read_as_symbol: Vec<_> = ["move.l #usp, d0", "lea usp(pc), a0", "jmp usp(pc)", "pea usp(pc)", "move.l usp(pc), d0"]
+        .into_iter()
+        .map(|line| (line, one(line)))
+        .filter(|(_, r)| {
+            !r.as_ref().is_err_and(|e| {
+                e.iter().any(|m| m.starts_with("[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol"))
+            })
+        })
+        .collect();
+    assert!(read_as_symbol.is_empty(), "against an outside `usp`: {read_as_symbol:02X?}");
+    // Controls: a longer name, a qualified name ending in `usp`, and the two moves.
+    for line in ["move.l #usp_save, d0", "lea usp_save(pc), a0", "move.l #my.usp, d0", "lea my.usp(pc), a0", "move.l a0, usp", "move.l usp, a0"] {
+        assert!(one(line).is_ok(), "`{line}`: {:?}", one(line));
+    }
+    // A struct field named `usp` is a field, read through its qualifier.
+    let field = link_m68k(
+        "module m\nstruct My (size: 8) {\n    sp: u32,\n    usp: u32,\n}\nproc P () clobbers(d0) {\n    move.l My.usp(a0), d0\n    rts\n}\n",
+        &env,
+    );
+    assert_eq!(field, Ok(vec![0x20, 0x28, 0x00, 0x04, 0x4E, 0x75]), "the field `My.usp` is offset 4");
+}

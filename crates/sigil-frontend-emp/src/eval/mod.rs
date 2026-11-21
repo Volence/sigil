@@ -699,9 +699,17 @@ impl<'a> Evaluator<'a> {
     /// [`partial_scope`](Self::partial_scope). The one call site per fallback
     /// return in [`eval_path`](Self::eval_path), so the two returns cannot drift
     /// apart on the question.
+    ///
+    /// `usp` is never a label (Review Focus 4): no item can carry the name, so the
+    /// fallback could only bind an OUTSIDE symbol, and `move.l #usp, d0` linked to
+    /// its address silently. On the 68000 it is the named usp refusal instead.
     pub(super) fn fallback_label(&mut self, name: String, span: Span) -> Value {
         if self.partial_scope {
             self.note_unresolved_name(name, span);
+            return Value::Poison;
+        }
+        if name == "usp" && self.cpu != Some(sigil_ir::backend::Cpu::Z80) {
+            self.error(span, asm::USP_UNSUPPORTED.to_string());
             return Value::Poison;
         }
         Value::Label(name)

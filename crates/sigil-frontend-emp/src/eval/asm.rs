@@ -2835,6 +2835,13 @@ impl Evaluator<'_> {
             );
             return None;
         };
+        // `usp(pc)` names the user stack pointer, never a target: no item can
+        // be called `usp`, so the lookup could only bind an OUTSIDE symbol of
+        // that name (`lea usp(pc), a0` linked to it silently, Review Focus 4).
+        if p.segments.len() == 1 && p.segments[0] == "usp" {
+            self.error(expr_span(path_expr), USP_UNSUPPORTED.to_string());
+            return None;
+        }
         let target = scope.resolve_ref(&p.segments.join("."));
         self.pcrel_from_target(target, addend, shape, span, env)
     }
@@ -3860,7 +3867,7 @@ fn z80_regclass_operand(rc: Z80RegClass) -> CodeOperand {
 }
 
 /// The one `usp` refusal text, shared by every operand path that meets the word.
-const USP_UNSUPPORTED: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; it is an operand of `move.l aN, usp` and `move.l usp, aN` only";
+pub(super) const USP_UNSUPPORTED: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; it is an operand of `move.l aN, usp` and `move.l usp, aN` only";
 
 /// A literal size-suffix string (`b`/`w`/`l`/`s`) to its [`Width`].
 fn width_from_text(t: &str) -> Option<Width> {

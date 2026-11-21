@@ -420,7 +420,8 @@ this row named now assembles; the rest of the history follows.**
   `CodeOperand::Usp`, and `[operand.usp-unsupported]` still refuses a bare `usp` in every other instruction
   (`lea usp, a0`, `move.l usp, d0`, `move.w a0, usp`, `jsr usp`, ...); bare `move a0, usp` is refused for its
   missing size suffix, like every `move` (`crates/sigil-frontend-emp/tests/usp_reserved.rs`, `a11_checks.rs`).
-  Spellings that still read `usp` as a symbol (an immediate, a PC-relative target) are in
+  The spellings that still read `usp` as a symbol at Task 4 (an immediate, a PC-relative target) are refused by
+  name since the final-review fix wave; what remains (other register words, unnamed refusals) is in
   `EMP-IMM-REGISTER-WORD`. The ccr half: A11 Task 5 made `move <ea>, ccr` and `eori #, ccr` assemble; the sr
   immediates were A11 Task 7's (closed above).
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
@@ -3126,25 +3127,30 @@ until its row is removed.
 
 ## EMP-IMM-REGISTER-WORD
 
-- state: open 2026-11-22 (A11 Task 4; rewritten in batch C fix round 1 from probes)  size: `S`  project: `STEP0-A11`
-- `usp` is still READ AS A SYMBOL in two expression slots of `.emp` (probed in the frontend_diff frame, whose link
-  environment defines `usp = $1234`):
-  - an immediate: `move.l #usp, d0` assembles `203C 0000 1234`, `#usp+1` `203C 0000 1235` (the AS route gives the
-    same bytes). `#sr` and `#d1` reach the linker as unresolved symbols (the AS route says
-    `` `d1` is a register, not a value ``). Route: the immediate evaluator's label fallback (`fallback_label`).
-  - a PC-relative target, on every instruction except `movem`: `lea usp(pc), a0` `41FA 1232`, `jmp usp(pc)`
-    `4EFA 1232`, `move.l usp(pc), d0` `203A 1232`, `pea usp(pc)` `487A 1232`; `lea usp(pc,d0.w), a0` reaches the
-    link as a `(d8,PC,Xn)` displacement to `usp`; `lea sr(pc), a0` an unresolved `sr`. Route:
-    `map_pcrel_operand` in `eval/asm.rs` (`scope.resolve_ref` on the spelled target path; a spliced target
-    already refuses `usp`), one site for every spelled PC-relative target, so the fix is small there.
-- Refused by name (`[operand.usp-unsupported]`): bare `usp` in any instruction but the two moves (`move.l usp, d0`,
-  `lea usp, a0`, `jsr usp`, ...); `(usp).w` / `(usp).l`; `movem.l usp(pc), d0-d1` and `usp(pc,Xn)` (batch C fix
-  round 1, `usp_reserved.rs`); a spliced `usp`.
-- Refused unnamed (`unknown name \`usp\``, then `instruction dropped`): `(usp)`, `-(usp)`, `(usp)+`, `usp(a0)`,
-  `4(usp)`, `usp+0`, `0+usp`, `dc.l usp` / `dc.w usp`; a data field `data p: u32 = usp` / `*u8 = usp`.
+- state: open 2026-11-22 (A11 Task 4; rewritten in batch C fix round 1 from probes; rewritten again in the
+  final-review fix wave, every line below re-probed on the candidate binary)  size: `S`  project: `STEP0-A11`
+- What remains: register words OTHER than `usp` are still read as symbols in two expression slots, and some
+  `usp` spellings are refused without the named id.
+  - `#sr`, `#ccr`, `#d1` in an immediate (`move.l #sr, d0`) and `sr(pc)` / `d1(pc)` as a PC-relative target
+    (`lea sr(pc), a0`) reach the linker as `unresolved symbol \`sr\`` (`\`d1\``, `\`ccr\``): read as a
+    symbol, so an outside symbol of that name would bind. The AS route says `` `d1` is a register, not a
+    value ``. Route: the label fallback (`fallback_label`, `eval/mod.rs`) and `map_pcrel_operand`
+    (`eval/asm.rs`), the same two sites that now refuse `usp`.
+  - Refused UNNAMED (`unknown name \`usp\``, then `instruction dropped`): `(usp)`, `-(usp)`, `(usp)+`,
+    `usp(a0)`, `4(usp)`, `usp+0`, `0+usp`; a data field `data p: u32 = usp` / `*u8 = usp` (`sr` and `d1` there
+    say `unknown name` too).
+- Closed in the final-review fix wave (triage (a)): `usp` in an immediate (`move.l #usp, d0`, `#usp+1`) and as
+  any PC-relative target (`lea` / `jmp` / `pea` / `move.l usp(pc)`, `usp+4(pc)`, `usp(pc,d0.w)`) is now the
+  named `[operand.usp-unsupported]`; before, against an outside symbol `usp = $1234`, they linked to
+  `203C 0000 1234`, `41FA 1232`, `4EFA 1232`, `487A 1232`, `203A 1232` (`a11_checks.rs`
+  `usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name`). `dc.l usp` / `dc.w usp` moved from
+  `unknown name` to the named refusal through the same fallback (`usp_reserved.rs`).
+- Refused by name (`[operand.usp-unsupported]`), the full list: bare `usp` in any instruction but the two moves
+  (`move.l usp, d0`, `lea usp, a0`, `jsr usp`, ...); `(usp).w` / `(usp).l`; `#usp`; `dc.l usp` / `dc.w usp`;
+  every `usp(pc)` / `usp(pc,Xn)` target, `movem` included; a spliced `usp`.
 - Bare `move a0, usp` is refused for its missing size suffix, like every `move`.
 - Decide whether a register word in an immediate or a PC-relative target is refused on both routes (asl's
-  behaviour to be probed first), and whether the unnamed refusals get the named id.
+  behaviour to be probed first), and whether the unnamed `usp` refusals get the named id.
 
 ## EMP-LINK-FRAME-BOUNDS
 
