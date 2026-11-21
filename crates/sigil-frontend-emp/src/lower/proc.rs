@@ -2843,7 +2843,7 @@ fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Optio
             saved = false;
             continue;
         }
-        match ccr_effect(mnemonic) {
+        match ccr_effect(mnemonic, ops) {
             CcrEffect::Transparent => {}
             CcrEffect::Returns => {
                 if saved {
@@ -2912,12 +2912,12 @@ enum CcrEffect {
 /// return with the callee's flags (writes), `rtr`/`rte` pop a stacked CCR
 /// (writes), and tails/returns get their own arms so the walk can reason about
 /// control leaving.
-fn ccr_effect(mnemonic: &str) -> CcrEffect {
+fn ccr_effect(mnemonic: &str, ops: &[crate::value::CodeOperand]) -> CcrEffect {
     match mnemonic {
         "jsr" | "jbsr" | "bsr" | "rtr" | "rte" => CcrEffect::Writes,
         "rts" | "rtd" => CcrEffect::Returns,
         "bra" | "jbra" | "jmp" | "jra" => CcrEffect::Leaves,
-        m if crate::out_verify::cc_inert_data_op(m) => CcrEffect::Transparent,
+        m if crate::out_verify::cc_inert_data_op(m, ops) => CcrEffect::Transparent,
         m if m.starts_with("db") => CcrEffect::Transparent,
         m if m.starts_with('b') && m.len() == 3 => CcrEffect::Transparent,
         _ => CcrEffect::Writes,

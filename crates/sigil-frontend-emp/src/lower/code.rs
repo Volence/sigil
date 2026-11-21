@@ -748,6 +748,14 @@ fn lower_m68k_movem(
         }
     };
     if matches!(mem_op, CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. }) {
+        // `usp` is the user stack pointer, never a symbol: `movem.l usp(pc), d0-d1`
+        // must not read an outside `usp` as its target (Review Focus 4).
+        if let CodeOperand::PcRel { target, .. } | CodeOperand::PcRelIdx { target, .. } = mem_op {
+            if target == "usp" {
+                push_err(diags, span, USP_ONLY_IN_MOVE.to_string());
+                return;
+            }
+        }
         let (pc_op, target, idx) = match mem_op {
             CodeOperand::PcRel { target: t, addend } => {
                 (M68kOperand::Pcd16(0), pcrel_target_expr(t, *addend), false)

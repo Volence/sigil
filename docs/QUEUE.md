@@ -410,9 +410,12 @@ Whether a name may begin with a digit. The one-byte-short defect is closed; what
 
 - A11 Task 4 (`parcel/a11-complete-instruction-set`): `move.l aN, usp` and `move.l usp, aN` assemble in `.emp`
   (`4E6x`, golden vectors in `crates/sigil-harness/tests/emp_a11_golden.rs`). `usp` is the operand
-  `CodeOperand::Usp`, and `[operand.usp-unsupported]` still refuses it everywhere else (`lea usp, a0`,
-  `move.l usp, d0`, `move.w a0, usp`, bare `move a0, usp`, `jsr usp`, ...), so it never becomes a symbol read
-  (`crates/sigil-frontend-emp/tests/usp_reserved.rs`, `a11_checks.rs`). The ccr half is A11 Task 5.
+  `CodeOperand::Usp`, and `[operand.usp-unsupported]` still refuses a bare `usp` in every other instruction
+  (`lea usp, a0`, `move.l usp, d0`, `move.w a0, usp`, `jsr usp`, ...); bare `move a0, usp` is refused for its
+  missing size suffix, like every `move` (`crates/sigil-frontend-emp/tests/usp_reserved.rs`, `a11_checks.rs`).
+  Spellings that still read `usp` as a symbol (an immediate, a PC-relative target) are in
+  `EMP-IMM-REGISTER-WORD`. The ccr half: A11 Task 5 made `move <ea>, ccr` and `eori #, ccr` assemble; this row's
+  closure is A11 Task 7's.
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: nothing
 
@@ -3093,10 +3096,22 @@ until its row is removed.
 
 ## EMP-IMM-REGISTER-WORD
 
-- state: open 2026-11-22 (A11 Task 4, found by probing `usp` outside the two moves)  size: `S`  project: `STEP0-A11`
-- An immediate's expression still reads a register word as a symbol: with `usp = $1234` in the link environment,
-  `move.l #usp, d0` assembles `203C 0000 1234` (and `#usp+1` `203C 0000 1235`) in `.emp`; the AS route gives the
-  same bytes. `#sr` and `#d1` reach the linker as unresolved symbols in `.emp` (the AS route says
-  `` `d1` is a register, not a value ``). Pre-existing (Task 4 changed only the bare-operand path, not the
-  immediate evaluator); every bare, indirect, sized-absolute, `dc` and splice spelling of `usp` is refused.
-  Decide whether a register word in an immediate is refused on both routes (asl's behaviour to be probed first).
+- state: open 2026-11-22 (A11 Task 4; rewritten in batch C fix round 1 from probes)  size: `S`  project: `STEP0-A11`
+- `usp` is still READ AS A SYMBOL in two expression slots of `.emp` (probed in the frontend_diff frame, whose link
+  environment defines `usp = $1234`):
+  - an immediate: `move.l #usp, d0` assembles `203C 0000 1234`, `#usp+1` `203C 0000 1235` (the AS route gives the
+    same bytes). `#sr` and `#d1` reach the linker as unresolved symbols (the AS route says
+    `` `d1` is a register, not a value ``). Route: the immediate evaluator's label fallback (`fallback_label`).
+  - a PC-relative target, on every instruction except `movem`: `lea usp(pc), a0` `41FA 1232`, `jmp usp(pc)`
+    `4EFA 1232`, `move.l usp(pc), d0` `203A 1232`, `pea usp(pc)` `487A 1232`; `lea usp(pc,d0.w), a0` reaches the
+    link as a `(d8,PC,Xn)` displacement to `usp`; `lea sr(pc), a0` an unresolved `sr`. Route:
+    `map_pcrel_operand` in `eval/asm.rs` (`scope.resolve_ref` on the spelled target path; a spliced target
+    already refuses `usp`), one site for every spelled PC-relative target, so the fix is small there.
+- Refused by name (`[operand.usp-unsupported]`): bare `usp` in any instruction but the two moves (`move.l usp, d0`,
+  `lea usp, a0`, `jsr usp`, ...); `(usp).w` / `(usp).l`; `movem.l usp(pc), d0-d1` and `usp(pc,Xn)` (batch C fix
+  round 1, `usp_reserved.rs`); a spliced `usp`.
+- Refused unnamed (`unknown name \`usp\``, then `instruction dropped`): `(usp)`, `-(usp)`, `(usp)+`, `usp(a0)`,
+  `4(usp)`, `usp+0`, `0+usp`, `dc.l usp` / `dc.w usp`; a data field `data p: u32 = usp` / `*u8 = usp`.
+- Bare `move a0, usp` is refused for its missing size suffix, like every `move`.
+- Decide whether a register word in an immediate or a PC-relative target is refused on both routes (asl's
+  behaviour to be probed first), and whether the unnamed refusals get the named id.

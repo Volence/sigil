@@ -103,7 +103,7 @@ fn const_flag_writer(mnem: &str, size: Option<Width>, ops: &[CodeOperand]) -> Op
 /// ops that leave CCR untouched. Everything NOT here is assumed to clobber CCR
 /// (→ `Dyn`), which is the sound (false-negative) default. `branch_cond` matching
 /// keeps `sub`/`swap`-style arithmetic OUT (they write CCR).
-fn cc_transparent(mnem: &str) -> bool {
+fn cc_transparent(mnem: &str, ops: &[CodeOperand]) -> bool {
     if branch_cond(mnem).is_some() {
         return true; // Bcc / Scc read CCR only (sub → branch_cond None, stays out)
     }
@@ -114,7 +114,7 @@ fn cc_transparent(mnem: &str) -> bool {
             | "dbpl" | "dbmi" | "dbvc" | "dbvs" | "dbge" | "dblt" | "dbgt" | "dble"
             | "movea" | "lea" | "pea" | "adda" | "suba" | "movem" | "exg" | "nop" | "link"
             | "unlk"
-    )
+    ) || crate::out_verify::is_usp_move(mnem, ops)
 }
 
 /// Apply instruction `idx`'s effect to the CCR-constancy state.
@@ -122,7 +122,7 @@ fn step(st: CcState, mnem: &str, size: Option<Width>, ops: &[CodeOperand]) -> Cc
     if let Some((z, n)) = const_flag_writer(mnem, size, ops) {
         return CcState::Const { z, n };
     }
-    if cc_transparent(mnem) {
+    if cc_transparent(mnem, ops) {
         return st;
     }
     CcState::Dyn // any other (including calls, tst/cmp, btst, memory loads) clobbers CCR

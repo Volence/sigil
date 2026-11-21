@@ -133,3 +133,61 @@ fn each_new_arithmetic_word_is_charged_with_its_destination() {
         assert!(has(&d, "[proc.clobber-undeclared] `P` writes `d1`"), "`{line}`: {d:?}");
     }
 }
+
+/// The `[call.flag-result-unused]` firings for the first proc of `src`, with
+/// `Queue` declared to return `flag` (`carry` or `zero`).
+fn flag_unused(src: &str, flag: &str) -> Vec<sigil_frontend_emp::flag_check::FlagFiring> {
+    use sigil_frontend_emp::ast::Item;
+    use std::collections::{BTreeMap, BTreeSet};
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let p = file.items.iter().find_map(|i| if let Item::Proc(p) = i { Some(p) } else { None }).expect("a proc");
+    let (buf, _d, _n) = sigil_frontend_emp::eval::eval_proc_body(
+        &file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    let fc = BTreeMap::from([("Queue".to_string(), BTreeSet::from([flag.to_string()]))]);
+    sigil_frontend_emp::flag_check::check_flag_unused(&p.name, &buf.expect("codebuf").items, &fc, &[], Cpu::M68000)
+}
+
+/// MOVE USP: "Condition Codes: Not affected." A flag set before either `usp`
+/// move is still the same flag after it, for every check that reads flags.
+#[test]
+fn a_flag_result_survives_a_usp_move() {
+    // The flag-result walk: a carry (or zero) result read after a `usp` move is
+    // still the callee's. Control: `move.l a0, d0` writes both flags.
+    for (flag, branch) in [("carry", "bcs.s"), ("zero", "beq.s")] {
+        for (mid, fires) in [("move.l a0, usp", false), ("move.l usp, a0", false), ("move.l a0, d0", true)] {
+            let src = format!("module m\nproc P () clobbers(d0/a0) {{\n    jbsr Queue\n    {mid}\n    {branch} .x\n.x:\n    rts\n}}\n");
+            let f = flag_unused(&src, flag);
+            assert_eq!(!f.is_empty(), fires, "{flag} across `{mid}`: {f:?}");
+        }
+    }
+}
+
+/// The conditional-out SURVIVES half reads the flags at the return through a
+/// `usp` move.
+#[test]
+fn a_conditional_out_reads_the_flags_through_a_usp_move() {
+    // The conditional-out SURVIVES half reads the flags at the return: `moveq #1`
+    // leaves Z clear, so the return is a `!eq` exit where `d0` must survive.
+    // Across a `usp` move that is still known (it fires, as across `lea`);
+    // across `move.l a0, d2` the flags are unknown and nothing can be said.
+    let survives = |mid: &str| {
+        let d = diags("clobbers(d1, d2, a0, a1) out(d0 if eq)", &format!("    moveq #5, d0\n    moveq #1, d1\n    {mid}\n    rts"));
+        has(&d, "[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)`")
+    };
+    assert!(survives("lea (a0), a1"), "the transparent baseline");
+    assert!(survives("move.l a0, usp"), "flags across `move.l a0, usp`");
+    assert!(survives("move.l usp, a0"), "flags across `move.l usp, a0`");
+    assert!(!survives("move.l a0, d2"), "control: `move.l a0, d2` writes the flags");
+}
+
+/// `preserves(sr.ccr)`: neither `usp` move touches the caller's condition codes.
+#[test]
+fn preserves_ccr_holds_across_a_usp_move() {
+    assert_eq!(diags("preserves(sr.ccr)", "    move.l a0, usp\n    rts"), []);
+    assert_eq!(diags("clobbers(a0) preserves(sr.ccr)", "    move.l usp, a0\n    rts"), []);
+    let d = diags("clobbers(d0) preserves(sr.ccr)", "    move.l a0, d0\n    rts");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
+}

@@ -725,10 +725,7 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
         }
         "emp-lacks-sr-ccr-form" => {
             SR_CCR_GAP_FAMILIES.contains(&c.family)
-                && emp_refuses_as_assembles(&|s| {
-                    s == "unsupported form: ccr is not a general EA"
-                        || s == "unsupported form: sr is not a general EA"
-                })
+                && emp_refuses_as_assembles(&|s| s == "unsupported form: sr is not a general EA")
         }
         "emp-no-implicit-variant" => {
             let to_an = matches!(c.dst, Some(Ea::A(_)));

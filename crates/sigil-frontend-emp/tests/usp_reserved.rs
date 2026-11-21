@@ -137,3 +137,20 @@ fn sized_absolute_dc_and_offset_spellings_of_usp_are_refused() {
         assert!(has(&e, "unknown name `usp`"), "`{inst}`: {e:?}");
     }
 }
+
+/// A11 fix round 1 (batch C review I2): the PC-relative `movem` load A11 added
+/// must not read `usp` as its target symbol. With an outside `usp` defined it
+/// would otherwise link (`4CFA 0003 xxxx`). A label merely starting with the
+/// letters still loads.
+#[test]
+fn a_movem_pc_relative_source_named_usp_is_refused() {
+    let mut env = SymbolTable::new();
+    env.define("usp", SymbolValue::Int(0x1234));
+    for inst in ["movem.l usp(pc), d0-d1", "movem.w usp+4(pc), d0-d1", "movem.l usp(pc,d2.w), d0-d1"] {
+        let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
+        let e = refused(&src, &env);
+        assert!(has(&e, OPERAND), "`{inst}`: {e:?}");
+    }
+    let src = "module m\nproc usp_save() {\n    rts\n}\nproc f() {\n    movem.w usp_save(pc), d0-d1\n    rts\n}\n";
+    assert_eq!(emp(src, &SymbolTable::new()), Ok(vec![0x4E, 0x75, 0x4C, 0xBA, 0x00, 0x03, 0xFF, 0xFA, 0x4E, 0x75]));
+}

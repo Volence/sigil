@@ -1730,7 +1730,7 @@ impl Flags {
             }
             return Flags::TOP;
         }
-        if cc_transparent(mnem) {
+        if cc_transparent(mnem, ops) {
             *self
         } else {
             Flags::TOP
@@ -1814,8 +1814,8 @@ impl Flags {
 /// is `eq`(Z), so a Z-clobber between a conditional-out call and its `beq` guard
 /// MUST bail; a carry-writer test there would credit on a stale-Z edge = a
 /// must-def false negative.
-pub(crate) fn cc_transparent(mnem: &str) -> bool {
-    cc_inert_data_op(mnem) || is_branch_or_return(mnem)
+pub(crate) fn cc_transparent(mnem: &str, ops: &[CodeOperand]) -> bool {
+    cc_inert_data_op(mnem, ops) || is_branch_or_return(mnem)
 }
 
 /// The NON-CONTROL mnemonics that provably do not write the condition codes —
@@ -1825,7 +1825,7 @@ pub(crate) fn cc_transparent(mnem: &str) -> bool {
 /// deliberately NOT here: the two consumers disagree about them (a returning
 /// call preserves a COMPUTED flag's transparency question differently from an
 /// ENTRY-CCR question), so each classifies control flow itself.
-pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
+pub(crate) fn cc_inert_data_op(mnem: &str, ops: &[CodeOperand]) -> bool {
     // `assume_some` is the niche-option extraction marker: it emits no bytes and
     // executes nothing, so it writes no condition code. Listing it keeps a marker
     // placed between a conditional-out call and its guard from bailing the
@@ -1833,7 +1833,15 @@ pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
     matches!(
         mnem,
         "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "assume_some"
-    )
+    ) || is_usp_move(mnem, ops)
+}
+
+/// `move.l aN, usp` / `move.l usp, aN`: MOVE USP, "Condition Codes: Not
+/// affected." `.emp` spells both with the plain word `move`, so the operand
+/// tells them apart from a flag-writing `move` (the lowering refuses `usp` in
+/// any other instruction, so a `move` holding it is one of the two).
+pub(crate) fn is_usp_move(mnem: &str, ops: &[CodeOperand]) -> bool {
+    mnem == "move" && ops.iter().any(|o| matches!(o, CodeOperand::Usp))
 }
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`

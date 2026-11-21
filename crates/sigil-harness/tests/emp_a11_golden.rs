@@ -78,23 +78,43 @@ fn a_size_suffix_the_instruction_lacks_is_refused() {
 #[test]
 fn the_usp_moves_assemble() {
     use Operand::*;
-    golden("move.l a0, usp", i(Mnemonic::MoveToUsp, Size::L, &[An(0), Usp]), &[0x4E, 0x60]);
-    golden("move.l usp, a0", i(Mnemonic::MoveFromUsp, Size::L, &[Usp, An(0)]), &[0x4E, 0x68]);
+    golden("move.l a3, usp", i(Mnemonic::MoveToUsp, Size::L, &[An(3), Usp]), &[0x4E, 0x63]);
+    golden("move.l usp, a5", i(Mnemonic::MoveFromUsp, Size::L, &[Usp, An(5)]), &[0x4E, 0x6D]);
 }
 
 #[test]
 fn the_ccr_forms_assemble() {
     use Operand::*;
-    golden("move.w d0, ccr", i(Mnemonic::MoveToCcr, Size::W, &[Dn(0), Ccr]), &[0x44, 0xC0]);
+    golden("move.w d3, ccr", i(Mnemonic::MoveToCcr, Size::W, &[Dn(3), Ccr]), &[0x44, 0xC3]);
     golden("move.w #$1F, ccr", i(Mnemonic::MoveToCcr, Size::W, &[Imm(0x1F), Ccr]), &[0x44, 0xFC, 0x00, 0x1F]);
     golden("eori.b #$01, ccr", i(Mnemonic::EoriCcr, Size::B, &[Imm(1), Ccr]), &[0x0A, 0x3C, 0x00, 0x01]);
 }
 
 #[test]
 fn movem_loads_from_a_pc_relative_source() {
-    // `.tgt` is the frame's first byte: the displacement is from the extension word at +4.
-    assert_eq!(emp("movem.w .tgt(pc), d0-d1"), Ok(framed(&[0x4C, 0xBA, 0x00, 0x03, 0xFF, 0xFA])));
-    assert_eq!(asl("movem.w tgt(pc),d0-d1"), Ok(framed(&[0x4C, 0xBA, 0x00, 0x03, 0xFF, 0xFA])));
-    assert_eq!(emp("movem.l .tgt(pc,d0.w), d0-d1"), asl("movem.l tgt(pc,d0.w),d0-d1"));
-    assert!(emp("movem.l .tgt(pc,d0.w), d0-d1").is_ok());
+    use Operand::*;
+    // `.tgt` is the frame's first byte (offset 0); the movem sits at 2 and its
+    // displacement is taken from its extension word at 6: -6 = $FA / $FFFA.
+    let pcd16 = [0x4C, 0xBA, 0x00, 0x18, 0xFF, 0xFA];
+    let enc = encode(&i(Mnemonic::Movem, Size::W, &[Pcd16(-6), RegList(0x0018)]));
+    assert_eq!(enc.as_deref(), Ok(&pcd16[..]), "shared encoder, (d16,pc)");
+    assert_eq!(emp("movem.w .tgt(pc), d3-d4"), Ok(framed(&pcd16)));
+    assert_eq!(asl("movem.w tgt(pc),d3-d4"), Ok(framed(&pcd16)));
+    let pcd8 = [0x4C, 0xFB, 0x00, 0x18, 0xA0, 0xFA];
+    let xn = m68k::Xn::A(2);
+    let enc = encode(&i(Mnemonic::Movem, Size::L, &[Pcd8Xn { d: -6, xn, long: false }, RegList(0x0018)]));
+    assert_eq!(enc.as_deref(), Ok(&pcd8[..]), "shared encoder, (d8,pc,a2.w)");
+    assert_eq!(emp("movem.l .tgt(pc,a2.w), d3-d4"), Ok(framed(&pcd8)));
+    assert_eq!(asl("movem.l tgt(pc,a2.w),d3-d4"), Ok(framed(&pcd8)));
+}
+
+/// A PC-relative `movem` DESTINATION is not a 68000 instruction (program-space
+/// references are read-only): refused on both routes.
+#[test]
+fn movem_to_a_pc_relative_destination_is_refused() {
+    for (e, a) in [("movem.l d3-d4, .tgt(pc)", "movem.l d3-d4,tgt(pc)"), ("movem.w d3-d4, .tgt(pc,a2.w)", "movem.w d3-d4,tgt(pc,a2.w)")] {
+        let err = emp(e).unwrap_err();
+        assert!(err.iter().any(|m| m.starts_with("illegal destination EA: (d")), "`{e}`: {err:?}");
+        assert!(asl(a).is_err(), "AS route accepts `{a}`");
+    }
 }

@@ -239,6 +239,9 @@ fn m68k_isa_carry_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand
     let to_ccr_or_sr = matches!(ops.last(), Some(CodeOperand::Ccr | CodeOperand::Sr));
     let to_an = matches!(ops.last(), Some(CodeOperand::Reg(r)) if crate::lower::reg_kind(*r).0);
     match m {
+        // MOVE USP (`move.l aN, usp` / `move.l usp, aN`, spelled `move`):
+        // "Condition Codes: Not affected."
+        Move if crate::out_verify::is_usp_move("move", ops) => Untouched,
         // MOVE from SR, SR -> destination: "Condition Codes: Not affected." It
         // copies the whole CCR, C included, where the walk cannot follow it.
         Move if matches!(ops.first(), Some(CodeOperand::Sr)) => Reads,
@@ -515,6 +518,9 @@ fn m68k_isa_zero_role(m: sigil_backend_m68k::m68k::Mnemonic, ops: &[CodeOperand]
     let to_ccr_or_sr = matches!(ops.last(), Some(CodeOperand::Ccr | CodeOperand::Sr));
     let to_an = matches!(ops.last(), Some(CodeOperand::Reg(r)) if crate::lower::reg_kind(*r).0);
     match m {
+        // MOVE USP (`move.l aN, usp` / `move.l usp, aN`, spelled `move`):
+        // "Condition Codes: Not affected."
+        Move if crate::out_verify::is_usp_move("move", ops) => Untouched,
         // MOVE from SR, SR -> destination: reads the whole CCR, Z included.
         Move if matches!(ops.first(), Some(CodeOperand::Sr)) => Reads,
         MoveFromSr => Reads,
@@ -1076,7 +1082,7 @@ impl<'a> Cfg<'a> {
             if UNCOND_MNEMONICS.contains(&mnem) {
                 return None; // jmp/jra/jbra divert — the guard is not straight-line-reachable
             }
-            if !cc_transparent(mnem) {
+            if !cc_transparent(mnem, ops) {
                 return None; // a Z-clobber (btst/…) or unmodeled mnemonic — sound-complete bail
             }
             prev = idx;
