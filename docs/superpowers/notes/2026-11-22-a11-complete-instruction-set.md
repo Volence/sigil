@@ -492,3 +492,125 @@ the guard is what makes it the named `[operand.usp-unsupported]`. Restored with
 TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2870 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 9 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 5: `move <ea>, ccr`, `eori #, ccr`, `movem` from a PC-relative source (code commit bfb520d3)
+
+The brief's code blocks compiled and ran as given (the `movem` block's locals `mem_op`, `mask`, `list_first`,
+`size` exist under those names). One addition the brief did not list: two check tests in `a11_checks.rs`, because
+the plan requires a test of what the checks say for every new instruction and the brief gave only golden vectors.
+What the checks say, probed and then pinned: a CCR-only write is a flag write, not a mask write.
+`[proc.sr-undeclared]` stays silent for `move.w d0, ccr`, `move.w #$1F, ccr` and `eori.b #$01, ccr` under
+`clobbers()`, while `move.w d0, sr` fires; `preserves(sr.ccr)` refuses each unbracketed write
+`[proc.preserves-unverifiable]`; bare `preserves(sr)` warns `[proc.ccr-advisory]`; inside the
+`move.w sr, -(sp)` ... `move.w (sp)+, sr` bracket all are clean. The flag tables (`carry_role` / `zero_role` in
+`flag_check.rs`) already answered both forms (`Move` to ccr `Writes`; `EoriCcr` by its immediate, e.g. `#$01`
+inverts C). A `movem` load from `.t(pc)` writes its list (`[proc.clobber-undeclared]` names `d1` under `clobbers(d0)`).
+`lower_module` does not run `[call.flag-result-unused]`, so no module-level test of it was possible here.
+
+FD: the `emp-lacks-sr-ccr-form` predicate still accepts `unsupported form: ccr is not a general EA` as an
+alternative; the brief named only the families and the prose, so it stays (no family it now covers can produce it).
+
+**RF step 1, red before implementing.** `("move-to-ccr", 11), ("eori-ccr", 1), ("movem", 4)` deleted from
+`KNOWN_REFUSED`, the two golden tests appended:
+
+```
+test the_ccr_forms_assemble ... FAILED
+test movem_loads_from_a_pc_relative_source ... FAILED
+thread 'the_ccr_forms_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:86:5:
+assertion `left == right` failed: `.emp`, `move.w d0, ccr`
+  left: Err(["unsupported form: ccr is not a general EA"])
+ right: Ok([78, 113, 68, 192, 78, 117])
+thread 'movem_loads_from_a_pc_relative_source' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:94:5:
+assertion `left == right` failed
+  left: Err(["internal: a PC-relative operand reached the generic operand mapper"])
+ right: Ok([78, 113, 76, 186, 0, 3, 255, 250, 78, 117])
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "eori-ccr": [
+        "`eori.b #1, ccr`: unsupported form: ccr is not a general EA  ||  `eori #1, ccr`: instruction needs an explicit size suffix (.b/.w/.l)",
+    ],
+    "move-to-ccr": [ 11 rows, e.g.
+        "`move.w d1, ccr`: unsupported form: ccr is not a general EA  ||  `move d1, ccr`: instruction needs an explicit size suffix (.b/.w/.l)",
+    ],
+    "movem": [ 4 rows, e.g.
+        "`movem.l .tgt(pc), d0/a0/a1`: internal: a PC-relative operand reached the generic operand mapper  ||  `movem .tgt(pc), d0/a0/a1`: movem needs an explicit size suffix (.w or .l)",
+    ],
+  left: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-to-ccr": 11, "movem": 4, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "link": 1, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+The two check tests and the `as_author_forms_stay_off_emp` edit were written after the implementation (after
+probing what the checks say). Their red was then shown against the pre-implementation `code.rs` (the edited file
+copied aside, `code.rs` restored from the Task 4 HEAD, tests run, the copy put back):
+
+```
+test movem_from_a_pc_relative_source_writes_its_list ... FAILED
+test the_ccr_writes_are_flag_writes_not_mask_writes ... FAILED
+thread 'movem_from_a_pc_relative_source_writes_its_list' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:90:5:
+  left: [(true, "internal: a PC-relative operand reached the generic operand mapper")]
+ right: []
+thread 'the_ccr_writes_are_flag_writes_not_mask_writes' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:73:9:
+assertion `left == right` failed: `move.w d0, ccr` under clobbers()
+  left: [(true, "unsupported form: ccr is not a general EA")]
+ right: []
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+thread 'the_other_as_rewrites_do_not_reach_emp' panicked at crates/sigil-frontend-emp/tests/as_author_forms_stay_off_emp.rs:41:5:
+assertion `left == right` failed: `.emp` answer for `eori.b #1,ccr` moved
+  left: ["unsupported form: ccr is not a general EA"]
+ right: []
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**RF step 2, green.** golden 7 passed, walk 3 passed, `a11_checks` 5 passed, `as_author_forms_stay_off_emp` 4
+passed, differential 7 passed.
+
+**RF step 3, mutation on the clean committed HEAD** (`git status --short` empty). Delete the `MoveToCcr` arm:
+
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 1 -
+-        (Move, [_, M68kOperand::Ccr]) => MoveToCcr,
+```
+
+`cargo test --release -p sigil-harness --test emp_a11_golden --test emp_isa_walk_m68k --no-fail-fast`:
+
+```
+test the_ccr_forms_assemble ... FAILED
+thread 'the_ccr_forms_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:86:5:
+assertion `left == right` failed: `.emp`, `move.w d0, ccr`
+  left: Err(["unsupported form: ccr is not a general EA"])
+ right: Ok([78, 113, 68, 192, 78, 117])
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+  left: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "link": 1, "move-to-ccr": 11, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "link": 1, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+As predicted: `the_ccr_forms_assemble` and the walk (`move-to-ccr`, 11). Restored with
+`git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs`: golden 7 passed, walk 3 passed.
+
+**Mutation 2 (extra, for the `movem` block).** Its guard to `false`:
+
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-    if matches!(mem_op, CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. }) {
++    if false {
+```
+
+```
+test movem_loads_from_a_pc_relative_source ... FAILED
+  left: Err(["internal: a PC-relative operand reached the generic operand mapper"])
+ right: Ok([78, 113, 76, 186, 0, 3, 255, 250, 78, 117])
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test movem_from_a_pc_relative_source_writes_its_list ... FAILED
+  left: [(true, "internal: a PC-relative operand reached the generic operand mapper")]
+ right: []
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Restored from HEAD: golden 7 passed, `a11_checks` 5 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2872 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 11 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
