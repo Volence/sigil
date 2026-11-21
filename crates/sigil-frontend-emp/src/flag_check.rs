@@ -1811,14 +1811,11 @@ mod zero_model_tests {
 
     /// The ISA families no `.emp` CodeBuf can hold, each for a named reason.
     ///
-    /// - `chk`, `link`, `unlk`, `reset`, `trapv`, `stop`: `.emp`'s
+    /// - `chk`, `trapv`: `.emp`'s
     ///   mnemonic table has no spelling for them (they are reached from the AS
-    ///   front-end only). Spelling them in `.emp` is an owner-reviewed language
-    ///   change, and it also needs `link`/`unlk` in the clobber model, which the
-    ///   last-operand rule cannot supply.
+    ///   front-end only) until A11 Task 9 spells them.
     const UNSPELLABLE: &[&str] = &[
         "chk",
-        "reset",
         "trapv",
     ];
 

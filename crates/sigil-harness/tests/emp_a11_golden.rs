@@ -66,7 +66,7 @@ fn rtr_assembles() {
 /// A suffix the instruction does not have is refused, on both routes.
 #[test]
 fn a_size_suffix_the_instruction_lacks_is_refused() {
-    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6", "stop.w #$2700"] {
+    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6", "stop.w #$2700", "reset.w"] {
         let e = emp(line).unwrap_err();
         assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
         let a = asl(line).unwrap_err();
@@ -148,4 +148,10 @@ fn stop_and_the_sr_immediates_assemble() {
     golden("ori.w #$0700, sr", i(Mnemonic::OriSr, Size::W, &[Imm(0x0700), Sr]), &[0x00, 0x7C, 0x07, 0x00]);
     golden("andi.w #$F8FF, sr", i(Mnemonic::AndiSr, Size::W, &[Imm(0xF8FF), Sr]), &[0x02, 0x7C, 0xF8, 0xFF]);
     golden("eori.w #$0700, sr", i(Mnemonic::EoriSr, Size::W, &[Imm(0x0700), Sr]), &[0x0A, 0x7C, 0x07, 0x00]);
+}
+
+/// RESET is the fixed word `0100 1110 0111 0000` = $4E70 (no operand field).
+#[test]
+fn reset_assembles() {
+    golden("reset", i(Mnemonic::Reset, Size::W, &[]), &[0x4E, 0x70]);
 }

@@ -113,7 +113,7 @@ fn cc_transparent(mnem: &str, ops: &[CodeOperand]) -> bool {
             | "dbra" | "dbf" | "dbt" | "dbcc" | "dbcs" | "dbeq" | "dbne" | "dbhi" | "dbls"
             | "dbpl" | "dbmi" | "dbvc" | "dbvs" | "dbge" | "dblt" | "dbgt" | "dble"
             | "movea" | "lea" | "pea" | "adda" | "suba" | "movem" | "exg" | "nop" | "link"
-            | "unlk"
+            | "unlk" | "reset"
     ) || crate::out_verify::is_usp_move(mnem, ops)
 }
 

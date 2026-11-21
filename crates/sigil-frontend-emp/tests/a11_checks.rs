@@ -275,3 +275,56 @@ fn the_sr_writes_reach_the_flags_as_their_immediate_says() {
         assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "`{line}`: {d:?}");
     }
 }
+
+/// The `branch_const` firings for the first proc of `src`.
+fn branch_const(src: &str) -> Vec<sigil_frontend_emp::branch_const::BranchConstFiring> {
+    use sigil_frontend_emp::ast::Item;
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let p = file.items.iter().find_map(|i| if let Item::Proc(p) = i { Some(p) } else { None }).expect("a proc");
+    let (buf, _d, _n) = sigil_frontend_emp::eval::eval_proc_body(
+        &file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    sigil_frontend_emp::branch_const::check_branch_const(&p.name, &buf.expect("codebuf").items)
+}
+
+/// RESET pulses the external RESET line and changes no CPU register, flag or
+/// stack word ("Condition Codes: Not affected."), and execution goes on with the
+/// next instruction. Every check reads straight through it.
+#[test]
+fn reset_leaves_registers_flags_and_flow_alone() {
+    // No register is charged, and it is not a terminator: a body that ends in
+    // `reset` can still run off its end.
+    assert_eq!(diags("clobbers()", "    reset\n    rts"), []);
+    let d = diags("clobbers()", "    reset");
+    assert!(has(&d, "[proc.undeclared-fallthrough] `P` can reach its closing `}`"), "{d:?}");
+    // The flag-result walk: a callee's carry (or zero) read after `reset` is
+    // still the callee's. Control: `move.l a0, d0` writes both flags.
+    for (flag, branch) in [("carry", "bcs.s"), ("zero", "beq.s")] {
+        for (mid, fires) in [("reset", false), ("move.l a0, d0", true)] {
+            let src = format!("module m\nproc P () clobbers(d0) {{\n    jbsr Queue\n    {mid}\n    {branch} .x\n.x:\n    rts\n}}\n");
+            let f = flag_unused(&src, flag);
+            assert_eq!(!f.is_empty(), fires, "{flag} across `{mid}`: {f:?}");
+        }
+    }
+    // The conditional-out SURVIVES half: `moveq #1, d1` leaves Z clear, so the
+    // return is a `!eq` exit where `d0` must survive. It fires only while the
+    // flags are still known at the return.
+    let survives = |mid: &str| {
+        let d = diags("clobbers(d1, d2) out(d0 if eq)", &format!("    moveq #5, d0\n    moveq #1, d1\n    {mid}\n    rts"));
+        has(&d, "[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)`")
+    };
+    assert!(survives("reset"), "flags across `reset`");
+    assert!(!survives("move.l a0, d2"), "control: `move.l a0, d2` writes the flags");
+    // `preserves(sr.ccr)` holds across it. Control: a flag write does not.
+    assert_eq!(diags("preserves(sr.ccr)", "    reset\n    rts"), []);
+    let d = diags("clobbers(d0) preserves(sr.ccr)", "    reset\n    moveq #0, d0\n    rts");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
+    // The constant-branch net: `moveq #0` sets Z, `reset` keeps it, so the
+    // `beq` is always taken. Control: `tst.w d1` makes Z unknown.
+    let src = |mid: &str| format!("module m\nproc P () clobbers(d0) {{\n    moveq #0, d0\n    {mid}\n    beq.s .x\n.x:\n    rts\n}}\n");
+    let f = branch_const(&src("reset"));
+    assert!(f.len() == 1 && f[0].cc == "eq" && f[0].always_taken, "{f:?}");
+    assert_eq!(branch_const(&src("tst.w d1")), [], "control");
+}
