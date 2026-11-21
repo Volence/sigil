@@ -903,3 +903,137 @@ Restored: `a11_checks` 13 passed.
 TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2883 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 13 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 7: `stop` and the SR immediates (code commit c1cabe26)
+
+The brief's code blocks compiled and ran as given. Additions: a third check test,
+`the_sr_writes_reach_the_flags_as_their_immediate_says` (the flag consequence of each form, firing), and the
+golden vectors' literals derived: STOP is `$4E72` then the immediate word (`#$2700` → `4E72 2700`); ORI / ANDI /
+EORI to SR are `$007C` / `$027C` / `$0A7C` then the word (`0700`, `F8FF`, `0700`). The shared encoder and both front
+ends agreed with the literals on the first run.
+
+What each table says. Mask (`[proc.sr-undeclared]`, `preserves(sr)` round trip, the gated build): all four are mask
+writes, the immediates through their `sr` operand, `stop` by name. Carry / zero (`flag_check.rs`, reached through the
+ISA enum once `m68k_mnemonic` knows `stop`): `stop` Writes (STOP: "Set according to the immediate operand"); `andi` /
+`ori` / `eori #, sr` move C as the immediate's bit 0 says and Z as its bit 2 says (the existing `to_ccr_or_sr` arms),
+so `ori.w #$0700, sr` leaves both and `ori.w #$0705, sr` writes both. Flag-inert allowlist: none of the four (all
+rewrite the CCR), so `preserves(sr.ccr)` refuses each unbracketed and `out(.. if cc)` loses its flags across them.
+Stack model: no effect. Terminator: none (execution continues after the interrupt). Cycles: Task 10.
+
+Walk frame (lesson 4): no change. `[proc.sr-undeclared]` is a warning outside the gate, so `stop #1` in the bare
+frame is accepted and the walk reads it as written.
+
+`grep -n "CodeOperand::Sr" crates/sigil-frontend-emp/src -r` after the change, one word each:
+
+```
+corpus_contracts.rs:1321  write site, has stop
+branch_const.rs:90        read (the constant-flag writer skips an sr/ccr destination; `stop` is no constant writer, falls to Dyn)
+flag_check.rs:239, :518   read (flag tables, the to-ccr/sr operand refinement)
+flag_check.rs:247, :525   read (MOVE from SR)
+flag_check.rs:1797-1807   operand mapping (unit-test spellings)
+lower/code.rs:1611        operand mapping
+lower/mod.rs:2065         write site, has stop (the name list beside it)
+lower/proc.rs:1381        write site, has stop
+lower/proc.rs:2825, :2834 read (the CCR bracket's exact save / restore shapes; `stop` inside a bracket is a Writes, allowed)
+lower/proc.rs:2966        read (the round trip's save)
+lower/proc.rs:2972        write site, has stop (the block before it)
+lower/proc.rs:2975        read (the restore shape)
+eval/asm.rs:3495          operand mapping
+```
+
+**RF step 1, red before implementing.** `("stop", 1), ("andi-sr", 1), ("ori-sr", 1), ("eori-sr", 1)` deleted from
+`KNOWN_REFUSED`, the golden test, the suffix line and the three check tests appended:
+
+```
+test stop_and_the_sr_immediates_assemble ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+thread 'stop_and_the_sr_immediates_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:147:5:
+  left: Err(["`stop` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 114, 39, 0, 78, 117])
+thread 'a_size_suffix_the_instruction_lacks_is_refused' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:71:9:
+`stop.w #$2700`: ["`stop` is not a recognized 68000 mnemonic"]
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "andi-sr": [
+        "`andi.w #1, sr`: unsupported form: sr is not a general EA  ||  `andi #1, sr`: instruction needs an explicit size suffix (.b/.w/.l)",
+    "eori-sr": [
+        "`eori.w #1, sr`: unsupported form: sr is not a general EA  ||  `eori #1, sr`: instruction needs an explicit size suffix (.b/.w/.l)",
+    "ori-sr": [
+        "`ori.w #1, sr`: unsupported form: sr is not a general EA  ||  `ori #1, sr`: instruction needs an explicit size suffix (.b/.w/.l)",
+    "stop": [
+        "`stop.w #1`: `stop` is not a recognized 68000 mnemonic  ||  `stop #1`: `stop` is not a recognized 68000 mnemonic",
+  left: {"andi-sr": 1, "chk": 11, "eori-sr": 1, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1}
+ right: {"chk": 11, "reset": 1, "trapv": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test the_sr_writes_reach_the_flags_as_their_immediate_says ... FAILED
+test every_sr_write_form_is_an_undeclared_mask_write ... FAILED
+test stop_cannot_hide_behind_preserves_sr ... FAILED
+thread 'the_sr_writes_reach_the_flags_as_their_immediate_says' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:269:13:
+assertion `left == right` failed: carry across `stop #$2700`: []
+  left: false
+ right: true
+thread 'every_sr_write_form_is_an_undeclared_mask_write' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:233:9:
+`stop #$2000`: [(true, "`stop` is not a recognized 68000 mnemonic")]
+thread 'stop_cannot_hide_behind_preserves_sr' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:247:5:
+[(true, "`stop` is not a recognized 68000 mnemonic"), (false, "[proc.ccr-advisory] `P` declares bare `preserves(sr)` (both halves), but its condition codes are not provably the caller's at return: `stop` affects the condition codes outside the bracket, ...")]
+test result: FAILED. 13 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+The gate test was written with the implementation; its red is Mutation A below.
+
+**RF step 2, green.** golden 10 passed, walk 3 passed, `a11_checks` 16 passed, `as_author_forms_stay_off_emp` 4
+passed, `flag_check` unit tests 18 passed, differential 7 passed, `sr_undeclared_gate` 6 passed.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- <file>`).
+
+Mutation A (the brief's), `stop` out of `check_clobbers`:
+```
+ crates/sigil-frontend-emp/src/lower/proc.rs | 3 +--
+-        if ((writes_dest_register(mnemonic) && matches!(ops.last(), Some(CodeOperand::Sr)))
+-            || mnemonic == "stop")
++        if ((writes_dest_register(mnemonic) && matches!(ops.last(), Some(CodeOperand::Sr))))
+test every_sr_write_form_is_an_undeclared_mask_write ... FAILED
+thread 'every_sr_write_form_is_an_undeclared_mask_write' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:233:9:
+`stop #$2000`: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out
+test a_stop_stops_the_gated_build ... FAILED
+thread 'a_stop_stops_the_gated_build' panicked at crates/sigil-cli/tests/sr_undeclared_gate.rs:64:5:
+assertion `left == right` failed: contract closure gate: passed (demo release: 80 module(s) analysed; ...)
+  left: Some(0)
+ right: Some(1)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out
+```
+Red on `stop #$2000` and at the build level (the gated build wrote a ROM). Restored: 1 passed, 1 passed.
+
+Mutation B (the brief's), the `stop` block out of `sr_writes_round_trip`:
+```
+ crates/sigil-frontend-emp/src/lower/proc.rs | 7 -------
+-        if mnemonic == "stop" {
+-            saved_before_first_write.get_or_insert(saved);
+-            last_write_is_restore = false;
+-            continue;
+-        }
+test stop_cannot_hide_behind_preserves_sr ... FAILED
+thread 'stop_cannot_hide_behind_preserves_sr' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:247:5:
+[(false, "[proc.ccr-advisory] `P` declares bare `preserves(sr)` (both halves), but its condition codes are not provably the caller's at return: `stop` affects the condition codes outside the bracket, ...")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out
+```
+Red on the first assertion: only the CCR advisory is left, the mask half passes. Restored: 1 passed.
+
+Mutation D (extra), `stop` to Untouched in the carry table:
+```
+ crates/sigil-frontend-emp/src/flag_check.rs | 3 ++-
+-        Rtr | Stop | Chk => Writes,
++        Rtr | Chk => Writes,
++        Stop => Untouched,
+test the_sr_writes_reach_the_flags_as_their_immediate_says ... FAILED
+assertion `left == right` failed: carry across `stop #$2700`: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out
+```
+Restored: `a11_checks` 16 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2886 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-cli --test sr_undeclared_gate` 6 passed;
+`sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --test frontend_differential_coverage` 3 suites, 14
+passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
