@@ -1801,9 +1801,10 @@ impl Flags {
 
 /// Instructions that provably do NOT write the condition codes (68k): address
 /// arithmetic and moves (`movea`/`lea`/`pea`/`adda`/`suba`), `movem`/`exg`/`nop`,
-/// and all control transfers (branches READ the CC, returns/jumps do not write
-/// it). Everything not listed — including a returning `jsr` (handled separately)
-/// — is treated as a CC clobber (→ ⊤). Deliberately conservative: an unmodeled
+/// and the control transfers that leave the CC alone (branches READ it, `rts`,
+/// `rtd` and jumps do not write it; `rtr`/`rte` LOAD it, so they are not here).
+/// Everything not listed — including a returning `jsr` (handled separately) —
+/// is treated as a CC clobber (→ ⊤). Deliberately conservative: an unmodeled
 /// mnemonic clobbers rather than silently preserving a stale flag (guardrail 1).
 ///
 /// **Sound-complete for #2's edge-identification** (`flag_check::Cfg::valid_edge`,
@@ -1837,16 +1838,17 @@ pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`
 /// counting form, a jump/tail, or a return. None WRITE the data condition codes.
-/// `rtr` is deliberately absent: it LOADS the condition codes from the stack,
-/// so the flags the caller sees are the saved word's, not the ones computed
-/// before it (it falls to [`Flags::after`]'s clobber, ⊤).
+/// `rtr` and `rte` are deliberately absent: each LOADS the condition codes from
+/// the stack (`rtr` the saved word, `rte` the frame's whole SR), so the flags
+/// the caller sees are not the ones computed before it (both fall to
+/// [`Flags::after`]'s clobber, ⊤).
 ///
 /// This asks a FLAG-WRITE question, not a control-flow one: its callers hold a
 /// bare mnemonic and no CFG, so there is no edge to read the answer off. The
 /// `b`-prefixed three-letter forms cover `bra` and every `bXX`; `jbra` is the one
 /// tail spelling that needs naming.
 fn is_branch_or_return(mnem: &str) -> bool {
-    matches!(mnem, "rts" | "rte" | "rtd" | "jmp" | "jra" | "jbra")
+    matches!(mnem, "rts" | "rtd" | "jmp" | "jra" | "jbra")
         || (mnem.starts_with('b') && mnem.len() == 3)
         || mnem.starts_with("db")
 }

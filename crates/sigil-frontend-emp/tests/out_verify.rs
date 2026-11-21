@@ -1149,3 +1149,22 @@ fn rtr_does_not_carry_the_computed_flags_to_the_caller() {
     );
     assert!(is_unverified(&s), "the cc at `rtr` is the saved word's, unknown → Unverified, got {s:?}");
 }
+
+/// `rte` LOADS the whole status register from the exception frame, condition
+/// codes included: like `rtr`, the flags computed before it do not reach the
+/// interrupted code, so `moveq #1` before `rte` must not excuse `out(d0 if eq)`.
+#[test]
+fn rte_does_not_carry_the_computed_flags_to_the_caller() {
+    let s = status_cond(
+        "module m\n\
+         proc P () clobbers(d1) out(d0 if eq) {\n\
+             moveq   #1, d1\n\
+             rte\n\
+         }\n",
+        "P",
+        Reg::D0,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "the cc at `rte` is the frame's, unknown → Unverified, got {s:?}");
+}
