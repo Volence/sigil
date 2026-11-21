@@ -452,13 +452,6 @@ pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> R
     Ok(project)
 }
 
-/// The shape's define environment, in order: the three the shape's features DERIVE
-/// (`SOUND_DRIVER_ENABLED`, `DEBUG`, `CRASH_REPORT`), the engine's defaults, the game's
-/// values, each overridden by the shape where it says so, then the map's `[defines]` rows.
-///
-/// Refused: a description that declares a derived name; a game define that redeclares an
-/// engine one; a shape override of a name neither description declares (a typo there
-/// would otherwise mint a define silently); a map row that redeclares any earlier one.
 /// The inapplicable-guard allowlist every build enforces
 /// (`guards::enforce_inapplicable_allowlist_against`): `(guard, reason)` rows for drift
 /// guards that may fold to Poison. Empty since the bg/camera flip; a non-empty row is a
@@ -514,6 +507,13 @@ pub fn define_origin(p: &Project, shape: &ResolvedShape, key: &str) -> String {
     }
 }
 
+/// The shape's define environment, in order: the three the shape's features DERIVE
+/// (`SOUND_DRIVER_ENABLED`, `DEBUG`, `CRASH_REPORT`), the engine's defaults, the game's
+/// values, each overridden by the shape where it says so, then the map's `[defines]` rows.
+///
+/// Refused: a description that declares a derived name; a game define that redeclares an
+/// engine one; a shape override of a name neither description declares (a typo there
+/// would otherwise mint a define silently); a map row that redeclares any earlier one.
 pub fn merged_defines(p: &Project, shape: &ResolvedShape, map_src: &str) -> Result<Vec<(String, i128)>, BuildError> {
     let f = shape.features;
     let derived: [(&str, i64); 3] =
