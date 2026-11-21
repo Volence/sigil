@@ -2056,3 +2056,48 @@ test result: ok. 1 passed; 0 failed
 ```
 
 M2 (`rtr`, `stop #$2700` in `as_author_forms_stay_off_emp.rs`): restored as converted "no error" assertions, as the review said; green when written (the review probed both build clean in that frame). No mutation was run for them.
+
+### Fix wave: the full run after the last code edit (tip 728c45e2, before the merge of master)
+
+A first full run (started at d2ef1b5c) found one more pinned test, `register_word_splice.rs`
+`a_label_argument_naming_a_register_word_is_refused_at_the_call` (`put usp` now gets the named usp refusal at the
+same argument), re-pinned in 728c45e2; the same run's two `sigil-cli` provenance failures
+(`tool_revision_names_the_checkout_head`, `version_reports_the_head_of_the_tree_it_was_built_from`) were HEAD
+moving under the suite (that commit), not a defect. The run below is a fresh one on the committed tip, nothing
+committed while it ran. `--no-fail-fast`, `CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-a11/.target-land`,
+`AEON_DIR` / `ORACLE_DIR` set; totals are every `test result:` line summed:
+
+| crate | suites | passed | failed | ignored |
+|---|---|---|---|---|
+| `sigil-frontend-emp` | 149 | 2913 | 0 | 0 |
+| `sigil-harness` | 70 | 524 | 0 | 2 |
+| `sigil-cli` | 203 | 1029 | 0 | 2 |
+| `sigil-isa` | 16 | 152 | 0 | 0 |
+| **total** | **438** | **4618** | **0** | **4** |
+
+(`sigil-frontend-emp` +6 over Task 12's 2907: the six new `a11_checks.rs` tests.) Clippy
+(`cargo clippy --workspace --all-targets -- -D warnings`) exit 0. BN (run with `AEON_DIR` unset; with it set the
+script stops at `[engine.conflict]`, a could-not-run, rc=2):
+```
+SHAPE plain 142a39b9/850262 142a39b9/850262 SAME
+SHAPE debug 20acdb67/870606 20acdb67/870606 SAME
+SHAPE demo 4587df52/99980 4587df52/99980 SAME
+SHAPE demo_debug 37d66535/106981 37d66535/106981 SAME
+SHAPE config_a 2ce7438f/870972 2ce7438f/870972 SAME
+SHAPE config_b 128361b3/617715 128361b3/617715 SAME
+SHAPE lean f6b07847/798198 f6b07847/798198 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+Warning tallies, the seven shape builds with the base binary and the candidate (own copies of the reference
+tree; whole logs `diff`-empty after normalising the scratch paths):
+
+| Shape | Base `55c6ec32` | Candidate |
+|---|---|---|
+| plain | 161: clobber-undeclared 63, unreachable 59, undeclared-fallthrough 21, path-mismatch 15, no-names 2, out-unwritten 1 | identical |
+| debug | 148: 67, 58, path-mismatch 15, fallthrough 5, 2, 1 | identical |
+| demo | 84: 62, fallthrough 13, unreachable 8, 1 | identical |
+| demo_debug | 80: 66, unreachable 7, fallthrough 6, 1 | identical |
+| config_a | 147: 67, 57, 15, 5, 2, 1 | identical |
+| config_b | 163: 63, 61, 21, 15, 2, 1 | identical |
+| lean | 160: 63, 59, 20, 15, 2, 1 | identical |
