@@ -392,6 +392,26 @@ mod tests {
         );
     }
 
+    /// G0b final review A-I7: two anchors holding one section, and an anchor later in the
+    /// sequence at a lower address than the one before it, are each refused by name.
+    #[test]
+    fn a_section_held_twice_and_anchors_out_of_order_are_refused() {
+        let sections = vec![sec("Head", 4), sec("Mid", 4), sec("Bank", 4)];
+        let order: Vec<String> = ["Head", "Mid", "Bank"].iter().map(|s| s.to_string()).collect();
+        let align = AlignTable::new(std::iter::empty()).unwrap();
+        let pin = |name: &str, holds: &str, at: u32| AnchorPin { name: name.into(), holds: holds.into(), at };
+        // CONTROL: one anchor per section, ascending.
+        true_bases(&sections, &order, &[pin("boot", "Head", 0), pin("bank", "Bank", 0x100)], &align, &|_| None).unwrap();
+        assert_eq!(
+            true_bases(&sections, &order, &[pin("boot", "Head", 0), pin("bank", "Bank", 0x100), pin("again", "Bank", 0x200)], &align, &|_| None)
+                .unwrap_err(),
+            WalkError::AnchorTwice { section: "s_Bank".into(), first: "bank".into(), second: "again".into() }
+        );
+        let e = true_bases(&sections, &order, &[pin("boot", "Head", 0x200), pin("bank", "Bank", 0x100)], &align, &|_| None).unwrap_err();
+        assert_eq!(e, WalkError::AnchorsOutOfOrder { first: "boot".into(), second: "bank".into() });
+        assert!(e.to_string().contains("[map.anchor-order] anchor `bank` comes after `boot`"), "{e}");
+    }
+
     // ── Moved from the profile-driven driver's walk tests (`placement_validation_tests`,
     // `derived_layout_tests`, G0b Task 11) onto this walk. What they proved about the frozen
     // provisional bases (the pin residue, drift warnings, the tolerance, the prov-sort

@@ -194,6 +194,25 @@ fn a_row_no_module_defines_is_refused_by_name() {
     assert!(!e.contains('\u{2014}') && !e.contains('\u{2013}'), "no em/en dash in tool text: {e}");
 }
 
+/// G0b final review A-I7: a scan with no terminus module is refused naming it
+/// (`[map.no-terminus]`), and a gate that drops the terminus from a shape is refused
+/// (`[gate.terminus-dropped]`): every build roots it for `EndOfRom`.
+#[test]
+fn a_missing_or_gated_out_terminus_is_refused() {
+    let order = rows(&["GameHeader"]);
+    let files: Vec<(&str, &str)> = base_files().into_iter().filter(|(p, _)| *p != "engine/epilogue.emp").collect();
+    let m = scan(&mini_tree("no_terminus", &files), "sonic4");
+    let e = derive(&m, &order, "games.sonic4", &plain(), &rules(&[]), "map").unwrap_err();
+    assert!(e.contains("[map.no-terminus]") && e.contains(&format!("`{TERMINUS}`")), "{e}");
+    let m = scan(&mini_tree("terminus_dropped", &base_files()), "sonic4");
+    // CONTROL: the same scan with the terminus placed derives.
+    derive(&m, &order, "games.sonic4", &plain(), &rules(&[]), "map").unwrap();
+    let mut gated: Vec<GateRule> = rules(&[]).into_iter().filter(|r| r.modules != TERMINUS).collect();
+    gated.push(rule(TERMINUS, PlaceIn::Shapes(vec![])));
+    let e = derive(&m, &order, "games.sonic4", &plain(), &gated, "map").unwrap_err();
+    assert!(e.contains("[gate.terminus-dropped]") && e.contains("shape `release`"), "{e}");
+}
+
 /// A gated module is placed exactly in the shapes its rule admits; a row whose only
 /// owner is gated out is dropped for that shape without an error.
 #[test]

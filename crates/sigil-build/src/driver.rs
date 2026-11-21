@@ -740,8 +740,18 @@ fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)], genera
     if let Some(e) = bd.iter().find(|d| d.level == sigil_span::Level::Error) {
         return Err(ctx(format!("ram harvest: build: {e:?}")));
     }
+    let out = ram_rows(&sections, p.engine.ram_floor);
+    if out.is_empty() {
+        return Err(ctx("ram harvest: no RAM labels found (the RAM modules are not reachable?)"));
+    }
+    Ok(out)
+}
+
+/// Every label and integer equate of a section placed at or above `ram_floor` (engine.toml),
+/// as the residual AS's plain defines: a label at its address, an equate at its value.
+fn ram_rows(sections: &[Section], ram_floor: u32) -> Vec<(String, i64)> {
     let mut out = Vec::new();
-    for sec in sections.iter().filter(|s| s.vma_origin() >= p.engine.ram_floor) {
+    for sec in sections.iter().filter(|s| s.vma_origin() >= ram_floor) {
         for l in &sec.labels {
             out.push((l.name.clone(), sec.vma_origin().wrapping_add(l.offset) as i64));
         }
@@ -751,10 +761,7 @@ fn ram_addresses(p: &Project, ram_seed: &str, defines: &[(String, i128)], genera
             }
         }
     }
-    if out.is_empty() {
-        return Err(ctx("ram harvest: no RAM labels found (the RAM modules are not reachable?)"));
-    }
-    Ok(out)
+    out
 }
 
 /// The lowering options of every `.emp` lowering a build makes: the shape's defines and
@@ -1116,20 +1123,7 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
     let Plan { shape, defines, gate_shape, map, pmap } = plan(p, shape_name, opts)?;
     let sound = shape.features.sound;
     let debug = shape.features.debug;
-    let map_path = p.map_path();
-    let mut pins: Vec<AnchorPin> = Vec::new();
-    for a in pmap.anchors_for(sound) {
-        let holds = a.holds.clone().ok_or_else(|| {
-            BuildError::Desc(format!(
-                "[map.anchor-holds-missing] {} anchor `{}` at {:#x} names no `holds` row; the driver \
-                 places the section an anchor holds, so each anchor in force must say which",
-                map_path.display(),
-                a.name,
-                a.at
-            ))
-        })?;
-        pins.push(AnchorPin { name: a.name.clone(), holds, at: a.at });
-    }
+    let pins = anchor_pins(&pmap, sound, &p.map_path())?;
     let engine_origin = p.engine_path.display().to_string();
     let game_origin = p.game_path.display().to_string();
     let align = AlignTable::new([(engine_origin.as_str(), &p.engine.align[..]), (game_origin.as_str(), &p.game.align[..])]).map_err(ctx)?;
@@ -1222,6 +1216,25 @@ fn build_project_in(p: &Project, shape_name: &str, opts: &BuildOptions<'_>, gene
         defines,
         debug,
     })))
+}
+
+/// The walk's pins: every anchor in force for the shape, bound by its `holds` row. An anchor
+/// in force with no `holds` is refused naming the map, the anchor and its address.
+fn anchor_pins(pmap: &PlacementMap, sound: bool, map_path: &Path) -> Result<Vec<AnchorPin>, BuildError> {
+    let mut pins: Vec<AnchorPin> = Vec::new();
+    for a in pmap.anchors_for(sound) {
+        let holds = a.holds.clone().ok_or_else(|| {
+            BuildError::Desc(format!(
+                "[map.anchor-holds-missing] {} anchor `{}` at {:#x} names no `holds` row; the driver \
+                 places the section an anchor holds, so each anchor in force must say which",
+                map_path.display(),
+                a.name,
+                a.at
+            ))
+        })?;
+        pins.push(AnchorPin { name: a.name.clone(), holds, at: a.at });
+    }
+    Ok(pins)
 }
 
 /// A shape's inputs before any front end runs: the resolved shape, its define
@@ -1595,6 +1608,107 @@ mod tests {
             assert!(err.contains(want), "names {want}: {err}");
         }
         assert!(!err.contains("`EndOfRom`"), "only the missing label: {err}");
+    }
+
+    // ── G0b final review A-I7: the driver refusals no test reached. ──
+
+    fn labelled(label: &str, lma: u32, vma: Option<u32>) -> Section {
+        Section {
+            name: "s".into(),
+            cpu: Cpu::M68000,
+            vma_base: vma,
+            lma,
+            space: sigil_ir::AddressSpace::Image,
+            labels: vec![sigil_ir::Label { name: label.into(), offset: 2 }],
+            fragments: Vec::new(),
+            placement: sigil_ir::SectionPlacement::Chained,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![sigil_ir::EquSym { name: format!("{label}_len"), expr: sigil_ir::expr::Expr::Int(6), span: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 } }],
+        }
+    }
+
+    /// `ram_floor`: the RAM harvest hands the residual AS the labels and equates of a section
+    /// placed AT or above the floor, and nothing of one below it.
+    #[test]
+    fn the_ram_harvest_takes_only_sections_at_or_above_the_floor() {
+        let secs = [labelled("Rom", 0x1000, None), labelled("AtFloor", 0, Some(0xFF0000)), labelled("Above", 0, Some(0xFF8000))];
+        let got = ram_rows(&secs, 0xFF0000);
+        assert_eq!(
+            got,
+            [("AtFloor".to_string(), 0xFF0002), ("AtFloor_len".to_string(), 6), ("Above".to_string(), 0xFF8002), ("Above_len".to_string(), 6)],
+            "a label at its address, an equate at its value, nothing below the floor"
+        );
+        assert!(ram_rows(&secs, 0xFF8001).iter().all(|(n, _)| !n.starts_with("AtFloor") && !n.starts_with("Above")), "one past the floor drops both");
+    }
+
+    /// `[map.anchor-holds-missing]`: an anchor in force with no `holds` row is refused naming
+    /// the map, the anchor and its address; one gated out of the shape is not asked.
+    #[test]
+    fn an_anchor_in_force_without_holds_is_refused() {
+        let pmap = crate::map_placement::load_placement_map(
+            "order = [\"A\"]\n[[anchor]]\nname = \"boot\"\nat = 0x0\nholds = \"A\"\n\
+             [[anchor]]\nname = \"bank\"\nat = 0x58000\nwhen = \"sound_on\"\n",
+        )
+        .unwrap();
+        let pins = anchor_pins(&pmap, false, Path::new("games/g/map.toml")).expect("the holds-less anchor is not in force");
+        assert_eq!(pins, [AnchorPin { name: "boot".into(), holds: "A".into(), at: 0 }]);
+        let err = anchor_pins(&pmap, true, Path::new("games/g/map.toml")).unwrap_err().to_string();
+        assert!(err.contains("[map.anchor-holds-missing] games/g/map.toml anchor `bank` at 0x58000"), "{err}");
+    }
+
+    /// `[gate.fault-split]`, both arms: the two fault-handler modules are exactly one placed
+    /// (both, or neither, is refused), and the placed one is the one the features say.
+    #[test]
+    fn the_fault_handler_split_is_refused_both_ways() {
+        let p = project(GAME, ENGINE);
+        let spec = |m: &str| ModuleSpec { module_id: m.into(), section: "s".into() };
+        let (island, lean) = (spec("engine.debug.error_handler"), spec("engine.system.release_fault"));
+        let release = describe::resolve_shape(&p.game, "release").unwrap(); // crash_report = true
+        assert!(declares_island(&p, &release, &[island.clone()]).unwrap(), "CONTROL: the island arm, as the features say");
+        for (reg, word) in [(vec![island.clone(), lean.clone()], "both"), (vec![], "neither")] {
+            let err = declares_island(&p, &release, &reg).unwrap_err().to_string();
+            assert!(err.contains("[gate.fault-split]") && err.contains(&format!("places {word} of")), "{word}: {err}");
+        }
+        let err = declares_island(&p, &release, &[lean]).unwrap_err().to_string();
+        assert!(err.contains("[gate.fault-split]") && err.contains("`debug || crash_report` is true but the gate drops"), "{err}");
+    }
+
+    /// `[define.derived]`, the engine side: an engine `[defines]` row naming a name the
+    /// features derive is refused by the merge (the reader refuses it first for a file it
+    /// loads, `describe::load_engine`; this is the merge's own check).
+    #[test]
+    fn an_engine_define_the_features_derive_is_refused() {
+        let p = project(GAME, &ENGINE.replace("HOTKEYS = 0", "HOTKEYS = 0\n        CRASH_REPORT = 1"));
+        let err = defines(&p, "release", "").unwrap_err().to_string();
+        assert!(err.contains("[define.derived] engine/engine.toml declares `CRASH_REPORT`"), "{err}");
+    }
+
+    /// `struct_tail_equates`: a row's value is the struct size less `from_end`, emitted right
+    /// after that twin's `<prefix>_len`; a row reaching past the struct's start is refused.
+    #[test]
+    fn a_struct_tail_equate_is_sizeof_less_from_end_and_may_not_pass_the_start() {
+        let dir = crate::build_dir::BuildDir::create().unwrap();
+        std::fs::write(dir.path().join("types.emp"), "module engine.types\n").unwrap();
+        std::fs::write(dir.path().join("structs.emp"), "module engine.structs\npub struct T { a: u16, b: u32 }\n").unwrap();
+        let engine = |from_end: u32| -> EngineDesc {
+            toml::from_str(&ENGINE.replace("struct_twins = []", "struct_twins = [[\"structs.emp\", \"T\", \"Tw\"]]").replace(
+                "fault_island_heads = []\n",
+                &format!("fault_island_heads = []\n        struct_tail_equates = [{{ name = \"T_tail\", of = \"T\", from_end = {from_end} }}]\n"),
+            ).replace("types = \"t\"", "types = \"types.emp\""))
+            .unwrap()
+        };
+        let path = dir.path().join("engine.toml");
+        let got = engine_struct_offsets(&engine(2), dir.path(), &path).unwrap();
+        assert_eq!(
+            got,
+            [("Tw_a".to_string(), 0), ("Tw_b".to_string(), 2), ("Tw_len".to_string(), 6), ("T_tail".to_string(), 4)],
+            "the tail equate follows `Tw_len` and is 6 - 2"
+        );
+        assert_eq!(engine_struct_offsets(&engine(6), dir.path(), &path).unwrap().last(), Some(&("T_tail".to_string(), 0)), "from_end = sizeof is the start");
+        let err = engine_struct_offsets(&engine(7), dir.path(), &path).unwrap_err().to_string();
+        assert!(err.contains("`struct_tail_equates` row `T_tail` reaches 7 bytes back from the end of `T`, which is 6 bytes"), "{err}");
     }
 
     #[test]
