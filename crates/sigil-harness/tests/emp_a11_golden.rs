@@ -79,3 +79,20 @@ fn the_usp_moves_assemble() {
     golden("move.l a0, usp", i(Mnemonic::MoveToUsp, Size::L, &[An(0), Usp]), &[0x4E, 0x60]);
     golden("move.l usp, a0", i(Mnemonic::MoveFromUsp, Size::L, &[Usp, An(0)]), &[0x4E, 0x68]);
 }
+
+#[test]
+fn the_ccr_forms_assemble() {
+    use Operand::*;
+    golden("move.w d0, ccr", i(Mnemonic::MoveToCcr, Size::W, &[Dn(0), Ccr]), &[0x44, 0xC0]);
+    golden("move.w #$1F, ccr", i(Mnemonic::MoveToCcr, Size::W, &[Imm(0x1F), Ccr]), &[0x44, 0xFC, 0x00, 0x1F]);
+    golden("eori.b #$01, ccr", i(Mnemonic::EoriCcr, Size::B, &[Imm(1), Ccr]), &[0x0A, 0x3C, 0x00, 0x01]);
+}
+
+#[test]
+fn movem_loads_from_a_pc_relative_source() {
+    // `.tgt` is the frame's first byte: the displacement is from the extension word at +4.
+    assert_eq!(emp("movem.w .tgt(pc), d0-d1"), Ok(framed(&[0x4C, 0xBA, 0x00, 0x03, 0xFF, 0xFA])));
+    assert_eq!(asl("movem.w tgt(pc),d0-d1"), Ok(framed(&[0x4C, 0xBA, 0x00, 0x03, 0xFF, 0xFA])));
+    assert_eq!(emp("movem.l .tgt(pc,d0.w), d0-d1"), asl("movem.l tgt(pc,d0.w),d0-d1"));
+    assert!(emp("movem.l .tgt(pc,d0.w), d0-d1").is_ok());
+}

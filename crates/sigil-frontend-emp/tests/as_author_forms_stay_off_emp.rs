@@ -68,7 +68,8 @@ fn the_other_as_rewrites_do_not_reach_emp() {
     assert_unchanged("beq.b P", &["branch size suffix must be `.s` or `.w`"]);
     assert_unchanged("andi #$FE,ccr", &["instruction needs an explicit size suffix (.b/.w/.l)"]);
     assert_unchanged("andi.w #$F8FF,sr", &["unsupported form: sr is not a general EA"]);
-    assert_unchanged("eori.b #1,ccr", &["unsupported form: ccr is not a general EA"]);
+    // A11: a real instruction, the bytes are pinned in emp_a11_golden.rs
+    assert_unchanged("eori.b #1,ccr", &[]);
     for m in ["unlk a6", "chk.w d0,d1", "reset", "stop #$2700", "trapv"] {
         let word = m.split(['.', ' ']).next().unwrap();
         assert_unchanged(m, &[&format!("`{word}` is not a recognized 68000 mnemonic")]);

@@ -590,9 +590,9 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
     ),
     (
         "emp-lacks-sr-ccr-form",
-        "`.emp` maps only `move <ea>,sr`, `move sr,<ea>`, `andi #,ccr`, `ori #,ccr` \
-         (`refine_m68k_mnemonic`); `move <ea>,ccr`, `eori #,ccr` and `andi`/`ori`/`eori #,sr` \
-         refuse `unsupported form: ccr|sr is not a general EA`. asl and the AS route assemble them.",
+        "`.emp` maps only `move <ea>,sr`, `move sr,<ea>`, `andi #,ccr`, `ori #,ccr`, \
+         `eori #,ccr`, `move <ea>,ccr` (`refine_m68k_mnemonic`); `andi`/`ori`/`eori #,sr` \
+         refuse `unsupported form: sr is not a general EA`. asl and the AS route assemble them.",
     ),
     (
         "emp-no-implicit-variant",
@@ -604,9 +604,8 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
         "emp-label-operand-gap",
         "A frame label in an operand position `.emp` cannot yet defer to the linker: a straight-line \
          symbolic operand (`symbolic operand ... is not yet supported`), a symbolic absolute operand \
-         beside another extension word or a second unpinned one (`[lower.abs-sym-operand]`), a \
-         `movem` pc-relative source (`internal: a PC-relative operand reached the generic operand \
-         mapper`). asl and the AS route resolve the label.",
+         beside another extension word or a second unpinned one (`[lower.abs-sym-operand]`). \
+         asl and the AS route resolve the label.",
     ),
     (
         "branch-b-suffix",
@@ -651,7 +650,7 @@ pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
 ];
 
 /// The families row `emp-lacks-sr-ccr-form` may name.
-pub const SR_CCR_GAP_FAMILIES: &[&str] = &["move-to-ccr", "eori-ccr", "andi-sr", "ori-sr", "eori-sr"];
+pub const SR_CCR_GAP_FAMILIES: &[&str] = &["andi-sr", "ori-sr", "eori-sr"];
 
 /// The families row `emp-label-operand-gap` may name.
 pub const LABEL_GAP_FAMILIES: &[&str] = &["move", "movem"];
@@ -756,7 +755,6 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                     (s.starts_with("symbolic operand `")
                         && s.contains("` in a straight-line instruction is not yet supported"))
                         || s.starts_with("[lower.abs-sym-operand] ")
-                        || s == "internal: a PC-relative operand reached the generic operand mapper"
                 })
         }
         "branch-b-suffix" => {

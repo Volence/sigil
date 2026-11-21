@@ -747,6 +747,32 @@ fn lower_m68k_movem(
             return;
         }
     };
+    if matches!(mem_op, CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. }) {
+        let (pc_op, target, idx) = match mem_op {
+            CodeOperand::PcRel { target: t, addend } => {
+                (M68kOperand::Pcd16(0), pcrel_target_expr(t, *addend), false)
+            }
+            CodeOperand::PcRelIdx { target: t, addend, xn, xlong } => {
+                let (is_a, n) = reg_kind(*xn);
+                let xn = if is_a { M68kXn::A(n) } else { M68kXn::D(n) };
+                (M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong }, pcrel_target_expr(t, *addend), true)
+            }
+            _ => unreachable!(),
+        };
+        let list_op = M68kOperand::RegList(mask);
+        let ops = if list_first { vec![list_op, pc_op] } else { vec![pc_op, list_op] };
+        let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
+        let result = if idx {
+            M68kBackend.lower_pcrel_idx_ea(&inst, target, span)
+        } else {
+            M68kBackend.lower_pcrel_ea(&inst, target, span)
+        };
+        match result {
+            Ok(df) => emit_data_frag(builder, df),
+            Err(e) => push_err(diags, span, e.message),
+        }
+        return;
+    }
     // A width-PINNED symbolic absolute memory EA — `movem.l (RAM_Start).w,
     // d0-a6` (boot's regs-from-cleared-RAM zeroing, tranche 23). movem lowers
     // on its own path, so the general abs-sym seam can't route it: encode with
@@ -1958,6 +1984,8 @@ fn refine_m68k_mnemonic(m: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnemonic {
         (Move, [M68kOperand::Usp, _]) => MoveFromUsp,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
+        (Move, [_, M68kOperand::Ccr]) => MoveToCcr,
+        (Eori, [_, M68kOperand::Ccr]) => EoriCcr,
         (Cmp, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Cmpi,
         (Cmp, [_, M68kOperand::An(_)]) => Cmpa,
         (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,

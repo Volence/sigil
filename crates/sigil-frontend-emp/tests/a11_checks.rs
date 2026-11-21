@@ -61,3 +61,31 @@ fn usp_is_an_operand_of_the_two_moves_only() {
 fn errors(d: &[(bool, String)]) -> Vec<&str> {
     d.iter().filter(|(e, _)| *e).map(|(_, m)| m.as_str()).collect()
 }
+
+/// `move <ea>, ccr` and `eori #, ccr` write the condition codes only, not the
+/// interrupt mask: `[proc.sr-undeclared]` stays silent where the same write to
+/// `sr` fires, while the CCR-half contract checks still see the write.
+#[test]
+fn the_ccr_writes_are_flag_writes_not_mask_writes() {
+    let d = diags("clobbers()", "    move.w d0, sr\n    rts");
+    assert!(has(&d, "[proc.sr-undeclared] `P` writes `sr`"), "{d:?}");
+    for line in ["move.w d0, ccr", "move.w #$1F, ccr", "eori.b #$01, ccr"] {
+        assert_eq!(diags("clobbers()", &format!("    {line}\n    rts")), [], "`{line}` under clobbers()");
+        let d = diags("preserves(sr.ccr)", &format!("    {line}\n    rts"));
+        assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "`{line}`: {d:?}");
+        let d = diags("preserves(sr)", &format!("    {line}\n    rts"));
+        assert!(has(&d, "[proc.ccr-advisory] `P` declares bare `preserves(sr)`"), "`{line}`: {d:?}");
+        // Bracketed by the save/restore pair, the condition codes round-trip.
+        let body = format!("    move.w sr, -(sp)\n    {line}\n    move.w (sp)+, sr\n    rts");
+        assert_eq!(diags("preserves(sr)", &body), [], "`{line}` bracketed");
+    }
+}
+
+/// A `movem` load from a PC-relative source writes every register in its list.
+#[test]
+fn movem_from_a_pc_relative_source_writes_its_list() {
+    let d = diags("clobbers(d0)", ".t:\n    movem.w .t(pc), d0-d1\n    rts");
+    assert!(has(&d, "[proc.clobber-undeclared] `P` writes `d1`"), "{d:?}");
+    assert!(!has(&d, "[proc.clobber-undeclared] `P` writes `d0`"), "{d:?}");
+    assert_eq!(diags("clobbers(d0-d1)", ".t:\n    movem.l .t(pc,d0.w), d0-d1\n    rts"), []);
+}
