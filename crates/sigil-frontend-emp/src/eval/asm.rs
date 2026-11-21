@@ -1711,7 +1711,20 @@ impl Evaluator<'_> {
         // `.w`/`.l` width would mis-fire the field-overrun lint on a 1-byte
         // field (`movep.w Ent.SizeH(a0), d1`), so the EFFECTIVE access width for
         // operand mapping is `.b`; the emitted CodeItem keeps the true size.
-        let op_width = if mnemonic == "movep" { Some(Width::B) } else { size };
+        //
+        // MOVE to CCR is the converse: it reads a WORD whatever suffix is written
+        // (`move.b` and `move.w` are the same instruction, `44D8`) and the CCR
+        // takes the word's LOW byte, so the source access is checked as `.w`.
+        let to_ccr = mnemonic == "move"
+            && matches!(instr.operands.last(), Some(ast::Operand::Plain { expr: ast::Expr::Path(p), size: None, .. })
+                if p.segments.len() == 1 && p.segments[0] == "ccr");
+        let op_width = if mnemonic == "movep" {
+            Some(Width::B)
+        } else if to_ccr {
+            Some(Width::W)
+        } else {
+            size
+        };
         // Z80 condition codes (rung-2 §13.3): under a control-flow mnemonic
         // (`jr`/`jp`/`call`/`ret`), a bare condition word in the FIRST operand
         // position is a `Z80Cc`, not an ordinary operand. This is the AS

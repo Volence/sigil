@@ -1090,7 +1090,13 @@ fn transfer(
     // (`(rN)+`/`-(rN)` advance, `lea d(rN), rN`, `adda/suba #imm, rN`) accumulates
     // the static offset; any other write to a register whose delta is still Some
     // makes it untrackable (a fresh/computed value).
-    let width = instr_size(items, idx);
+    // MOVE to CCR reads a WORD whatever suffix is written (`move.b` and `move.w`
+    // are the same instruction, `44D8`), so an `(aN)+` / `-(aN)` source moves aN
+    // by 2 even when the line says `.b`.
+    let width = match ops.last() {
+        Some(CodeOperand::Ccr) => Some(Width::W),
+        _ => instr_size(items, idx),
+    };
     for r in instr_written_regs(mnem, ops) {
         if r == Reg::A7 {
             continue;

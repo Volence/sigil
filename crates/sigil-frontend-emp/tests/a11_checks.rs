@@ -471,3 +471,46 @@ fn writing_the_frame_register_inside_its_frame_unpairs_the_unlk() {
     assert!(has(&d, "[stack.unbalanced] in `P`: this path returns with 12 bytes"), "{d:?}");
 }
 
+
+/// MOVE to CCR is a word operation whatever suffix is written: `move.b` and
+/// `move.w` give the same bytes (`44D8`) and the CPU reads a WORD, so
+/// `(a0)+` / `-(a0)` move `a0` by 2. The delta model must charge 2, not the
+/// written `.b`'s 1: the correct restore verifies, the off-by-one one does not.
+#[test]
+fn a_byte_sized_move_to_ccr_moves_its_address_register_by_a_word() {
+    let hdr = "clobbers() preserves(a0)";
+    let unverifiable = |d: &[(bool, String)]| {
+        errors(d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(a0)`"))
+    };
+    for (src, fix) in [("(a0)+", "lea -2(a0), a0"), ("-(a0)", "lea 2(a0), a0")] {
+        for sz in ["b", "w"] {
+            let ok = diags(hdr, &format!("    move.{sz} {src}, ccr\n    {fix}\n    rts"));
+            assert_eq!(ok, [], "`move.{sz} {src}, ccr` then `{fix}` restores a0");
+        }
+        let wrong = if src == "(a0)+" { "lea -1(a0), a0" } else { "lea 1(a0), a0" };
+        let d = diags(hdr, &format!("    move.b {src}, ccr\n    {wrong}\n    rts"));
+        assert!(unverifiable(&d), "`move.b {src}, ccr` then `{wrong}` leaves a0 off by one: {d:?}");
+    }
+    // Control: an ordinary byte move from `(a0)+` advances a0 by 1.
+    assert_eq!(diags("clobbers(d0) preserves(a0)", "    move.b (a0)+, d0\n    lea -1(a0), a0\n    rts"), []);
+}
+
+/// The other consumer of the operand width on the same line: the field-overrun
+/// lint. `move.b flags(a0), ccr` reads the WORD at `flags`, so the CCR gets the
+/// NEXT field's byte; against a 1-byte field that is an overrun, as `move.w` is.
+#[test]
+fn a_byte_sized_move_to_ccr_reads_a_word_of_its_field() {
+    let probe = |line: &str| {
+        module_diags(&format!(
+            "module m\nstruct S (size: 4) {{\n    flags: u8,\n    next: u8,\n    w: u16,\n}}\nproc P (a0: *S) clobbers(d0) {{\n    {line}\n    rts\n}}\n"
+        ))
+    };
+    for line in ["move.b flags(a0), ccr", "move.w flags(a0), ccr"] {
+        let d = probe(line);
+        assert!(has(&d, "[operand.field-overrun]"), "`{line}`: {d:?}");
+    }
+    // Controls: a word field, and a byte move to a data register.
+    for line in ["move.b w(a0), ccr", "move.w w(a0), ccr", "move.b flags(a0), d0"] {
+        assert_eq!(probe(line), [], "`{line}`");
+    }
+}
