@@ -225,6 +225,10 @@ SOURCE_GATES=(
     # it reads the tree's committed .bin inputs, never a built ROM, a listing or a golden.
     seam2_mt_embed_root
     structs_module
+    # the no-game-names gate's id fixture against the descriptions' `id` fields (G0b
+    # Task 12): it reads each games/*/game.toml through the driver's own parser and
+    # nothing else. Source only: no ROM, no listing, no golden.
+    game_ids_fixture
     # source-only compile and round-trip oracles
     dac_port
     diag_assert_vector
