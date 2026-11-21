@@ -91,3 +91,182 @@ The card's list is exact; the one extra is `movem` from a PC-relative source. `e
 **Test count.** A10's landing run at `55c6ec32` reported `563 suites / 6217 passed / 0 failed / 4 ignored`; master has added no code since. This plan's own plain `cargo test --workspace --no-fail-fast` on the wiring prototype counted 565 suites and 6217 tests INCLUDING its 2 scratch tests, so 6215 from the tree: the two counts differ by 2 and this plan did not chase why. Task 12 therefore takes the baseline from the landing script's own record on master at the time, not from this paragraph.
 
 ## RF transcripts
+
+### Task 1: the two walks (code commit 456f9e64; mutations applied to that clean HEAD)
+
+The walks are the plan's code blocks verbatim; they compiled and passed as given at the first try:
+`emp_isa_walk_m68k` 3 passed, `emp_isa_walk_z80` 4 passed, `skip_marker_lint` 6 passed. Measured
+counts (read by raising each floor by one, then restored from HEAD): the encoder accepts **2439**
+68000 forms that decode to **1527** distinct instructions; Z80 **538** distinct encodings, **54** of
+which carry a 16-bit field (24 immediates, 30 `(nn)`). Each equals the plan's floor exactly.
+
+Each mutation below was made with `git status --short` clean, shown from disk with `git diff`, run,
+and undone with `git restore --source=HEAD -- <file>`; after the last one both walks are green again
+(`3 passed`, `4 passed`).
+
+**RF-1: a refused form missing from the table fails, naming it.** Delete `("subx", 6)`:
+
+```
+ crates/sigil-harness/tests/emp_isa_walk_m68k.rs | 2 +-
+-    ("abcd", 2), ("sbcd", 2), ("nbcd", 8), ("negx", 24), ("subx", 6), ("rtr", 1),
++    ("abcd", 2), ("sbcd", 2), ("nbcd", 8), ("negx", 24), ("rtr", 1),
+```
+
+`cargo test --release -p sigil-harness --test emp_isa_walk_m68k emp_assembles`:
+
+```
+assertion `left == right` failed: refused instructions per family differ from KNOWN_REFUSED:
+  left: {"abcd": 2, "andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "nbcd": 8, "negx": 24, "ori-sr": 1, "reset": 1, "rtr": 1, "sbcd": 2, "stop": 1, "subx": 6, "trapv": 1, "unlk": 1}
+ right: {"abcd": 2, "andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "nbcd": 8, "negx": 24, "ori-sr": 1, "reset": 1, "rtr": 1, "sbcd": 2, "stop": 1, "trapv": 1, "unlk": 1}
+    "subx": [
+        "`subx.b d1, d1`: `subx` is not a recognized 68000 mnemonic  ||  `subx d1, d1`: `subx` is not a recognized 68000 mnemonic",
+        "`subx.b -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic  ||  `subx -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic",
+        "`subx.l d1, d1`: `subx` is not a recognized 68000 mnemonic  ||  `subx d1, d1`: `subx` is not a recognized 68000 mnemonic",
+        "`subx.l -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic  ||  `subx -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic",
+        "`subx.w d1, d1`: `subx` is not a recognized 68000 mnemonic  ||  `subx d1, d1`: `subx` is not a recognized 68000 mnemonic",
+        "`subx.w -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic  ||  `subx -(a5), -(a5)`: `subx` is not a recognized 68000 mnemonic",
+    ],
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 4.86s
+```
+
+**RF-2: a table row that is no longer true fails, naming it.** Add a bogus `("tas", 1)` (`tas` assembles in `.emp`):
+
+```
+-    ("chk", 11), ("trapv", 1),
++    ("chk", 11), ("trapv", 1), ("tas", 1),
+```
+
+```
+  left: {"abcd": 2, "andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "nbcd": 8, "negx": 24, "ori-sr": 1, "reset": 1, "rtr": 1, "sbcd": 2, "stop": 1, "subx": 6, "trapv": 1, "unlk": 1}
+ right: {"abcd": 2, "andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "nbcd": 8, "negx": 24, "ori-sr": 1, "reset": 1, "rtr": 1, "sbcd": 2, "stop": 1, "subx": 6, "tas": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 4.97s
+```
+
+`"tas": 1` is in `right` (the table) and absent from `left` (what the walk measured).
+
+**RF-3 (brief step 4): a wrong count fails.** `("movem", 4)` → `("movem", 3)`:
+
+```
+-    ("move-to-usp", 1), ("move-from-usp", 1), ("move-to-ccr", 11), ("eori-ccr", 1), ("movem", 4),
++    ("move-to-usp", 1), ("move-from-usp", 1), ("move-to-ccr", 11), ("eori-ccr", 1), ("movem", 3),
+```
+
+```
+  left: {..., "movem": 4, ...}
+ right: {..., "movem": 3, ...}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 4.59s
+```
+
+**RF-4 (brief step 4): the Z80 symbol table.** Delete `("ld mem", 28)`:
+
+```
+ crates/sigil-harness/tests/emp_isa_walk_z80.rs | 1 -
+-    ("ld mem", 28),
+```
+
+`cargo test --release -p sigil-harness --test emp_isa_walk_z80 every_16`:
+
+```
+  left: {"in mem": 1, "ld mem": 28, "out mem": 1}
+ right: {"in mem": 1, "out mem": 1}
+(28 `ld ... ZSym ...` lines listed; the first three:)
+        "`ld (ZSym), hl`: unknown name `ZSym` | [lower.z80-unsupported] a Z80 indirect base must be `hl`/`bc`/`de`, an index register `(ix±d)`, or a comptime address `(nn)`, got poison | instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)",
+        "`ld (ZSym), hl`: unknown name `ZSym` | [lower.z80-unsupported] a Z80 indirect base must be `hl`/`bc`/`de`, an index register `(ix±d)`, or a comptime address `(nn)`, got poison | instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)",
+        "`ld hl, (ZSym)`: unknown name `ZSym` | [lower.z80-unsupported] a Z80 indirect base must be `hl`/`bc`/`de`, an index register `(ix±d)`, or a comptime address `(nn)`, got poison | instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)",
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.05s
+```
+
+**The 80 refused 68000 instructions at `55c6ec32`** (family, sized / bare spelling, first diagnostic),
+from the RF-1 run's full dump:
+
+```
+abcd           `abcd.b d1, d1` / `abcd d1, d1` -> `abcd` is not a recognized 68000 mnemonic
+abcd           `abcd.b -(a5), -(a5)` / `abcd -(a5), -(a5)` -> `abcd` is not a recognized 68000 mnemonic
+andi-sr        `andi.w #1, sr` / `andi #1, sr` -> unsupported form: sr is not a general EA
+chk            `chk.w ($00FF8000).l, d1` / `chk ($00FF8000).l, d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w ($1234).w, d1` / `chk ($1234).w, d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w 8(a1), d1` / `chk 8(a1), d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w 4(a2,d3.w), d1` / `chk 4(a2,d3.w), d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w d1, d1` / `chk d1, d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w #1, d1` / `chk #1, d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w (a3), d1` / `chk (a3), d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w .tgt(pc), d1` / `chk .tgt(pc), d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w .tgt(pc,d0.w), d1` / `chk .tgt(pc,d0.w), d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w (a4)+, d1` / `chk (a4)+, d1` -> `chk` is not a recognized 68000 mnemonic
+chk            `chk.w -(a5), d1` / `chk -(a5), d1` -> `chk` is not a recognized 68000 mnemonic
+eori-ccr       `eori.b #1, ccr` / `eori #1, ccr` -> unsupported form: ccr is not a general EA
+eori-sr        `eori.w #1, sr` / `eori #1, sr` -> unsupported form: sr is not a general EA
+link           `link.w a2, #1` / `link a2, #1` -> `link` is not a recognized 68000 mnemonic
+move-from-usp  `move.l usp, a2` / `move usp, a2` -> [operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or fr
+move-to-ccr    `move.w ($00FF8000).l, ccr` / `move ($00FF8000).l, ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w ($1234).w, ccr` / `move ($1234).w, ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w 8(a1), ccr` / `move 8(a1), ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w 4(a2,d3.w), ccr` / `move 4(a2,d3.w), ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w d1, ccr` / `move d1, ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w #1, ccr` / `move #1, ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w (a3), ccr` / `move (a3), ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w .tgt(pc), ccr` / `move .tgt(pc), ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w .tgt(pc,d0.w), ccr` / `move .tgt(pc,d0.w), ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w (a4)+, ccr` / `move (a4)+, ccr` -> unsupported form: ccr is not a general EA
+move-to-ccr    `move.w -(a5), ccr` / `move -(a5), ccr` -> unsupported form: ccr is not a general EA
+move-to-usp    `move.l a2, usp` / `move a2, usp` -> [operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or fr
+movem          `movem.l .tgt(pc), d0/a0/a1` / `movem .tgt(pc), d0/a0/a1` -> internal: a PC-relative operand reached the generic operand mapper
+movem          `movem.l .tgt(pc,d0.w), d0/a0/a1` / `movem .tgt(pc,d0.w), d0/a0/a1` -> internal: a PC-relative operand reached the generic operand mapper
+movem          `movem.w .tgt(pc), d0/a0/a1` / `movem .tgt(pc), d0/a0/a1` -> internal: a PC-relative operand reached the generic operand mapper
+movem          `movem.w .tgt(pc,d0.w), d0/a0/a1` / `movem .tgt(pc,d0.w), d0/a0/a1` -> internal: a PC-relative operand reached the generic operand mapper
+nbcd           `nbcd.b ($00FF8000).l` / `nbcd ($00FF8000).l` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b ($1234).w` / `nbcd ($1234).w` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b 8(a1)` / `nbcd 8(a1)` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b 4(a2,d3.w)` / `nbcd 4(a2,d3.w)` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b d1` / `nbcd d1` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b (a3)` / `nbcd (a3)` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b (a4)+` / `nbcd (a4)+` -> `nbcd` is not a recognized 68000 mnemonic
+nbcd           `nbcd.b -(a5)` / `nbcd -(a5)` -> `nbcd` is not a recognized 68000 mnemonic
+negx           `negx.b ($00FF8000).l` / `negx ($00FF8000).l` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b ($1234).w` / `negx ($1234).w` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b 8(a1)` / `negx 8(a1)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b 4(a2,d3.w)` / `negx 4(a2,d3.w)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b d1` / `negx d1` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b (a3)` / `negx (a3)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b (a4)+` / `negx (a4)+` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.b -(a5)` / `negx -(a5)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l ($00FF8000).l` / `negx ($00FF8000).l` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l ($1234).w` / `negx ($1234).w` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l 8(a1)` / `negx 8(a1)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l 4(a2,d3.w)` / `negx 4(a2,d3.w)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l d1` / `negx d1` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l (a3)` / `negx (a3)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l (a4)+` / `negx (a4)+` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.l -(a5)` / `negx -(a5)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w ($00FF8000).l` / `negx ($00FF8000).l` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w ($1234).w` / `negx ($1234).w` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w 8(a1)` / `negx 8(a1)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w 4(a2,d3.w)` / `negx 4(a2,d3.w)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w d1` / `negx d1` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w (a3)` / `negx (a3)` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w (a4)+` / `negx (a4)+` -> `negx` is not a recognized 68000 mnemonic
+negx           `negx.w -(a5)` / `negx -(a5)` -> `negx` is not a recognized 68000 mnemonic
+ori-sr         `ori.w #1, sr` / `ori #1, sr` -> unsupported form: sr is not a general EA
+reset          `reset.w ` / `reset ` -> `reset` is not a recognized 68000 mnemonic
+rtr            `rtr.w ` / `rtr ` -> `rtr` is not a recognized 68000 mnemonic
+sbcd           `sbcd.b d1, d1` / `sbcd d1, d1` -> `sbcd` is not a recognized 68000 mnemonic
+sbcd           `sbcd.b -(a5), -(a5)` / `sbcd -(a5), -(a5)` -> `sbcd` is not a recognized 68000 mnemonic
+stop           `stop.w #1` / `stop #1` -> `stop` is not a recognized 68000 mnemonic
+subx           `subx.b d1, d1` / `subx d1, d1` -> `subx` is not a recognized 68000 mnemonic
+subx           `subx.b -(a5), -(a5)` / `subx -(a5), -(a5)` -> `subx` is not a recognized 68000 mnemonic
+subx           `subx.l d1, d1` / `subx d1, d1` -> `subx` is not a recognized 68000 mnemonic
+subx           `subx.l -(a5), -(a5)` / `subx -(a5), -(a5)` -> `subx` is not a recognized 68000 mnemonic
+subx           `subx.w d1, d1` / `subx d1, d1` -> `subx` is not a recognized 68000 mnemonic
+subx           `subx.w -(a5), -(a5)` / `subx -(a5), -(a5)` -> `subx` is not a recognized 68000 mnemonic
+trapv          `trapv.w ` / `trapv ` -> `trapv` is not a recognized 68000 mnemonic
+unlk           `unlk.w a2` / `unlk a2` -> `unlk` is not a recognized 68000 mnemonic
+```
+
+TC `sigil-harness` (after the last edit): 69 suites, 511 passed, 0 failed, 2 ignored (both pre-existing:
+`secondary_pin_classes_match_the_hand_typed_baseline` retired, `measure_real_sound_tables_z80_through_seam2`
+needs `SEAM2_REGION_AEON`). Clippy `--workspace --all-targets -D warnings`: clean. BN:
+
+```
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
