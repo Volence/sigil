@@ -2646,7 +2646,7 @@ until its row is removed.
   against unchanged pins is seen only at the next sigil landing; and an aeon landing that edits an exported file
   without a sigil landing in between is seen only at the next sigil landing, not at aeon's. Both are oracle's and
   aeon's to book.
-- oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
+- (history, 2026-11-20, superseded by the closing bullet above) oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
   s4.trim.build.json}`) pin sigil `3f211b78`'s bytes. The walk merge (87b5c195) moved every shape's bytes, and from
   then on the runner was red against every sigil on this branch (with c6725ab3 and the same aeon `99cb963d`: none of
   the five ROMs reproduced), and nothing on sigil's side noticed: no sigil lane runs the oracle runner, and oracle's
@@ -2671,6 +2671,29 @@ until its row is removed.
   9/9 OK; oracle `3e617113`. Lane decision (controller ruling): stays manual, run at each cross-repo landing (as it
   was at this one); moving it into a sigil landing-run lane behind an optional `ORACLE_G0A_DIR` is booked here for
   the owner to decide.
+
+## ORACLE-G0A-RUNNER-BUILD-EXIT
+
+- state: open 2026-11-21 (oracle-lane review, fix round 1)  size: `S`  owner: **oracle** (oracle is read-only from sigil)
+- oracle `tools/g0a-real-exports.sh` (3e617113) exits **1** for `RED: cargo test exited $RC` when its own gate tests
+  fail to build or panic (a compile error, a missing toolchain component, a dependency fetch, a full disk), the same
+  code it uses for a ROM or export that differs from its pins. Its contract says 2 = could not run, never a pass; a
+  gate that could not be built did not measure anything, so it should exit **2**. Sigil's landing lane works around
+  it (a RED naming no ROM or export file is reported as "a broken build or gate, not drift", and the scratch logs are
+  copied into the landing log), but the runner's own exit code still conflates the two. Also for oracle: the runner's
+  `cargo test` runs without `--locked`, so a stale `Cargo.lock` in the checkout could be rewritten (dirtying it).
+
+## LANDING-ORACLE-LANE-MINORS
+
+- state: open 2026-11-21 (oracle-lane review, fix round 1, the Minors not fixed in that round)  size: `S`
+- `scripts/check_landing_log.py` `EXITS` does not include `CI_EXIT` or `ORACLE_G0A_EXIT` in its "GREEN contradicted by
+  its own exit lines" check (allowed lane values 0 or `off`); adding them changes the pre-span refusal path, so it is
+  its own change with its own fixtures.
+- `scripts/landing-run.sh` EXIT trap: a TERM to the landing PID alone removes `oracle-g0a.<pid>` while the runner
+  child may still write into it; killing the process group is the operator's job, edge case only.
+- Red-first for the exit-1-versus-2 split (exit 2 not rendered RED) is shown by the stub test's assertion only, not by
+  an on-disk mutation transcript.
+- `shellcheck` is not installed on this host, so `landing-run.sh` was checked with `bash -n` and a hand read only.
 
 ## G0B-HELPER-CLOSURE-LOCATOR
 

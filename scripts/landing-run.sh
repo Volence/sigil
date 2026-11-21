@@ -205,13 +205,18 @@
 #     unresolvable reference under the strict gate is ORACLE_DIR's, and it is a REFUSAL, so
 #     a run that resolves no Oracle checkout refuses before anything spends time. THE ONE
 #     OPT-OUT IS `ORACLE_G0A_LANE=off`, said out loud: the verdict then prints that the lane
-#     DID NOT RUN and why. An unset variable never skips the lane. The checkout's HEAD and
+#     DID NOT RUN and why, and the RESULT line itself reads `GREEN, ORACLE EXPORT LANE DID NOT
+#     RUN (...)`, so the checker shows it too. Such a run is NOT landing evidence for a change
+#     that can move ROM bytes or an export. An unset variable never skips the lane. The checkout's HEAD and
 #     whether its tree is clean are stamped; a DIRTY Oracle checkout is reported loudly, not
 #     refused (its pins may be a re-pin in progress, which is the on-red procedure).
 #
 #     ON RED, nothing re-pins automatically. Classify the difference (this sigil moved bytes,
 #     or the aeon reference is not the one Oracle's `fixtures/g0a/PROVENANCE.md` says the pins
-#     were made against), then re-pin Oracle on a feature branch as part of the landing.
+#     were made against), then re-pin Oracle on a feature branch as part of the landing. A RED
+#     that names NO ROM or export file is the runner's `cargo test exited N` (it exits 1, not
+#     2, when its gates fail to build): a broken build or gate, not drift, and the verdict says
+#     so. On any nonzero exit the runner's scratch logs are copied into the span first.
 #
 # USAGE
 #   scripts/landing-run.sh --baseline 4156
@@ -1023,6 +1028,21 @@ else
     CARGO_TARGET_DIR="$G0A_CARGO_TARGET" "${G0A_CMD[@]}" 2>&1 | tee -a "$LOG"
     # PIPESTATUS[0] for the reason (6) gives.
     G0A_EXIT=${PIPESTATUS[0]}
+    # ON ANY NONZERO EXIT, THE SCRATCH LOGS ARE COPIED INTO THE SPAN BEFORE THE SCRATCH GOES.
+    # The runner echoes only `test result:` and banner lines from its gate log, and it exits
+    # 1 (not 2) when its own `cargo test` fails to build, so a compile error or a gate panic
+    # exists ONLY in `$G0A_OUT/gates.log` (and a failed shape build only in `<stem>.log`).
+    # Deleting them unread turned an Oracle-side or environment break into something that
+    # read as pin drift with a dangling log path. The copies sit inside the lifted span, so
+    # their `test result:` lines never reach this suite's counts; the verdict reads the
+    # runner's own `<file>: FAILED` lines only from ABOVE the first copy marker.
+    if (( G0A_EXIT != 0 )); then
+        for f in "$G0A_OUT"/*.log; do
+            [[ -f $f ]] || continue
+            echo "----- ORACLE G0A SCRATCH LOG ${f##*/} (copied before the scratch is removed) -----"
+            cat -- "$f"
+        done >> "$LOG"
+    fi
     rm -rf -- "$G0A_OUT"
     echo "ORACLE_G0A_EXIT=$G0A_EXIT" >> "$LOG"
 fi
@@ -1148,6 +1168,15 @@ else
 fi
 G0A_RED=0
 [[ $G0A_STATE == RED || $G0A_STATE == COULD_NOT_RUN ]] && G0A_RED=1
+# WHICH KIND OF RED. The runner names a drifted ROM as `<file>: FAILED` (sha256sum -c) and a
+# drifted export as `<file>: FAILED (normalized …)` or `<file>: could not normalize`; a
+# failing `cargo test` of its gates is ALSO exit 1 but names no file. Counted only from the
+# runner's own output, above the first copied scratch log, whose cargo text is not the
+# runner's verdict. Zero named files on exit 1 is a broken build or gate, not drift.
+G0A_DRIFT_FILES=$(awk '/^----- ORACLE G0A SCRATCH LOG / { exit } /^[^ ]+: (FAILED|could not normalize)/ { n++ } END { print n+0 }' <<< "$G0A_RECORD")
+# NOT_STATED above trusts ABSENCE (no stamp and no span). That is safe only because a log old
+# enough to lack both is already bounded by the CI_EXIT refusal in load_verdict_inputs; a log
+# with both lines deleted by hand re-judges GREEN, which is tampering, not a run.
 # ---------------------------------------------------------------------------------------
 # (7) Failures first, WITH the names. No `head`, no tail excerpt.
 # ---------------------------------------------------------------------------------------
@@ -1303,7 +1332,11 @@ case $G0A_STATE in
     OK)
         echo "  oracle exports  OK   (runner exit 0: Oracle's pinned ROMs, exports and gates reproduced)" ;;
     RED)
-        echo "  oracle exports  RED   (runner exit 1: a ROM, an export or a gate differs from Oracle's pins; the ORACLE G0A SPAN in the log names which)" ;;
+        if (( G0A_DRIFT_FILES > 0 )); then
+            echo "  oracle exports  RED   (runner exit 1: $G0A_DRIFT_FILES pinned ROM/export file(s) FAILED against Oracle's pins; the ORACLE G0A SPAN names them)"
+        else
+            echo "  oracle exports  RED   (runner exit 1 with NO FAILED ROM or export line: a broken build or gate, not drift)"
+        fi ;;
     COULD_NOT_RUN)
         echo "  oracle exports  COULD NOT RUN   (${G0A_WHY_REC:-no reason recorded}). Not a pass." ;;
     DID_NOT_RUN)
@@ -1312,13 +1345,22 @@ case $G0A_STATE in
         echo "  oracle exports  NOT STATED, this log predates the oracle export lane" ;;
 esac
 if [[ -n $G0A_HEAD_REC ]]; then
-    echo "  oracle checkout $G0A_STAMP @ ${G0A_HEAD_REC:0:8} (${G0A_BRANCH_REC:-?})"
+    # `<branch> (<clean|DIRTY>)` in the stamp, rendered `<branch>, <state>`; the step is in
+    # the stamp and not repeated here.
+    G0A_BR_NAME=${G0A_BRANCH_REC% (*}; G0A_BR_STATE=${G0A_BRANCH_REC##*(}; G0A_BR_STATE=${G0A_BR_STATE%)}
+    echo "  oracle checkout ${G0A_STAMP% (step*} @ ${G0A_HEAD_REC:0:8} ($G0A_BR_NAME, $G0A_BR_STATE)"
     if [[ $G0A_BRANCH_REC == *'(DIRTY)' ]]; then
         echo "                  ** THE ORACLE CHECKOUT IS DIRTY: the lane measured its working tree,"
         echo "                  uncommitted pins included, not its HEAD. **"
     fi
 fi
-if [[ $G0A_STATE == RED ]]; then
+if [[ $G0A_STATE == RED ]] && (( G0A_DRIFT_FILES == 0 )); then
+    echo "                  WHAT TO DO: the runner exited 1 and named no ROM or export, which is how it"
+    echo "                  reports \`cargo test exited N\`: Oracle's gates or their build broke (a compile"
+    echo "                  error, a gate panic, the toolchain or the environment), not pin drift. Read the"
+    echo "                  copied scratch logs (\`----- ORACLE G0A SCRATCH LOG\`) in the ORACLE G0A SPAN"
+    echo "                  and fix that; do NOT re-pin pins that did not move."
+elif [[ $G0A_STATE == RED ]]; then
     echo "                  WHAT TO DO: first classify the difference, either this sigil moved bytes"
     echo "                  or the aeon reference ($AEON @ ${AEON_HEAD:0:8}) is not the aeon Oracle's pins"
     echo "                  were made against (Oracle's fixtures/g0a/PROVENANCE.md names the aeon and"
@@ -1584,9 +1626,15 @@ if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 || SKIPS > 0 || LEDGER_RC !=
           && LEDGER_RC == 0 && ! LEDGER_SILENT && ${#SILENT_BINARIES[@]} == 0 \
           && ! COMPLETENESS_UNMEASURED && ! CENSUS_SHORT && ! CENSUS_UNMEASURED )); then
         if [[ $G0A_STATE == RED ]]; then
-            echo "  RESULT          FAILED, the ORACLE EXPORT LANE is RED: Oracle's pinned exports did"
-            echo "                  not reproduce with this sigil. Every other bar is clean. Follow the"
-            echo "                  WHAT TO DO above; do not land on this."
+            if (( G0A_DRIFT_FILES > 0 )); then
+                echo "  RESULT          FAILED, the ORACLE EXPORT LANE is RED: Oracle's pinned exports did"
+                echo "                  not reproduce with this sigil. Every other bar is clean. Follow the"
+                echo "                  WHAT TO DO above; do not land on this."
+            else
+                echo "  RESULT          FAILED, the ORACLE EXPORT LANE is RED with no drifted file named:"
+                echo "                  a broken build or gate, not drift. Every other bar is clean. Follow"
+                echo "                  the WHAT TO DO above; do not land on this."
+            fi
         else
             echo "  RESULT          FAILED, the ORACLE EXPORT LANE COULD NOT RUN. Every other bar is"
             echo "                  clean; Oracle's pinned exports are UNCHECKED, which is not the same"
@@ -1669,7 +1717,14 @@ if (( ! RECONCILED )); then
     exit 3
 fi
 echo
-echo "  RESULT          GREEN"
+# AN OPTED-OUT LANE IS CARRIED ON THE RESULT LINE ITSELF. A bare `RESULT GREEN` over
+# ORACLE_G0A_LANE=off read, at check_landing_log.py (which echoes the RESULT line and is the
+# instrument a landing is told to trust), exactly like a run that checked Oracle's pins.
+if [[ $G0A_STATE == DID_NOT_RUN ]]; then
+    echo "  RESULT          GREEN, ORACLE EXPORT LANE DID NOT RUN (ORACLE_G0A_LANE=off)"
+else
+    echo "  RESULT          GREEN"
+fi
 echo "==================================================================================="
 exit 0
 }

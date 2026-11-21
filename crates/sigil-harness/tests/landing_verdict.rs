@@ -1196,6 +1196,18 @@ out=""
 while (( $# )); do [[ $1 == --out ]] && out=$2; shift; done
 [[ -d $out ]] || { echo "fixture g0a: --out $out is not a directory" >&2; exit 2; }
 echo "fixture rom" > "$out/s4.bin"
+case ${FIXTURE_G0A_MODE:-} in
+    # Pin drift, as the real runner names it: a ROM line from `sha256sum -c`.
+    drift) echo "s4.bin: FAILED" ;;
+    # Its own gates failing to BUILD: the real runner keeps the compiler text in gates.log,
+    # echoes none of it, names no file, and exits 1.
+    build)
+        printf '%s\n' "error[E0425]: cannot find value \`fixture_compile_error\` in this scope" \
+            "error: could not compile \`oracle-aether\` (test \"build_export_real\") due to 1 previous error" \
+            > "$out/gates.log"
+        echo "g0a-real-exports: RED: cargo test exited 101 (log: $out/gates.log)" >&2
+        exit 1 ;;
+esac
 echo "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
 echo "G0A REAL-EXPORT GATES: 9/9 OK (fixture)"
 exit "${FIXTURE_G0A_RC:-0}"
@@ -1300,6 +1312,7 @@ fn stub_run_with(dir: &Path, run: &StubRun, env: &[(&str, Option<&OsStr>)]) -> (
         .env("FIXTURE_G0A_ARGS", dir.join("g0a-args.txt"))
         .env_remove("ORACLE_G0A_LANE")
         .env_remove("FIXTURE_G0A_RC")
+        .env_remove("FIXTURE_G0A_MODE")
         .env("SIGIL_BUILD", bin.join("cargo"))
         .env("SIGIL_EMIT", bin.join("cargo"))
         .env("FIXTURE_TEST_SPAN", &span)
@@ -1634,7 +1647,11 @@ fn the_oracle_export_lane_runs_with_this_runs_binary_and_tree_and_cleans_its_scr
 #[test]
 fn a_red_oracle_export_lane_fails_the_run_and_says_what_to_do() {
     let dir = scratch("g0a-red");
-    let (code, stdout, _stderr, log) = stub_run_with(&dir, &GREEN_RUN, &[("FIXTURE_G0A_RC", Some(OsStr::new("1")))]);
+    let (code, stdout, _stderr, log) = stub_run_with(
+        &dir,
+        &GREEN_RUN,
+        &[("FIXTURE_G0A_RC", Some(OsStr::new("1"))), ("FIXTURE_G0A_MODE", Some(OsStr::new("drift")))],
+    );
     let text = std::fs::read_to_string(&log).unwrap();
     assert_eq!(code, 1, "a red oracle lane must fail the run, got {code}:\n{stdout}\n--- log ---\n{text}");
     assert!(stdout.contains("  oracle exports  RED   (runner exit 1"), "{stdout}");
@@ -1779,5 +1796,82 @@ fn verdict_only_reads_the_oracle_lane_from_the_record() {
     let (code, out) = judge(&ok, &[]);
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("  oracle exports  OK"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// FIX ROUND 1, I1. An opted-out run is GREEN, and the RESULT line itself says the lane DID
+/// NOT RUN, so the checker (which echoes the RESULT line, and is the instrument a landing is
+/// told to trust) shows it as well. A bare `RESULT GREEN` there read exactly like a run that
+/// checked Oracle's pins.
+#[test]
+fn an_opted_out_run_carries_did_not_run_on_its_result_line_and_through_the_checker() {
+    let dir = scratch("g0a-off-result");
+    let (code, stdout, stderr, log) = stub_run_with(
+        &dir,
+        &GREEN_RUN,
+        &[("ORACLE_G0A_DIR", None), ("ORACLE_G0A_LANE", Some(OsStr::new("off")))],
+    );
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    assert!(
+        stdout.contains("  RESULT          GREEN, ORACLE EXPORT LANE DID NOT RUN (ORACLE_G0A_LANE=off)\n"),
+        "the RESULT line must carry the opt-out:\n{stdout}"
+    );
+    let (ccode, cout) = check(&log);
+    assert_eq!(ccode, 0, "an opted-out green is still a green to the checker:\n{cout}");
+    assert!(
+        cout.contains("VERDICT: RESULT GREEN, ORACLE EXPORT LANE DID NOT RUN (ORACLE_G0A_LANE=off)"),
+        "the checker's VERDICT must carry the opt-out through:\n{cout}"
+    );
+    // The CONTROL: a run with the lane on reads a bare GREEN, so the text above comes from
+    // the opt-out and not from every green.
+    let on = dir.join("on");
+    std::fs::create_dir_all(&on).unwrap();
+    let (code, stdout, _log) = stub_run(&on, &GREEN_RUN);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("  RESULT          GREEN\n") && !stdout.contains("DID NOT RUN"), "{stdout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// FIX ROUND 1, I2. The runner exits 1, not 2, when its own gates fail to build, and the
+/// compiler text exists only in its scratch `gates.log`. That log is copied into the landing
+/// log before the scratch goes, and the verdict says "a broken build or gate, not drift" and
+/// does NOT print the re-pin procedure. The CONTROL: exit 1 with a FAILED ROM line still
+/// prints the re-pin procedure and no broken-build wording.
+#[test]
+fn a_red_with_no_failed_file_is_a_broken_build_and_its_log_survives_the_scratch() {
+    let dir = scratch("g0a-build");
+    let build = dir.join("build");
+    std::fs::create_dir_all(&build).unwrap();
+    let (code, stdout, _stderr, log) =
+        stub_run_with(&build, &GREEN_RUN, &[("FIXTURE_G0A_MODE", Some(OsStr::new("build")))]);
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(code, 1, "{stdout}\n--- log ---\n{text}");
+    assert!(
+        text.contains("----- ORACLE G0A SCRATCH LOG gates.log (copied before the scratch is removed) -----\n"),
+        "the scratch gates.log must be copied into the landing log:\n{text}"
+    );
+    assert!(text.contains("error[E0425]: cannot find value `fixture_compile_error` in this scope"), "{text}");
+    assert!(
+        stdout.contains("oracle exports  RED   (runner exit 1 with NO FAILED ROM or export line: a broken build or gate, not drift)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("do NOT re-pin pins that did not move"), "{stdout}");
+    assert!(!stdout.contains("re-pin Oracle on a feature branch"), "a broken build must not be told to re-pin:\n{stdout}");
+    let args = std::fs::read_to_string(build.join("g0a-args.txt")).unwrap();
+    assert!(!PathBuf::from(args.lines().nth(5).unwrap()).exists(), "the scratch is still removed");
+    let (vcode, vout) = judge_stdout(&log);
+    assert_eq!((vcode, recorded_block(&text)), (1, vout));
+
+    let drift = dir.join("drift");
+    std::fs::create_dir_all(&drift).unwrap();
+    let (code, stdout, _stderr, _log) = stub_run_with(
+        &drift,
+        &GREEN_RUN,
+        &[("FIXTURE_G0A_RC", Some(OsStr::new("1"))), ("FIXTURE_G0A_MODE", Some(OsStr::new("drift")))],
+    );
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("oracle exports  RED   (runner exit 1: 1 pinned ROM/export file(s) FAILED"), "{stdout}");
+    assert!(stdout.contains("re-pin Oracle on a feature branch"), "{stdout}");
+    assert!(!stdout.contains("not drift"), "{stdout}");
     let _ = std::fs::remove_dir_all(&dir);
 }
