@@ -270,3 +270,39 @@ test probe_proc_member_and_extern_targets_with_no_clause_are_refused ... ok
 test the_refusal_reaches_only_a_live_binding_to_a_declared_proc ... ok
 test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+### Task 6: `[proc.sr-undeclared]` in the gated build
+
+Mutation (plan Task 6 Step 8): in `run_project`, `run_project_build` is passed `false` instead of the gate's return value. The two refusal tests go red with exit code `Some(0)`, as the plan predicts; the declared-`sr` control and the two limit tests (`--check` / `SIGIL_CONTRACTS=0`, single-file `sigil emp`) stay green.
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-cli/src/main.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n 'run_project_build(&project' crates/sigil-cli/src/main.rs
+3104:            run_project_build(&project, opts, false);
+$ AEON_DIR=/home/volence/sonic_hacks/.aeon-a10-ref SIGIL_STRICT_GATE=1 CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-cli --test sr_undeclared_gate   # mutated
+test the_single_file_path_stays_a_warning ... ok
+test a_declared_sr_write_builds ... ok
+test an_undeclared_sr_write_stops_the_gated_build ... FAILED
+test warnings_off_does_not_hide_the_refusal ... FAILED
+test outside_the_gate_it_stays_a_warning ... ok
+thread 'an_undeclared_sr_write_stops_the_gated_build' (2742442) panicked at crates/sigil-cli/tests/sr_undeclared_gate.rs:85:5:
+  left: Some(0)
+ right: Some(1)
+thread 'warnings_off_does_not_hide_the_refusal' (2742445) panicked at crates/sigil-cli/tests/sr_undeclared_gate.rs:100:5:
+  left: Some(0)
+ right: Some(1)
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.95s
+error: test failed, to rerun pass `-p sigil-cli --test sr_undeclared_gate`
+$ git restore --source=HEAD -- crates/sigil-cli/src/main.rs
+$ git status --short --untracked-files=no
+$ AEON_DIR=/home/volence/sonic_hacks/.aeon-a10-ref SIGIL_STRICT_GATE=1 CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-cli --test sr_undeclared_gate   # restored
+test the_single_file_path_stays_a_warning ... ok
+test a_declared_sr_write_builds ... ok
+test warnings_off_does_not_hide_the_refusal ... ok
+test an_undeclared_sr_write_stops_the_gated_build ... ok
+test outside_the_gate_it_stays_a_warning ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.84s
+```
