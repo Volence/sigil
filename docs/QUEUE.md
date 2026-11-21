@@ -2844,6 +2844,11 @@ until its row is removed.
   `debug/generated/compression_vectors.emp`) would reorder `files` and shift every later file index, which the
   ruling's proof (only the game prefix moves) forbids. The mount now applies to any `<sub>`, as
   `GeneratedRoot::mounted` does, instead of the literal `sound`/`debug` pair; no aeon read changes row by it.
+- **Ratified (controller ruling, G0b Task 13/13a review I1, 2026-11-21):** the mount stands as code; the contract
+  text now states it (empyrean `b7717eca`, §11.55 and the schema's `files[].root` description: a `generated` row is a
+  file in the build's generated directory or one under `<engine>/<sub>/generated/`, placed as `generated`
+  `<sub>/<rest>`). Dropping the mount is a later contract change and costs one re-pin of file order in every export
+  that carries a mounted row (aeon's debug shapes' `compression_vectors.emp`, and every file index after it).
 - **Proof:** `scripts/export_roots_cmp.sh` (old 02b8a8f4 vs new, 7 shapes: old export with `<id>/` stripped from
   every game row equals the new export except `inputsSha256` and `tool.revision`), output committed under
   `docs/evidence/g0b-export-by-roots/`. `build_export_binding::an_out_of_tree_games_export_rows_are_its_listing_rows`
@@ -2862,6 +2867,10 @@ until its row is removed.
   digest row under its named root, which is a `.lst` text change for every aeon shape (its own proof, and aeon's
   `.lst` readers re-checked), or retire the digest's tree spelling with the transitional tree
   (`G0B-UNROOTED-TREE-READS`).
+- Also (Task 13/13a review, minor 1): the listing digest's `game` root is `project.sources_root()` while the export's
+  is `project.game_dir` (`sigil-cli/src/main.rs` ~3247-3248), so for a game whose `game.toml` sets `sources.root` to
+  anything but `"."` the listing's `root=game path=` and the export's `game` row name the same file relative to
+  different directories; one root must win when the spellings are unified.
 
 ## G0B-BLIND-REFUSAL-UNNAMED
 
