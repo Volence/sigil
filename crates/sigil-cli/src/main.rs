@@ -2209,7 +2209,10 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
 ///
 /// `SIGIL_CONTRACTS=0` is the emergency opt-out (aeon's `build.sh` maps
 /// `CONTRACTS=0` onto it). It is loud: a skipped gate prints why.
-fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) {
+///
+/// Returns `true` when the gate ran and passed, `false` when `SIGIL_CONTRACTS=0` skipped it;
+/// a failing gate exits. The caller's build refuses [`GATED_WARNING_IDS`] only when it is `true`.
+fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
     use sigil_harness::contract_baseline as bl;
 
     if std::env::var("SIGIL_CONTRACTS").is_ok_and(|v| v == "0") {
@@ -2217,7 +2220,7 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) {
             "warning: contract closure gate SKIPPED (SIGIL_CONTRACTS=0). This is the \
              emergency opt-out, the build is not contract-checked."
         );
-        return;
+        return false;
     }
 
     let subject = subject();
@@ -2527,6 +2530,7 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) {
         analysed,
         base.home
     );
+    true
 }
 
 /// Refuse a zero-firing contract family with each firing's location.
@@ -3096,8 +3100,8 @@ fn run_project(opts: &ProjectOpts) {
         None => {
             // The closure gate runs BEFORE the build: a contract failure costs a second,
             // not a link, and leaves no fresh artifact.
-            run_contract_gate(subject);
-            run_project_build(&project, opts);
+            let gated = run_contract_gate(subject);
+            run_project_build(&project, opts, gated);
         }
     }
 }
@@ -3188,7 +3192,10 @@ fn run_project_check(project: &sigil_build::driver::Project, opts: &ProjectOpts)
 
 /// Build one shape with the game-as-data driver and write its artifacts: the ROM, the
 /// listing (`--emit-lst`) and the build export ([`write_build_artifacts`]).
-fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts) {
+///
+/// `gated` is the contract closure gate's verdict ([`run_contract_gate`]): when it ran, a
+/// warning in [`GATED_WARNING_IDS`] stops the build before anything is written (A10 W7).
+fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts, gated: bool) {
     use sigil_build::driver;
     let env = |k: &str| std::env::var_os(k);
     // No `AEON_DIR` is published from the project's checkout: the sound seams write into
@@ -3228,6 +3235,19 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
         }
     };
     report_warnings(&out.warnings);
+    // Read from the build's warning list, not from what was printed: `SIGIL_WARNINGS=off`
+    // cannot hide it. Before any artifact is written.
+    let refusal = gated_warning_refusal(&out.warnings);
+    if gated && !refusal.is_empty() {
+        for line in &refusal {
+            eprintln!("{line}");
+        }
+        eprintln!(
+            "error: gated build FAILED on [proc.sr-undeclared]. Set SIGIL_CONTRACTS=0 (aeon: CONTRACTS=0) \
+             to build anyway, that is an emergency hatch, not a fix."
+        );
+        process::exit(1);
+    }
     let identity = project_identity(project, &opts.shape, opts, &out);
     let artifacts = Artifacts { output: Some(output), emit_lst: opts.emit_lst.as_deref(), sidecar };
     write_build_artifacts(
@@ -3383,6 +3403,33 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
     for line in warning_report_lines(WarningView::from_env(), warnings) {
         eprintln!("{line}");
     }
+}
+
+/// The warning ids a GATED `sigil build` refuses (A10 W7). Each stays a warning at its
+/// emission site, so `--check`, `SIGIL_CONTRACTS=0` and single-file `sigil emp` still only
+/// warn: "an error only where the gate runs; the single-file path is a separate question
+/// (review B, Q15)".
+const GATED_WARNING_IDS: [&str; 1] = ["proc.sr-undeclared"];
+
+/// The lines a gated build prints to refuse its [`GATED_WARNING_IDS`] firings: the header,
+/// then one `  {location}: {message}` line per firing (`  (no span recorded): {message}` when
+/// it has no location), the shape [`located_refusal`] prints. Empty when none fired.
+fn gated_warning_refusal(warnings: &[sigil_harness::native::BuildWarning]) -> Vec<String> {
+    let firings: Vec<_> = warnings.iter().filter(|w| GATED_WARNING_IDS.contains(&w.id.as_str())).collect();
+    if firings.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![format!(
+        "error: [proc.sr-undeclared], {} firing(s); an undeclared write to the status register stops a gated `sigil build`:",
+        firings.len()
+    )];
+    for w in firings {
+        lines.push(match &w.location {
+            Some(loc) => format!("  {loc}: {}", w.message),
+            None => format!("  (no span recorded): {}", w.message),
+        });
+    }
+    lines
 }
 
 /// Who a build says it is, wherever an artifact names it: the listing's source digest
@@ -4391,6 +4438,43 @@ mod tests {
             primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
         };
         assert_eq!(crate::warning_summary(&[bare]).unwrap(), "1 warning, unclassified 1");
+    }
+
+    /// A10 W7: the gated build's refusal lists every `proc.sr-undeclared` firing, located or
+    /// not, and no other warning.
+    #[test]
+    fn gated_warning_refusal_lists_each_sr_firing_and_nothing_else() {
+        use sigil_harness::native::BuildWarning;
+        let w = |level, id: &str| BuildWarning {
+            level,
+            id: id.to_string(),
+            location: None,
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        };
+        let warn = sigil_span::Level::Warning;
+        let mut a = w(warn, "proc.sr-undeclared");
+        a.location = Some("engine/x.emp:4:5".into());
+        let lines = crate::gated_warning_refusal(&[w(warn, "proc.clobber-undeclared"), a, w(warn, "proc.sr-undeclared")]);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(lines[0], "error: [proc.sr-undeclared], 2 firing(s); an undeclared write to the status register stops a gated `sigil build`:");
+        assert_eq!(lines[1], "  engine/x.emp:4:5: [proc.sr-undeclared] whatever");
+        assert_eq!(lines[2], "  (no span recorded): [proc.sr-undeclared] whatever");
+    }
+
+    #[test]
+    fn gated_warning_refusal_is_empty_when_no_gated_id_fired() {
+        use sigil_harness::native::BuildWarning;
+        let w = |level, id: &str| BuildWarning {
+            level,
+            id: id.to_string(),
+            location: None,
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        };
+        let warn = sigil_span::Level::Warning;
+        assert!(crate::gated_warning_refusal(&[]).is_empty());
+        assert!(crate::gated_warning_refusal(&[w(warn, "proc.clobber-undeclared")]).is_empty());
     }
 
     /// The Note tier counts and renders SEPARATELY from warnings. The corpus fires
