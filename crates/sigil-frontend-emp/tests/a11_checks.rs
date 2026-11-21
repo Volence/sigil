@@ -514,3 +514,24 @@ fn a_byte_sized_move_to_ccr_reads_a_word_of_its_field() {
         assert_eq!(probe(line), [], "`{line}`");
     }
 }
+
+/// The non-privileged restore: `move.w (sp)+, ccr` pops the word a
+/// `move.w sr, -(sp)` saved back into the condition codes, so it closes the
+/// saved-flags bracket as `move.w (sp)+, sr` and `rtr` do. It restores only the
+/// CCR half: a mask write inside the bracket is still not undone by it.
+#[test]
+fn a_pop_into_ccr_restores_the_saved_condition_codes() {
+    let idiom = "    move.w sr, -(sp)\n    moveq #1, d1\n    move.w (sp)+, ccr\n    rts";
+    assert_eq!(diags("clobbers(d1) preserves(sr.ccr)", idiom), [], "the ccr restore under preserves(sr.ccr)");
+    assert_eq!(diags("clobbers(d1) preserves(sr)", idiom), [], "the ccr restore under preserves(sr)");
+    let unverifiable = |d: &[(bool, String)], what: &str| {
+        errors(d).iter().any(|m| m.starts_with(&format!("[proc.preserves-unverifiable] `P` declares `preserves({what})`")))
+    };
+    // Control: a ccr pop of a word that is not a saved `sr` writes the flags.
+    let d = diags("clobbers() preserves(sr.ccr)", "    move.w d0, -(sp)\n    move.w (sp)+, ccr\n    rts");
+    assert!(unverifiable(&d, "sr.ccr"), "{d:?}");
+    // Control: a mask write restored only through `ccr` is not restored.
+    let masked = "    move.w sr, -(sp)\n    ori.w #$0700, sr\n    move.w (sp)+, ccr\n    rts";
+    let d = diags("clobbers() preserves(sr.mask)", masked);
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-sr-unbalanced] `P` declares `preserves(sr.mask)`")), "{d:?}");
+}

@@ -2847,6 +2847,13 @@ fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Optio
             saved = false;
             continue;
         }
+        // `move.w (sp)+, ccr` is the non-privileged restore: it pops the saved
+        // word's low byte back into the condition codes, which is all this
+        // bracket protects. Outside a bracket it is a plain flag write (below).
+        if saved && matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Ccr]) {
+            saved = false;
+            continue;
+        }
         match ccr_effect(mnemonic, ops) {
             CcrEffect::Transparent => {}
             CcrEffect::Returns => {
