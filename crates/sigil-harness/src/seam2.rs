@@ -670,7 +670,8 @@ fn import_verdict(
     what: &str,
     locate: &dyn Fn(sigil_span::Span) -> Option<String>,
 ) -> Result<(), String> {
-    let errors = crate::import_check::standalone_import_errors(&crate::import_check::seam_roots(aeon), &[file]);
+    let errors = crate::import_check::standalone_import_errors(&crate::import_check::seam_roots(aeon), &[file])
+        .map_err(|e| format!("{what}: {e}"))?;
     if errors.is_empty() {
         return Ok(());
     }

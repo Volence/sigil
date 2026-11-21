@@ -64,19 +64,31 @@ fn fingerprint(roots: &ScanRoots) -> Fingerprint {
 /// edit, an added file or a removed one is always seen. The fingerprint reads each file
 /// through the read ledger, so a reuse still records the bytes it compared, and a file
 /// that changed between two checks is kept there as a conflict rather than lost.
-fn scan_cached(roots: &ScanRoots) -> Rc<Manifest> {
+///
+/// A scan whose own diagnostics hold an Error (a root named twice, a root inside another, a
+/// module declared twice) is refused with every such message and never kept: its manifest
+/// is empty or partial, and checking a `use` against it would report the scan's fault as
+/// an unknown module, or pass silently (G0b final review C-I6, seat C's note for seat B).
+fn scan_cached(roots: &ScanRoots) -> Result<Rc<Manifest>, String> {
     let now = fingerprint(roots);
     SCANS.with(|scans| {
         let mut scans = scans.borrow_mut();
         if let Some((_, seen, manifest)) = scans.iter().find(|(r, _, _)| r == roots) {
             if *seen == now {
-                return Rc::clone(manifest);
+                return Ok(Rc::clone(manifest));
             }
         }
-        let manifest = Rc::new(Manifest::scan_roots(roots).0);
+        let (manifest, diags) = Manifest::scan_roots(roots);
+        let errors: Vec<&str> =
+            diags.iter().filter(|d| d.level == sigil_span::Level::Error).map(|d| d.message.as_str()).collect();
+        if !errors.is_empty() {
+            let named: Vec<String> = roots.iter().map(|(n, d)| format!("`{n}` = {}", d.display())).collect();
+            return Err(format!("the import check's scan of {} failed:\n  {}", named.join(", "), errors.join("\n  ")));
+        }
+        let manifest = Rc::new(manifest);
         scans.retain(|(r, _, _)| r != roots);
         scans.push((roots.clone(), now, Rc::clone(&manifest)));
-        manifest
+        Ok(manifest)
     })
 }
 
@@ -88,15 +100,15 @@ fn scan_cached(roots: &ScanRoots) -> Rc<Manifest> {
 /// id and exactly as the caller parsed it (so an in-memory source override is what
 /// gets checked), and otherwise among the modules scanned from `roots`. The roots are
 /// scanned only when some `use` names a module outside `files`, and parsed at most
-/// once per tree state ([`scan_cached`]).
-pub fn standalone_import_errors(roots: &ScanRoots, files: &[&ast::File]) -> Vec<(usize, Diagnostic)> {
+/// once per tree state ([`scan_cached`]); a scan that fails is `Err` with its messages.
+pub fn standalone_import_errors(roots: &ScanRoots, files: &[&ast::File]) -> Result<Vec<(usize, Diagnostic)>, String> {
     let local: Vec<(String, &ast::File)> =
         files.iter().map(|f| (f.module.path.segments.join("."), *f)).collect();
     let is_local = |id: &str| local.iter().any(|(l, _)| l == id);
     let needs_scan = files
         .iter()
         .any(|f| use_decls(&f.items).iter().any(|u| !is_local(&u.base.segments.join("."))));
-    let scanned = needs_scan.then(|| scan_cached(roots));
+    let scanned = if needs_scan { Some(scan_cached(roots)?) } else { None };
 
     let mut pairs: Vec<(&str, &ast::File)> = local.iter().map(|(id, f)| (id.as_str(), *f)).collect();
     if let Some(m) = &scanned {
@@ -117,7 +129,7 @@ pub fn standalone_import_errors(roots: &ScanRoots, files: &[&ast::File]) -> Vec<
             }
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -138,7 +150,25 @@ mod tests {
         let files: Vec<_> = srcs.iter().map(|s| parse_str(s).0).collect();
         let refs: Vec<_> = files.iter().collect();
         let roots = vec![(sigil_span::roots::RootName::Engine, root.to_path_buf())];
-        standalone_import_errors(&roots, &refs).into_iter().map(|(i, d)| (i, d.message)).collect()
+        standalone_import_errors(&roots, &refs).unwrap_or_else(|e| panic!("{e}")).into_iter().map(|(i, d)| (i, d.message)).collect()
+    }
+
+    /// A scan that refuses its roots (`[root.twice]`, `[root.nested]`) is the import check's
+    /// error, with the scan's own message: it used to be dropped (`scan_roots(..).0`), leaving
+    /// an empty manifest, so every `use` read as an unknown module.
+    #[test]
+    fn a_refused_scan_is_the_import_checks_error() {
+        use sigil_span::roots::RootName;
+        let dir = tree();
+        let file = parse_str("module pkg.a\nuse pkg.b.{X}\n").0;
+        let nested = vec![(RootName::Engine, dir.path().to_path_buf()), (RootName::Game, dir.path().join("pkg"))];
+        let err = standalone_import_errors(&nested, &[&file]).expect_err("a nested root must be refused");
+        assert!(err.contains("[root.nested]") && err.contains("the import check's scan"), "{err}");
+        let twice = vec![(RootName::Engine, dir.path().to_path_buf()), (RootName::Engine, dir.path().to_path_buf())];
+        assert!(standalone_import_errors(&twice, &[&file]).unwrap_err().contains("[root.twice]"));
+        // CONTROL: the same file over one root resolves clean.
+        let one = vec![(RootName::Engine, dir.path().to_path_buf())];
+        assert!(standalone_import_errors(&one, &[&file]).unwrap().is_empty());
     }
 
     /// A `use` of a module outside the given files resolves in the scanned tree:
