@@ -144,7 +144,7 @@ pub fn gate_modules(
             PlaceIn::Shapes(names) => names.contains(&shape.name),
             PlaceIn::Feature(expr) => expr
                 .eval(&shape.features, &|d: &str| shape.defines.get(d).copied())
-                .map_err(|m| BuildError::Gate(format!("rule {first} (`{}`) for `{id}`: {m}", rules[first].modules)))?,
+                .map_err(|m| BuildError::Gate(format!("rule {} for `{id}`: {m}", RuleRef::of(&rules[first]))))?,
         };
         if placed {
             kept.push(id.clone());
@@ -309,6 +309,17 @@ mod tests {
         assert_eq!(gate_modules(&scan, &rules, &homes(), &shape("release", false)).unwrap(), ids(&["c"]));
         let missing = vec![rule("e", PlaceIn::Feature(FeatureExpr::parse("NOPE").unwrap()))];
         assert!(matches!(gate_modules(&scanned(&["e"]), &missing, &homes(), &shape("x", false)), Err(BuildError::Gate(m)) if m.contains("NOPE")));
+    }
+
+    /// G0b final review A-M1 (deferred line 108): a rule that cannot be evaluated is named
+    /// by its file and row, not by its index into the engine rules followed by the game's.
+    #[test]
+    fn an_unevaluable_rule_is_named_by_file_and_row() {
+        let mut rules = from_file("engine/engine.toml", vec![rule("engine.vdp", PlaceIn::All), rule("engine.ram", PlaceIn::All)]);
+        rules.extend(from_file("games/g/game.toml", vec![rule("games.g.e", PlaceIn::Feature(FeatureExpr::parse("NOPE").unwrap()))]));
+        let err = gate_modules(&scanned(&["games.g.e"]), &rules, &homes(), &shape("x", false)).unwrap_err().to_string();
+        assert!(err.contains("`games.g.e` (games/g/game.toml [[gate]] row 1)"), "{err}");
+        assert!(!err.contains("rule 2"), "no concatenated index: {err}");
     }
 
     #[test]
