@@ -79,6 +79,10 @@ fn the_other_as_rewrites_do_not_reach_emp() {
     // emp_a11_golden.rs.
     assert_unchanged("chk.w d0,d1", &[]);
     assert_unchanged("trapv", &[]);
+    // Restored in the A11 final-review fix wave (M2): the conversion had dropped
+    // these two of the six words rather than converting them.
+    assert_unchanged("rtr", &[]);
+    assert_unchanged("stop #$2700", &[]);
 }
 
 /// AS-SYMBOL-SIZE-SUFFIX's AS-route reading (`jmp Foo.w` is `Foo` at word

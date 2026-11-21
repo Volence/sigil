@@ -189,7 +189,7 @@ fn a_comptime_constant_address_is_unchanged() {
 /// assemble `3A 04 00`, a read of the proc's address).
 #[test]
 fn a_register_name_is_not_a_link_time_address() {
-    for reg in ["a", "b", "c", "e", "h", "l", "af", "i", "r"] {
+    for reg in ["a", "b", "c", "d", "e", "h", "l", "af", "i", "r"] {
         let src = format!("module m (cpu: z80)\nproc f() {{\n    ld a, ({reg})\n    ret\n}}\nproc {reg}() {{\n    ret\n}}\n");
         let e = assemble(&src, &SymbolTable::new()).unwrap_err();
         let want = format!("[lower.z80-unsupported] `({reg})` is not a Z80 operand form: `{reg}` is a register, not a memory address");

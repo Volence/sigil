@@ -114,6 +114,15 @@ fn movem_loads_from_a_pc_relative_source() {
     assert_eq!(enc.as_deref(), Ok(&pcd8[..]), "shared encoder, (d8,pc,a2.w)");
     assert_eq!(emp("movem.l .tgt(pc,a2.w), d3-d4"), Ok(framed(&pcd8)));
     assert_eq!(asl("movem.l tgt(pc,a2.w),d3-d4"), Ok(framed(&pcd8)));
+    // A LONG index (final review triage (b)): the brief extension word is
+    // D/A=1 (an address register), register 001 (a1), W/L=1 (long), so its
+    // high byte is %1001_1000 = $98; the displacement byte is again -6 = $FA.
+    let pcd8l = [0x4C, 0xFB, 0x00, 0x18, 0x98, 0xFA];
+    let xn = m68k::Xn::A(1);
+    let enc = encode(&i(Mnemonic::Movem, Size::L, &[Pcd8Xn { d: -6, xn, long: true }, RegList(0x0018)]));
+    assert_eq!(enc.as_deref(), Ok(&pcd8l[..]), "shared encoder, (d8,pc,a1.l)");
+    assert_eq!(emp("movem.l .tgt(pc,a1.l), d3-d4"), Ok(framed(&pcd8l)));
+    assert_eq!(asl("movem.l tgt(pc,a1.l),d3-d4"), Ok(framed(&pcd8l)));
 }
 
 /// A PC-relative `movem` DESTINATION is not a 68000 instruction (program-space

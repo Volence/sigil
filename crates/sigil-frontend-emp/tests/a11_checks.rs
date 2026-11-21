@@ -618,3 +618,17 @@ fn usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name() {
     );
     assert_eq!(field, Ok(vec![0x20, 0x28, 0x00, 0x04, 0x4E, 0x75]), "the field `My.usp` is offset 4");
 }
+
+/// The bail reason a poisoned frame gives reaches the author through the
+/// conditional-out check: the `unlk` after a write of its frame register is
+/// named, so the author knows which line broke the proof.
+#[test]
+fn a_poisoned_frame_names_its_unlk_in_the_conditional_out_bail() {
+    let body = "    link a6, #-8\n    moveq #5, d0\n    moveq #1, d1\n    movea.l a0, a6\n    unlk a6\n    rts";
+    let d = diags("clobbers(d1, a0, a6) out(d0 if eq)", body);
+    assert!(
+        d.iter().any(|(_, m)| m.starts_with("[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)`")
+            && m.contains("the entry-value proof bailed: `unlk a6` after `a6` was written inside its frame, sp becomes an unmodeled value")),
+        "{d:?}"
+    );
+}
