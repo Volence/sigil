@@ -1301,3 +1301,98 @@ TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2891 passed, 0 f
 frontend_differential_coverage` 3 suites, 17 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
 FD: the `emp-lacks-mnemonic` row, its arm, `EMP_ABSENT_MNEMONICS` and `families_without_an_emp_form` deleted; the
 differential's floor holds every family to `SameBytes > 0`. No disagreement the FD step did not predict.
+
+### Task 10: cycle rows (code commit a3fc855d)
+
+**Source.** M68000 8-/16-/32-Bit Microprocessors User's Manual, Ninth Edition (Motorola 1993; the local copy
+`oracle/docs/reference/M68000UM.pdf`, read with `pdftotext -layout`), Section 8 "Instruction execution times"
+(MC68000). Cross-read: `oracle-old/Devices/M68000/<OP>.h` (`AddExecuteCycleCount(ExecuteTime(..))`).
+
+The plan's table numbers are not this edition's: single operand is Table 8-6 (p. 8-6), multiprecision Table 8-11
+(p. 8-9), miscellaneous Table 8-12 (p. 8-10), exception processing Table 8-14 (p. 8-11); address time Table 8-1
+(p. 8-2). Every VALUE the plan expected matched the manual:
+
+| Row | Manual (table, page) | oracle-old | Encoded |
+|---|---|---|---|
+| EXG | 6(1/0), 8-12, p. 8-10 | 6 | `exact(6)` |
+| LINK | 16(2/2), 8-12 | 16 | `exact(16)` |
+| UNLK | 12(3/0), 8-12 | 12 | `exact(12)` |
+| RTR | 20(2/0), 8-12 | 20 (5 reads) | `exact(20)` |
+| RESET | 132(1/0), 8-12 | 4 + 128 asserted | `exact(132)` |
+| SUBX | B/W 4(1/0) / 18(3/1), L 8(1/0) / 30(5/2), 8-11, p. 8-9 | 4 / 8 / 18 / 30 | joins the ADDX arms |
+| ABCD, SBCD | 6(1/0) / 18(3/1), 8-11 | 6 / 18 | new arms |
+| NEGX | B/W 4(1/0) / 8(1/1)+, L 6(1/0) / 12(1/2)+, 8-6, p. 8-6 | 4 / 6 / 8 / 12 | joins the NEG arm |
+| NBCD | 6(1/0) / 8(1/1)+, 8-6 | 6 / 8 | new arm |
+| CHK | no trap 10(1/0)+ (8-12); trap 40(4/3)+ (8-14) | 4 + exception | `Unmodeled` (brief) |
+| TRAPV | no trap 4(1/0) (8-12); trap 34(5/3) (8-14) | 4 + exception | `Unmodeled` (brief) |
+| STOP | 4(0/0) (8-12), then waits | 4 | `Unmodeled` (brief) |
+
+RTR's read count differs (manual 2, oracle-old 5); the clock count, the only thing encoded, agrees. The UM's
+Section 5 ("Reset Operation") gives the RESET assertion as 124 clock periods.
+
+The A11 forms left with no row: `chk`, `trapv`, `stop` (deliberate, pinned) and the `usp` moves (a fixed manual 4,
+Table 8-12, left by the brief; booked `ISA-CYCLE-TABLE-GAPS`). No existing test walks the cycle table by family (the
+brief's own finding, booked); the new rows are covered row by row by `a11_rows_match_tables_8_6_8_11_and_8_12`.
+
+**RF step 1, red** (`sigil-isa` tests written before the arms):
+```
+test m68k_cycles::tests::a11_rows_match_tables_8_6_8_11_and_8_12 ... FAILED
+test m68k_cycles::tests::the_trapping_and_waiting_instructions_are_unmodeled ... ok
+thread 'm68k_cycles::tests::a11_rows_match_tables_8_6_8_11_and_8_12' panicked at crates/sigil-isa/src/m68k_cycles.rs:507:22:
+expected an exact fixed cost, got Unmodeled
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out
+```
+After the arms, before Step 4's test edits, the two front-end tests that used `link` as "unpriced" went red as the
+brief predicts:
+```
+test cycle_budget::tests::an_off_table_68k_op_is_unknown ... FAILED
+test m68k_cycles::tests::off_table_forms_refuse ... FAILED
+thread 'm68k_cycles::tests::off_table_forms_refuse' panicked at crates/sigil-frontend-emp/src/m68k_cycles.rs:332:9:
+  left: Fixed { cycles: 16, exact: true }
+ right: Unmodeled
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 269 filtered out
+```
+
+**RF step 2, green.** `sigil-isa` `m68k_cycles` 16 passed; the two front-end tests pass with `stop` / `trapv` and the
+new `exg.l d0, d1` = 6 assertion.
+
+**RF step 3, mutations on the clean committed HEAD** (restored with `git restore --source=HEAD -- <file>`).
+
+Mutation A (the brief's), the `Exg` arm deleted:
+```
+ crates/sigil-isa/src/m68k_cycles.rs | 1 -
+-        (Exg, _) => exact(6),
+test m68k_cycles::tests::a11_rows_match_tables_8_6_8_11_and_8_12 ... FAILED
+expected an exact fixed cost, got Unmodeled
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out
+test m68k_cycles::tests::off_table_forms_refuse ... FAILED
+thread 'm68k_cycles::tests::off_table_forms_refuse' panicked at crates/sigil-frontend-emp/src/m68k_cycles.rs:334:9:
+  left: Unmodeled
+ right: Fixed { cycles: 6, exact: true }
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 267 filtered out
+```
+Restored: 16 passed, 6 passed.
+
+Mutation B (extra), `Subx` out of the ADDX Dn,Dn arm:
+```
+-        (Addx | Subx, [CatOp::Ea(EaCat::Dn), CatOp::Ea(EaCat::Dn)]) => {
++        (Addx, [CatOp::Ea(EaCat::Dn), CatOp::Ea(EaCat::Dn)]) => {
+test m68k_cycles::tests::a11_rows_match_tables_8_6_8_11_and_8_12 ... FAILED
+expected an exact fixed cost, got Unmodeled
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out
+```
+Restored: 16 passed.
+
+Mutation C (extra), the `Nbcd` arm deleted:
+```
+ crates/sigil-isa/src/m68k_cycles.rs | 5 -----
+test m68k_cycles::tests::a11_rows_match_tables_8_6_8_11_and_8_12 ... FAILED
+expected an exact fixed cost, got Unmodeled
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 51 filtered out
+```
+Restored: 16 passed.
+
+TC (after the last code edit): `sigil-isa` 16 suites, 152 passed, 0 failed, 0 ignored; `sigil-frontend-emp` 148
+suites, 2891 passed, 0 failed, 0 ignored; `sigil-backend-m68k` (re-exports the table) 2 suites, 19 passed. Clippy
+clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0` (the table feeds the strength-reduction tie-breaks; no byte
+moved).
