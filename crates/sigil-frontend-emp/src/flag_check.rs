@@ -1805,11 +1805,11 @@ mod zero_model_tests {
     ///
     /// - `move-to-usp` / `move-from-usp`: the `.emp` operand model has no `usp`
     ///   operand.
-    /// - `chk`, `link`, `unlk`, `reset`, `rtr`, `trapv`, `stop`: `.emp`'s
+    /// - `chk`, `link`, `unlk`, `reset`, `trapv`, `stop`: `.emp`'s
     ///   mnemonic table has no spelling for them (they are reached from the AS
     ///   front-end only). Spelling them in `.emp` is an owner-reviewed language
-    ///   change, and it also needs `link`/`unlk` in the clobber model and `rtr`
-    ///   in the terminator set, which the last-operand rule cannot supply.
+    ///   change, and it also needs `link`/`unlk` in the clobber model, which the
+    ///   last-operand rule cannot supply.
     const UNSPELLABLE: &[&str] = &[
         "move-to-usp",
         "move-from-usp",
@@ -1817,7 +1817,6 @@ mod zero_model_tests {
         "link",
         "unlk",
         "reset",
-        "rtr",
         "trapv",
         "stop",
     ];

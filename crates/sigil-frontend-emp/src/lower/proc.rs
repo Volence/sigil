@@ -1175,7 +1175,7 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
         // terminates too: it is the S2-D11(e) `todo!`/`unreachable!` trap —
         // straight-line flow never continues past it (the error vector takes
         // over), so a proc ending in a hole must not ALSO warn fallthrough.
-        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp" | "jbra" | "illegal"),
+        Cpu::M68000 => matches!(mnemonic, "rts" | "rtr" | "rte" | "bra" | "jmp" | "jbra" | "illegal"),
         Cpu::Z80 => matches!(mnemonic, "ret" | "jp" | "jr"),
     }
 }

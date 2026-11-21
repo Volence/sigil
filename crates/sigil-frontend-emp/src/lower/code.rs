@@ -225,6 +225,10 @@ fn lower_m68k_instr(
         push_err(diags, span, format!("`{mnemonic}` is not a recognized 68000 mnemonic"));
         return;
     };
+    if let Some(msg) = m68k_suffix_refusal(m, mnemonic, size) {
+        push_err(diags, span, msg);
+        return;
+    }
 
     // Control transfer whose target is resolved by the linker (D-P4.2).
     if matches!(m, M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)) {
@@ -1794,6 +1798,7 @@ pub(crate) fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "exg" => Exg,
         "nop" => Nop,
         "rts" => Rts,
+        "rtr" => Rtr,
         "rte" => Rte,
         "trap" => Trap,
         "illegal" => Illegal,
@@ -1850,6 +1855,28 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
     })
 }
 
+/// The refusal for a size suffix one of the A11 instructions does not have, or
+/// `None`. The same rule, instruction by instruction, as the AS front end's
+/// `m68k_suffix_refusal` (which copies asl): `reset`, `rtr`, `trapv`, `stop` and
+/// `unlk` take no suffix, `link` is word only, and the 68000 has only `chk.w`
+/// (`chk.l` is an MC68020 opcode a 68000 does not decode).
+fn m68k_suffix_refusal(m: M68kMnemonic, written: &str, size: Option<Width>) -> Option<String> {
+    use M68kMnemonic::*;
+    let size = size?;
+    match m {
+        Reset | Rtr | Trapv | Stop | Unlk => Some(format!(
+            "[lower.size-suffix] `{written}` has no size field, write `{written}` with no suffix"
+        )),
+        Link if size != Width::W => Some(format!(
+            "[lower.size-suffix] `{written}` is word only on the 68000, write `{written}` or `{written}.w`"
+        )),
+        Chk if size != Width::W => Some(format!(
+            "[lower.size-suffix] the 68000 has only `{written}.w`"
+        )),
+        _ => None,
+    }
+}
+
 /// The implicit size for mnemonics that real 68k syntax never suffixes. Mirrors
 /// the AS front-end's `m68k_default_size`; branches deliberately have NO default
 /// (Aeon pins them explicitly).
@@ -1858,7 +1885,7 @@ pub(crate) fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
     match m {
         Moveq => Some(M68kSize::L),
         Lea | Pea => Some(M68kSize::L),
-        Swap | Nop | Rts | Rte | Tas | Trap | Illegal => Some(M68kSize::W),
+        Swap | Nop | Rts | Rtr | Rte | Tas | Trap | Illegal => Some(M68kSize::W),
         Jmp | Jsr => Some(M68kSize::W),
         Btst | Bset | Bclr => Some(M68kSize::B),
         Abcd | Sbcd | Nbcd => Some(M68kSize::B),

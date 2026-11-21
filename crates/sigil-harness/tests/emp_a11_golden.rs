@@ -57,3 +57,18 @@ fn exg_assembles_with_and_without_its_suffix() {
     let e = emp("exg.w d0, d1").unwrap_err();
     assert!(e[0].contains("exg is long-only"), "{e:?}");
 }
+
+#[test]
+fn rtr_assembles() {
+    golden("rtr", i(Mnemonic::Rtr, Size::W, &[]), &[0x4E, 0x77]);
+}
+
+/// A suffix the instruction does not have is refused, on both routes.
+#[test]
+fn a_size_suffix_the_instruction_lacks_is_refused() {
+    for line in ["rtr.w", "rtr.l"] {
+        let e = emp(line).unwrap_err();
+        assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
+        assert!(asl(&line.replace("\n    ", "\n\t")).is_err(), "AS route accepts `{line}`");
+    }
+}

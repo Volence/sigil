@@ -35,3 +35,13 @@ fn the_new_arithmetic_writes_its_destination_register() {
     let d = diags("clobbers(d0)", "    exg d0, d1\n    rts");
     assert!(has(&d, "[proc.clobber-undeclared] `P` writes `d1`"), "{d:?}");
 }
+
+#[test]
+fn rtr_ends_a_proc_and_pops_the_saved_ccr_word() {
+    // The idiom: save the condition codes, work, return restoring them.
+    let d = diags("clobbers()", "    move.w sr, -(sp)\n    rtr");
+    assert_eq!(d, [], "a balanced `rtr` body");
+    // A leftover long under the saved word is still an imbalance.
+    let d = diags("clobbers()", "    move.l d0, -(sp)\n    move.w sr, -(sp)\n    rtr");
+    assert!(has(&d, "[stack.unbalanced]"), "{d:?}");
+}

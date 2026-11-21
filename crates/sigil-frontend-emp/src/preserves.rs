@@ -954,6 +954,12 @@ fn transfer(
         return None;
     }
 
+    // `rtr` pops the saved condition-code WORD, then returns: model the pop so
+    // the balance the return is judged at is the one the machine has.
+    if mnem == "rtr" {
+        return apply_sp_cleanup(st, 2);
+    }
+
     // FRAME OPEN / CLOSE — `link aN, #-d` / `unlk aN`. Modeled BEFORE the
     // sp_hazard bail: `link` moves sp without naming it, so an unmodeled `link`
     // would leave the slot map claiming a depth the machine does not have.
