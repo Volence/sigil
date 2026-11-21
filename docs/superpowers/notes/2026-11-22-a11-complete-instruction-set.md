@@ -1138,3 +1138,166 @@ TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2887 passed, 0 f
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --test
 frontend_differential_coverage` 3 suites, 15 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
 No FD edit (no operand; `reset` is a `NO_OPERAND_FAMILIES` member the generator skips).
+
+### Task 9: `chk` / `trapv` (code commit 66cf83a4)
+
+The brief's code blocks compiled. One ran differently from the plan: the suffix test's AS-route expectation for
+`chk.l d0, d1`. The plan's loop expects every AS refusal to read "`<word>` is refused, as asl refuses it"; for `chk.l`
+the AS route gives its own reason, "`chk.l` is the MC68020's long form, which a 68000 does not decode: the 68000 has
+only `chk.w`" (asl itself assembles `chk.l` to `4300` under `cpu 68000`, `frontend-as/src/eval.rs`
+`m68k_suffix_refusal`). The loop now expects that exact message for `chk.l`; every other line keeps the plan's.
+
+Golden literals derived (and a second test with distinct non-zero registers in every field, lesson 3). CHK.W is
+`0100 DDD 110 MMMRRR`: `chk.w d0, d1` = `0100 001 110 000 000` = `$4380`; `chk.w (a0), d1` = `0100 001 110 010 000` =
+`$4390`; `chk.w d3, d5` = `0100 101 110 000 011` = `$4B83`; `chk.w (a2), d6` = `0100 110 110 010 010` = `$4D92`;
+`chk.w #$1234, d2` = `0100 010 110 111 100` = `$45BC 1234`; `chk.w 6(a4), d7` = `0100 111 110 101 100` = `$4FAC 0006`.
+TRAPV is the fixed word `0100 1110 0111 0110` = `$4E76`. The shared encoder and both front ends agreed with each.
+
+Sweep floors: with `UNSPELLABLE` gone both role sweeps walk all 85 families, measured **137** spellings each (a
+temporary `eprintln!`, removed); floors raised from `> 60` to `> 132`.
+
+What each table says, and why (CHK: traps when Dn < 0 or Dn > bound, else falls through; N defined only on the trap,
+Z/V/C undefined. TRAPV: traps when V is set, else falls through, condition codes not affected):
+
+| Table | `chk <ea>, Dn` | `trapv` |
+|---|---|---|
+| written registers (`instr_written_regs`, ISA `writes_last_operand`) | none; an `(An)+`/`-(An)` source advances `An` | none |
+| carry_role / zero_role | Writes (undefined after it) | Untouched (it reads V, which no check tracks) |
+| `cc_inert_data_op` (out-cond tracker, guard walk, `preserves(sr.ccr)`) | not inert | inert (new) |
+| `branch_const` `cc_transparent` | not transparent | transparent (new) |
+| stack model | no effect | no effect |
+| terminator list | not a terminator | not a terminator |
+| call edge / clobber charge / cycle row | none (as `trap`, `divu`) | none |
+
+Inconsistency booked, not fixed: `trap #n` has carry/zero Untouched but is not in either inert allowlist
+(`EMP-EXCEPTION-EDGE`).
+
+After Task 9 the 68000 `KNOWN_REFUSED` table is deleted: the walk asserts `refused.is_empty()` with no exception list.
+
+**RF step 1, red** (before the implementation: `("chk", 11), ("trapv", 1)` deleted, golden / suffix / check tests
+added):
+```
+test chk_reads_its_operands_and_leaves_the_flags_undefined ... FAILED
+test a_const_or_label_named_after_a_new_mnemonic_is_still_a_name ... ok
+test chk_trapv_and_reset_are_plain_instructions_to_the_checks ... FAILED
+test trapv_falls_through_with_the_flags_it_found ... FAILED
+thread 'chk_reads_its_operands_and_leaves_the_flags_undefined' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:359:5:
+  left: [(true, "`chk` is not a recognized 68000 mnemonic")]
+ right: []
+thread 'chk_trapv_and_reset_are_plain_instructions_to_the_checks' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:334:5:
+  left: [(true, "`chk` is not a recognized 68000 mnemonic"), (true, "`trapv` is not a recognized 68000 mnemonic")]
+ right: []
+thread 'trapv_falls_through_with_the_flags_it_found' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:390:5:
+  left: [(true, "`trapv` is not a recognized 68000 mnemonic")]
+ right: []
+test result: FAILED. 18 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+test chk_and_trapv_assemble ... FAILED
+test chk_assembles_with_distinct_registers_in_every_field ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+thread 'chk_and_trapv_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:162:5:
+  left: Err(["`chk` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 67, 128, 78, 117])
+thread 'chk_assembles_with_distinct_registers_in_every_field' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:182:5:
+  left: Err(["`chk` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 75, 131, 78, 117])
+thread 'a_size_suffix_the_instruction_lacks_is_refused' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:71:9:
+`trapv.w`: ["`trapv` is not a recognized 68000 mnemonic"]
+test result: FAILED. 10 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "chk": [ ... 11 rows, each "`chk.w <ea>, d1`: `chk` is not a recognized 68000 mnemonic  ||  ..." ],
+    "trapv": [
+        "`trapv.w `: `trapv` is not a recognized 68000 mnemonic  ||  `trapv `: `trapv` is not a recognized 68000 mnemonic",
+    ],
+  left: {"chk": 11, "trapv": 1}
+ right: {}
+```
+The control `a_const_or_label_named_after_a_new_mnemonic_is_still_a_name` passed before and after, as the brief says.
+
+**RF step 2, green.** `a11_checks` 21 passed, `as_author_forms_stay_off_emp` 4 passed, `flag_check` unit tests 18
+passed, golden 13 passed (after the `chk.l` expectation above), walk 3 passed, differential 7 passed.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- <file>`).
+
+Mutation A (the brief's), `"trapv" => Trapv,` commented out:
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-        "trapv" => Trapv,
++        // "trapv" => Trapv,
+test chk_and_trapv_assemble ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+assertion `left == right` failed: `.emp`, `trapv`
+  left: Err(["`trapv` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 118, 78, 117])
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+1 family(ies) with an instruction `.emp` refuses:
+        "`trapv.w `: `trapv` is not a recognized 68000 mnemonic  ||  `trapv `: `trapv` is not a recognized 68000 mnemonic",
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test chk_trapv_and_reset_are_plain_instructions_to_the_checks ... FAILED
+test trapv_falls_through_with_the_flags_it_found ... FAILED
+test result: FAILED. 19 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+```
+The walk fails with exactly one family, `trapv`, as the brief expects. Restored: golden 13, walk 3, checks 21 passed.
+
+Mutation B (extra), `"chk" => Chk,` commented out:
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-        "chk" => Chk,
++        // "chk" => Chk,
+test chk_and_trapv_assemble ... FAILED
+test chk_assembles_with_distinct_registers_in_every_field ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+`chk.l d0, d1`: ["`chk` is not a recognized 68000 mnemonic"]
+test result: FAILED. 10 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+1 family(ies) with an instruction `.emp` refuses:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test chk_trapv_and_reset_are_plain_instructions_to_the_checks ... FAILED
+test chk_reads_its_operands_and_leaves_the_flags_undefined ... FAILED
+test result: FAILED. 19 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: golden 13, walk 3, checks 21 passed.
+
+Mutation C (extra), `trapv` out of `cc_inert_data_op`:
+```
+ crates/sigil-frontend-emp/src/out_verify.rs | 2 +-
+-            | "reset" | "trapv" | "assume_some"
++            | "reset" | "assume_some"
+test trapv_falls_through_with_the_flags_it_found ... FAILED
+thread 'trapv_falls_through_with_the_flags_it_found' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:403:5:
+flags across `trapv`
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: 21 passed.
+
+Mutation D (extra), `trapv` out of `branch_const`'s `cc_transparent`:
+```
+ crates/sigil-frontend-emp/src/branch_const.rs | 2 +-
+-            | "unlk" | "reset" | "trapv"
++            | "unlk" | "reset"
+test trapv_falls_through_with_the_flags_it_found ... FAILED
+thread 'trapv_falls_through_with_the_flags_it_found' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:413:5:
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: 21 passed.
+
+Mutation E (extra), `chk` to Untouched in the carry table:
+```
+ crates/sigil-frontend-emp/src/flag_check.rs | 3 ++-
+-        Rtr | Stop | Chk => Writes,
++        Rtr | Stop => Writes,
++        Chk => Untouched,
+test chk_reads_its_operands_and_leaves_the_flags_undefined ... FAILED
+assertion `left == right` failed: carry across `chk.w d2, d1`: []
+  left: false
+ right: true
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+Restored: 21 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2891 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --test
+frontend_differential_coverage` 3 suites, 17 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+FD: the `emp-lacks-mnemonic` row, its arm, `EMP_ABSENT_MNEMONICS` and `families_without_an_emp_form` deleted; the
+differential's floor holds every family to `SameBytes > 0`. No disagreement the FD step did not predict.
