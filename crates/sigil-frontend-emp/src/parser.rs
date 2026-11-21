@@ -498,7 +498,29 @@ impl Parser {
             }
             self.force_item_progress(before);
         }
+        self.refuse_duplicate_consts(&items, &mut std::collections::HashSet::new());
         File { module, attrs, items, docs: std::mem::take(&mut self.docs) }
+    }
+
+    /// `[name.duplicate-const]` (A10, W13): a `const` declared twice in one module is
+    /// refused, at the LATER declaration. Walks top-level `const`s and recurses into
+    /// `section { }` bodies, one flat namespace as the evaluator's `index_items` treats
+    /// it (which kept the last one silently). Runs here because the parser is the one
+    /// place that sees a module's own declarations before the resolve pass injects
+    /// imported ones. `const` against `const` only: `const` against `equ` is booked in
+    /// `docs/QUEUE.md` (`EMP-CONST-EQU-SAME-NAME`).
+    fn refuse_duplicate_consts(&mut self, items: &[Item], seen: &mut std::collections::HashSet<String>) {
+        for item in items {
+            match item {
+                Item::Const(c) => {
+                    if !seen.insert(c.name.clone()) {
+                        self.diag_at(c.span, format!("[name.duplicate-const] constant `{}` is declared twice in this module, and the later one used to win silently; remove or rename one", c.name));
+                    }
+                }
+                Item::Section(s) => self.refuse_duplicate_consts(&s.items, seen),
+                _ => {}
+            }
+        }
     }
 
     fn module_decl(&mut self) -> ModuleDecl {

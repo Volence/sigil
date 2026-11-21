@@ -819,9 +819,11 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Create an evaluator that can resolve names against `file`'s top-level
-    /// `const` and `enum` items. Later duplicate names (a parse-level concern)
-    /// are resolved last-wins by the index build; duplicate diagnosis is not
-    /// this task's job.
+    /// `const` and `enum` items. A `const` declared twice in one module is
+    /// refused by the parser (`[name.duplicate-const]`, A10). Other same-name
+    /// pairs are not diagnosed here (a `const` beside an `equ` reads the `const`,
+    /// booked as `EMP-CONST-EQU-SAME-NAME`); within one index a later entry still
+    /// replaces an earlier one.
     pub fn with_file(file: &'a ast::File) -> Self {
         Self::with_file_and_ambient(file, &[])
     }

@@ -2974,3 +2974,14 @@ until its row is removed.
     removed; `build_check.rs`, removed only on success): adds to `G0B-TASK11-RESIDUE` item 2.
   - **C deferred Task 9 M3** symlink-escape check exists only on the `.emp` side; the AS side goes with the residual
     AS (`G0B-UNROOTED-TREE-READS`).
+
+## EMP-CONST-EQU-SAME-NAME
+
+- state: open 2026-11-21 (A10, booked by Task 2)  size: `S`  project: `STEP0-A10`
+- A `const` and an `equ` of one name in one module build, and the `const` wins for a comptime read:
+  `const Foo = 1` / `equ Foo = 2` / `moveq #Foo, d0` gives `70 01` (measured at `1e200e1b`). A10 refuses
+  `const` against `const` only (`[name.duplicate-const]`, parser `refuse_duplicate_consts`); `equ` twice is
+  already a link error (``symbol `Foo` redefined``); the mixed pair is this entry, and is pinned unrefused by
+  `crates/sigil-frontend-emp/tests/name_duplicate_const.rs` `a_const_beside_an_equ_of_the_same_name_is_not_this_refusal`.
+- The same last-wins shape exists for repeated `data`/`table` attributes and `context` fields (language review A,
+  stage I1 row 8).
