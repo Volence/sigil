@@ -1,0 +1,76 @@
+== RF-1 (runner: scripts/export_roots_cmp.sh): product mutation, generated_mount returns None, so engine/debug/generated/compression_vectors.emp becomes an engine row and every later file index shifts
+ crates/sigil-harness/src/export_files.rs | 1 +
+ 1 file changed, 1 insertion(+)
+161:    return None; // RF-1 MUTATION: the generated mount is dropped
+    Finished `release` profile [optimized] target(s) in 7.80s
+EXPORT_ROOTS_CMP old=/home/volence/sonic_hacks/.g0b-scratch-t13a-265800/sigil-02b8a8f4 (02b8a8f40f569c8e542cffaa4e588b3db0845ec6)
+EXPORT_ROOTS_CMP new=/home/volence/sonic_hacks/.g0b-scratch-t13a-265800/sigil-rf1 (ac66dea2c4d3e02aad5dd74d3b0398342cc5d6a5)
+EXPORT_ROOTS_CMP ref=/home/volence/sonic_hacks/.g0b-t13a-aeon
+EXPORT plain files=199 game-rows=125 line-rows=14170 rom=884838a436174eee inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT debug files=199 game-rows=125 line-rows=16710 rom=4615c71a29caa82f inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT demo files=82 game-rows=8 line-rows=7309 rom=bb36f7a7a9ad89c2 inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT demo_debug files=82 game-rows=8 line-rows=8425 rom=f7b391546270ae6b inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT config_a files=199 game-rows=125 line-rows=16797 rom=dec6e05738692369 inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT config_b files=199 game-rows=125 line-rows=10941 rom=f0fd1f120b1471fd inputsSha256=moved tool.revision=moved DIFFER
+  $.files[6].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[6].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[6].size: '10531' vs '510'
+  $.files[7].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[7].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[7].size: '46358' vs '10531'
+  $.files[8].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[8].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORT lean files=198 game-rows=125 line-rows=13968 rom=66e8e58b5d7c7f2d inputsSha256=moved tool.revision=moved DIFFER
+  $.files[5].path: 'debug/sound_debug.emp' vs 'debug/generated/compression_vectors.emp'
+  $.files[5].sha256: '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a' vs '5fdfe5fbb03957d8088222f4e942de9ffcd9107c553ddab94e5fa89369dea511'
+  $.files[5].size: '10531' vs '510'
+  $.files[6].path: 'effects/palette.emp' vs 'debug/sound_debug.emp'
+  $.files[6].sha256: '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9' vs '71ec42169e77e0becba3e58e3b30130601f4b9d9ac20feabf8598275e3ac1f2a'
+  $.files[6].size: '46358' vs '10531'
+  $.files[7].path: 'effects/palette_dsl.emp' vs 'effects/palette.emp'
+  $.files[7].sha256: '11949030f9f0cd72d1ac4dfe405f4cfb35027078e456aa4149e4ecb744ec7bc6' vs '9f13826dc2569387f5d4ee85c665e79b6a1968f768edc950e42247a41c4634a9'
+EXPORTS 0/7 SAME-MODULO-STRIP
+EXPORT_ROOTS_CMP_END rc=1
+exit 1
+restored: git status --short:
+?? docs/evidence/g0b-export-by-roots/

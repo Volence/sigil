@@ -1,0 +1,70 @@
+== RF-2 (runner: scripts/export_roots_cmp.sh): the NEW side is the OLD binary 02b8a8f4, whose game rows keep <id>/ (no file edited; the mutation is the binary)
+EXPORT_ROOTS_CMP old=/home/volence/sonic_hacks/.g0b-scratch-t13a-265800/sigil-02b8a8f4 (02b8a8f40f569c8e542cffaa4e588b3db0845ec6)
+EXPORT_ROOTS_CMP new=/home/volence/sonic_hacks/.g0b-scratch-t13a-265800/sigil-02b8a8f4 (02b8a8f40f569c8e542cffaa4e588b3db0845ec6)
+EXPORT_ROOTS_CMP ref=/home/volence/sonic_hacks/.g0b-t13a-aeon
+EXPORT plain files=199 game-rows=125 line-rows=14170 rom=884838a436174eee inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'sonic4/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'sonic4/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'sonic4/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'sonic4/config/ram.emp'
+  $.files[77].path: 'config/sound_ids.emp' vs 'sonic4/config/sound_ids.emp'
+  $.files[78].path: 'data/animations/dust_anims.emp' vs 'sonic4/data/animations/dust_anims.emp'
+  $.files[79].path: 'data/animations/knuckles_anims.emp' vs 'sonic4/data/animations/knuckles_anims.emp'
+  $.files[80].path: 'data/animations/particle_anims.emp' vs 'sonic4/data/animations/particle_anims.emp'
+EXPORT debug files=199 game-rows=125 line-rows=16710 rom=4615c71a29caa82f inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'sonic4/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'sonic4/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'sonic4/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'sonic4/config/ram.emp'
+  $.files[77].path: 'config/sound_ids.emp' vs 'sonic4/config/sound_ids.emp'
+  $.files[78].path: 'data/animations/dust_anims.emp' vs 'sonic4/data/animations/dust_anims.emp'
+  $.files[79].path: 'data/animations/knuckles_anims.emp' vs 'sonic4/data/animations/knuckles_anims.emp'
+  $.files[80].path: 'data/animations/particle_anims.emp' vs 'sonic4/data/animations/particle_anims.emp'
+EXPORT demo files=82 game-rows=8 line-rows=7309 rom=bb36f7a7a9ad89c2 inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'demo/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'demo/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'demo/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'demo/config/ram.emp'
+  $.files[77].path: 'data/demo_data.emp' vs 'demo/data/demo_data.emp'
+  $.files[78].path: 'demo_state.emp' vs 'demo/demo_state.emp'
+  $.files[79].path: 'game_root.asm' vs 'demo/game_root.asm'
+  $.files[80].path: 'objects/demo_box.emp' vs 'demo/objects/demo_box.emp'
+EXPORT demo_debug files=82 game-rows=8 line-rows=8425 rom=f7b391546270ae6b inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'demo/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'demo/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'demo/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'demo/config/ram.emp'
+  $.files[77].path: 'data/demo_data.emp' vs 'demo/data/demo_data.emp'
+  $.files[78].path: 'demo_state.emp' vs 'demo/demo_state.emp'
+  $.files[79].path: 'game_root.asm' vs 'demo/game_root.asm'
+  $.files[80].path: 'objects/demo_box.emp' vs 'demo/objects/demo_box.emp'
+EXPORT config_a files=199 game-rows=125 line-rows=16797 rom=dec6e05738692369 inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'sonic4/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'sonic4/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'sonic4/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'sonic4/config/ram.emp'
+  $.files[77].path: 'config/sound_ids.emp' vs 'sonic4/config/sound_ids.emp'
+  $.files[78].path: 'data/animations/dust_anims.emp' vs 'sonic4/data/animations/dust_anims.emp'
+  $.files[79].path: 'data/animations/knuckles_anims.emp' vs 'sonic4/data/animations/knuckles_anims.emp'
+  $.files[80].path: 'data/animations/particle_anims.emp' vs 'sonic4/data/animations/particle_anims.emp'
+EXPORT config_b files=199 game-rows=125 line-rows=10941 rom=f0fd1f120b1471fd inputsSha256=same tool.revision=same DIFFER
+  $.files[73].path: 'config/constants.emp' vs 'sonic4/config/constants.emp'
+  $.files[74].path: 'config/game.emp' vs 'sonic4/config/game.emp'
+  $.files[75].path: 'config/header.emp' vs 'sonic4/config/header.emp'
+  $.files[76].path: 'config/ram.emp' vs 'sonic4/config/ram.emp'
+  $.files[77].path: 'config/sound_ids.emp' vs 'sonic4/config/sound_ids.emp'
+  $.files[78].path: 'data/animations/dust_anims.emp' vs 'sonic4/data/animations/dust_anims.emp'
+  $.files[79].path: 'data/animations/knuckles_anims.emp' vs 'sonic4/data/animations/knuckles_anims.emp'
+  $.files[80].path: 'data/animations/particle_anims.emp' vs 'sonic4/data/animations/particle_anims.emp'
+EXPORT lean files=198 game-rows=125 line-rows=13968 rom=66e8e58b5d7c7f2d inputsSha256=same tool.revision=same DIFFER
+  $.files[72].path: 'config/constants.emp' vs 'sonic4/config/constants.emp'
+  $.files[73].path: 'config/game.emp' vs 'sonic4/config/game.emp'
+  $.files[74].path: 'config/header.emp' vs 'sonic4/config/header.emp'
+  $.files[75].path: 'config/ram.emp' vs 'sonic4/config/ram.emp'
+  $.files[76].path: 'config/sound_ids.emp' vs 'sonic4/config/sound_ids.emp'
+  $.files[77].path: 'data/animations/dust_anims.emp' vs 'sonic4/data/animations/dust_anims.emp'
+  $.files[78].path: 'data/animations/knuckles_anims.emp' vs 'sonic4/data/animations/knuckles_anims.emp'
+  $.files[79].path: 'data/animations/particle_anims.emp' vs 'sonic4/data/animations/particle_anims.emp'
+EXPORTS 0/7 SAME-MODULO-STRIP
+EXPORT_ROOTS_CMP_END rc=1
+exit 1
