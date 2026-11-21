@@ -547,11 +547,11 @@ fn scan_source(text: &str, ids: &Ids) -> Result<(syn::File, Counts), String> {
     let mut file = syn::parse_file(text).map_err(|e| format!("parse: {e}"))?;
     let mut strip = StripTestOnly::default();
     strip.visit_file_mut(&mut file);
-    let mut c = Counts::default();
-    c.plain_lines = plain_comment_lines(text)
+    let plain_lines = plain_comment_lines(text)
         .into_iter()
         .filter(|(line, body)| !strip.removed.iter().any(|(lo, hi)| lo <= line && line <= hi) && !needles_in(body, &ids.games).is_empty())
         .count();
+    let mut c = Counts { plain_lines, ..Counts::default() };
     scan_tokens(file.to_token_stream(), ids, &mut c);
     if let Some(line) = c.include_macro {
         return Err(format!("line {line}: `include!` splices a file this gate does not follow"));

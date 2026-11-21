@@ -1662,7 +1662,7 @@ mod tests {
         let spec = |m: &str| ModuleSpec { module_id: m.into(), section: "s".into() };
         let (island, lean) = (spec("engine.debug.error_handler"), spec("engine.system.release_fault"));
         let release = describe::resolve_shape(&p.game, "release").unwrap(); // crash_report = true
-        assert!(declares_island(&p, &release, &[island.clone()]).unwrap(), "CONTROL: the island arm, as the features say");
+        assert!(declares_island(&p, &release, std::slice::from_ref(&island)).unwrap(), "CONTROL: the island arm, as the features say");
         for (reg, word) in [(vec![island.clone(), lean.clone()], "both"), (vec![], "neither")] {
             let err = declares_island(&p, &release, &reg).unwrap_err().to_string();
             assert!(err.contains("[gate.fault-split]") && err.contains(&format!("places {word} of")), "{word}: {err}");
