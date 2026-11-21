@@ -621,6 +621,9 @@ fn the_refusal_reaches_only_a_live_binding_to_a_declared_proc() {
     let game = "module games.a.m\npub implement Game {\n    if OFF == 1 {\n        hook tick = Bare\n    }\n}\nproc Bare() {\n    rts\n}\n";
     let diags = bind_srcs(&[ENGINE_TICK, game], &[("OFF".to_string(), 0)]);
     assert!(!has_tag(&diags, UNCONTRACTED), "{:?}", errors(&diags));
+    // The twin: the same source with the condition true is bound, so it is refused.
+    let diags = bind_srcs(&[ENGINE_TICK, game], &[("OFF".to_string(), 1)]);
+    assert!(has_tag(&diags, UNCONTRACTED), "the comptime-true twin must be refused: {:?}", errors(&diags));
     let game = "module games.a.m\npub implement Game {\n    hook tick = Elsewhere\n}\n";
     let diags = bind_srcs(&[ENGINE_TICK, game], &[]);
     assert!(!has_tag(&diags, UNCONTRACTED), "{:?}", errors(&diags));

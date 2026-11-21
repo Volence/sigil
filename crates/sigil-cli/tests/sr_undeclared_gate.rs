@@ -10,17 +10,19 @@
 //! `sigil emp` keep the warning.
 //!
 //! The gate fixture `write_project_fixture` cannot drive this: its build stops before lowering,
-//! so no warning list exists. These tests plant a proc in `games/demo/demo_state.emp` of ONE
-//! copy of the reference tree per test binary, as `build_check.rs` does.
+//! so no warning list exists. Each test plants a proc in `games/demo/demo_state.emp` of its
+//! own copy of the reference tree, deleted on the way out, as `build_check.rs` does
+//! (`support/gate_tree.rs`).
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon \
 //!   cargo test --release -p sigil-cli --test sr_undeclared_gate
 //! ```
 
-use std::path::PathBuf;
-use std::process::{Command, Output};
-use std::sync::{Mutex, OnceLock};
+#[path = "support/gate_tree.rs"]
+mod gate_tree;
+
+use std::process::Command;
 
 const PLANT: &str = "\npub proc Zz_A10_SrProbe () clobbers(d0) {\n        moveq   #0, d0\n        move.w  #$2700, sr\n        rts\n}\n";
 const TWIN: &str = "\npub proc Zz_A10_SrProbe () clobbers(d0/sr) {\n        moveq   #0, d0\n        move.w  #$2700, sr\n        rts\n}\n";
@@ -28,60 +30,19 @@ const HEADER: &str = "error: [proc.sr-undeclared], 1 firing(s); an undeclared wr
 
 const STATE: &str = "games/demo/demo_state.emp";
 
-// Every run rewrites the same copy; serialize so one run's tree and output are its own.
-static LOCK: Mutex<()> = Mutex::new(());
-// The copy of the reference tree and the pristine `demo_state.emp`, made once per binary.
-static TREE: OnceLock<Option<(PathBuf, String)>> = OnceLock::new();
-
-fn tree() -> Option<&'static (PathBuf, String)> {
-    TREE.get_or_init(|| {
-        let reference =
-            sigil_harness::test_support::reference_tree_for_shape(&sigil_harness::shapes::Shape::new("demo", "release"))?;
-        let pristine = std::fs::read_to_string(reference.join(STATE)).expect("read demo_state.emp");
-        let copy = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sr_undeclared_gate_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&copy);
-        std::fs::create_dir_all(&copy).unwrap();
-        let aeon = copy.join("tree");
-        sigil_harness::test_support::copy_tree(&reference, &aeon);
-        Some((aeon, pristine))
-    })
-    .as_ref()
-}
-
-/// Run `sigil build --project <copy>/games/demo --shape release <args>` with `plant` appended
-/// to the pristine `demo_state.emp`. A lone `-o` in `args` is followed by the ROM path, which is
-/// removed first. Returns (output, stderr, rom path); `None` when no reference tree is present.
-fn build(plant: &str, args: &[&str], env: &[(&str, &str)]) -> Option<(Output, String, PathBuf)> {
-    let (aeon, pristine) = tree()?;
-    let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    std::fs::write(aeon.join(STATE), format!("{pristine}{plant}")).unwrap();
-    let rom = aeon.parent().unwrap().join("sr_probe.bin");
-    let _ = std::fs::remove_file(&rom);
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.current_dir(aeon.parent().unwrap())
-        .args(["build", "--project"])
-        .arg(aeon.join("games").join("demo"))
-        .args(["--shape", "release"]);
-    for a in args {
-        cmd.arg(a);
-        if *a == "-o" {
-            cmd.arg(&rom);
-        }
-    }
-    cmd.env_remove("AEON_DIR");
-    cmd.env_remove("SIGIL_CONTRACTS");
-    cmd.env_remove("SIGIL_WARNINGS");
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    let out = cmd.output().expect("run sigil build");
-    let err = String::from_utf8_lossy(&out.stderr).into_owned();
-    Some((out, err, rom))
+/// A fresh copy of the reference tree with `plant` appended to `demo_state.emp`, deleted when
+/// the returned guard drops (see `support/gate_tree.rs`). `None` when no reference tree is present.
+fn planted(plant: &str) -> Option<gate_tree::GateTree> {
+    let tree = gate_tree::GateTree::new("sr_undeclared_gate")?;
+    let pristine = tree.read(STATE);
+    tree.write(STATE, &format!("{pristine}{plant}"));
+    Some(tree)
 }
 
 #[test]
 fn an_undeclared_sr_write_stops_the_gated_build() {
-    let Some((out, err, rom)) = build(PLANT, &["-o"], &[]) else { return };
+    let Some(tree) = planted(PLANT) else { return };
+    let (out, err, rom) = tree.build(&["-o"], &[]);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert!(err.contains(HEADER), "{err}");
     let line = err
@@ -96,15 +57,18 @@ fn an_undeclared_sr_write_stops_the_gated_build() {
 /// Review Focus 5: silencing the warn tier does not silence the refusal.
 #[test]
 fn warnings_off_does_not_hide_the_refusal() {
-    let Some((out, err, _)) = build(PLANT, &["-o"], &[("SIGIL_WARNINGS", "off")]) else { return };
+    let Some(tree) = planted(PLANT) else { return };
+    let (out, err, rom) = tree.build(&["-o"], &[("SIGIL_WARNINGS", "off")]);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert!(err.contains(HEADER), "{err}");
+    assert!(!rom.exists(), "a refused build writes no ROM");
 }
 
 /// The control: the same write, declared, builds.
 #[test]
 fn a_declared_sr_write_builds() {
-    let Some((out, err, rom)) = build(TWIN, &["-o"], &[]) else { return };
+    let Some(tree) = planted(TWIN) else { return };
+    let (out, err, rom) = tree.build(&["-o"], &[]);
     assert!(out.status.success(), "{err}");
     assert!(!err.contains("proc.sr-undeclared"), "{err}");
     assert!(rom.exists());
@@ -113,10 +77,11 @@ fn a_declared_sr_write_builds() {
 /// The card's limit, pinned: where the gate does not run it stays a warning.
 #[test]
 fn outside_the_gate_it_stays_a_warning() {
-    let Some((out, err, rom)) = build(PLANT, &["-o"], &[("SIGIL_CONTRACTS", "0")]) else { return };
+    let Some(tree) = planted(PLANT) else { return };
+    let (out, err, rom) = tree.build(&["-o"], &[("SIGIL_CONTRACTS", "0")]);
     assert!(out.status.success() && rom.exists(), "{err}");
     assert!(err.contains("proc.sr-undeclared 1") && !err.contains(HEADER), "{err}");
-    let Some((out, err, _)) = build(PLANT, &["--check"], &[]) else { return };
+    let (out, err, _) = tree.build(&["--check"], &[]);
     assert!(out.status.success(), "{err}");
     assert!(err.contains("proc.sr-undeclared 1") && !err.contains(HEADER), "{err}");
 }

@@ -4407,25 +4407,29 @@ mod tests {
         assert_eq!(crate::parse_define_int("0x"), None);
     }
 
+    /// A build warning with id `id` at `level`, message `[{id}] whatever`, no location.
+    fn bw(level: sigil_span::Level, id: &str) -> sigil_harness::native::BuildWarning {
+        sigil_harness::native::BuildWarning {
+            level,
+            id: id.to_string(),
+            location: None,
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        }
+    }
+
     /// The warn-tier tally line: severity head, then every firing id with its
     /// count, most-frequent first and ties by id. An empty tier yields `None`, so
     /// a clean build says nothing at all.
     #[test]
     fn warning_summary_tallies_by_id_most_frequent_first() {
         use sigil_harness::native::BuildWarning;
-        let w = |level, id: &str| BuildWarning {
-            level,
-            id: id.to_string(),
-            location: None,
-            message: format!("[{id}] whatever"),
-            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
-        };
         let warn = sigil_span::Level::Warning;
 
         assert_eq!(crate::warning_summary(&[]), None, "a clean build says nothing");
 
         // `b.b` twice, `a.a` and `c.c` once: count DESCENDING, then id ascending.
-        let ws = [w(warn, "c.c"), w(warn, "b.b"), w(warn, "a.a"), w(warn, "b.b")];
+        let ws = [bw(warn, "c.c"), bw(warn, "b.b"), bw(warn, "a.a"), bw(warn, "b.b")];
         assert_eq!(crate::warning_summary(&ws).unwrap(), "4 warnings, b.b 2, a.a 1, c.c 1");
 
         // A message with no `[id]` prefix is not a category — it shows as the
@@ -4444,18 +4448,10 @@ mod tests {
     /// not, and no other warning.
     #[test]
     fn gated_warning_refusal_lists_each_sr_firing_and_nothing_else() {
-        use sigil_harness::native::BuildWarning;
-        let w = |level, id: &str| BuildWarning {
-            level,
-            id: id.to_string(),
-            location: None,
-            message: format!("[{id}] whatever"),
-            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
-        };
         let warn = sigil_span::Level::Warning;
-        let mut a = w(warn, "proc.sr-undeclared");
+        let mut a = bw(warn, "proc.sr-undeclared");
         a.location = Some("engine/x.emp:4:5".into());
-        let lines = crate::gated_warning_refusal(&[w(warn, "proc.clobber-undeclared"), a, w(warn, "proc.sr-undeclared")]);
+        let lines = crate::gated_warning_refusal(&[bw(warn, "proc.clobber-undeclared"), a, bw(warn, "proc.sr-undeclared")]);
         assert_eq!(lines.len(), 3, "{lines:?}");
         assert_eq!(lines[0], "error: [proc.sr-undeclared], 2 firing(s); an undeclared write to the status register stops a gated `sigil build`:");
         assert_eq!(lines[1], "  engine/x.emp:4:5: [proc.sr-undeclared] whatever");
@@ -4464,17 +4460,9 @@ mod tests {
 
     #[test]
     fn gated_warning_refusal_is_empty_when_no_gated_id_fired() {
-        use sigil_harness::native::BuildWarning;
-        let w = |level, id: &str| BuildWarning {
-            level,
-            id: id.to_string(),
-            location: None,
-            message: format!("[{id}] whatever"),
-            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
-        };
         let warn = sigil_span::Level::Warning;
         assert!(crate::gated_warning_refusal(&[]).is_empty());
-        assert!(crate::gated_warning_refusal(&[w(warn, "proc.clobber-undeclared")]).is_empty());
+        assert!(crate::gated_warning_refusal(&[bw(warn, "proc.clobber-undeclared")]).is_empty());
     }
 
     /// The Note tier counts and renders SEPARATELY from warnings. The corpus fires
