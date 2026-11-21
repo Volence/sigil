@@ -1037,3 +1037,104 @@ TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2886 passed, 0 f
 `sigil-cli --test frontend_differential` 7 passed; `sigil-cli --test sr_undeclared_gate` 6 passed;
 `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --test frontend_differential_coverage` 3 suites, 14
 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 8: `reset` (code commit 7ff27bcf)
+
+The brief's code blocks compiled and ran as given. Golden literal derived: RESET is the fixed word
+`0100 1110 0111 0000` = `$4E70` with no operand field; the shared encoder and both front ends agreed with it on the
+first green run. No register can vary, so lesson 3's distinct-register rule has nothing to apply to.
+
+Beyond the brief (the dispatch's lesson 1: every table that classifies instructions): `reset` added to the flag-inert
+allowlist `cc_inert_data_op` (`out_verify.rs`: the `out(.. if cc)` tracker, the flag_check guard walk, the
+`preserves(sr.ccr)` slice) and to `branch_const`'s `cc_transparent`. A new check test,
+`reset_leaves_registers_flags_and_flow_alone`, has a firing case and a control for each table.
+
+What each table says for `reset`, and why (RESET pulses the external RESET line for 124 clocks; "Condition Codes: Not
+affected"; no register, flag or stack word changes and execution continues):
+- written registers: none (ISA `writes_last_operand(Reset)` = false; no operand for the auto-inc/dbcc/exg rules).
+- carry_role / zero_role: Untouched (the ISA enum arm, reached once `m68k_mnemonic` knows the word).
+- flag-inert allowlists (`cc_inert_data_op`, `branch_const`): inert. Without this, a conditional out lost its flags
+  across `reset`, `preserves(sr.ccr)` refused a body with one, and the constant-branch net went blind.
+- stack model (`preserves.rs::transfer`): no effect (no operand, no sp).
+- terminator list: not a terminator; a body ending in `reset` warns `[proc.undeclared-fallthrough]` (pinned).
+
+**RF step 1, red** (before the implementation: `("reset", 1)` deleted from `KNOWN_REFUSED`, golden, suffix row and
+check test added):
+```
+test reset_leaves_registers_flags_and_flow_alone ... FAILED
+thread 'reset_leaves_registers_flags_and_flow_alone' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:299:5:
+assertion `left == right` failed
+  left: [(true, "`reset` is not a recognized 68000 mnemonic")]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out
+test reset_assembles ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+thread 'reset_assembles' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:156:5:
+assertion `left == right` failed: `.emp`, `reset`
+  left: Err(["`reset` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 112, 78, 117])
+thread 'a_size_suffix_the_instruction_lacks_is_refused' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:71:9:
+`reset.w`: ["`reset` is not a recognized 68000 mnemonic"]
+test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "reset": [
+        "`reset.w `: `reset` is not a recognized 68000 mnemonic  ||  `reset `: `reset` is not a recognized 68000 mnemonic",
+    ],
+  left: {"chk": 11, "reset": 1, "trapv": 1}
+ right: {"chk": 11, "trapv": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**RF step 2, green.** `a11_checks` 17 passed, `as_author_forms_stay_off_emp` 4 passed, golden 11 passed, walk 3 passed.
+
+**RF step 3, mutations on the clean committed HEAD** (`git status --short` empty before each; restored with
+`git restore --source=HEAD -- <file>`).
+
+Mutation A (the brief's), `"reset" => Reset,` commented out:
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-        "reset" => Reset,
++        // "reset" => Reset,
+test reset_assembles ... FAILED
+test a_size_suffix_the_instruction_lacks_is_refused ... FAILED
+  left: Err(["`reset` is not a recognized 68000 mnemonic"])
+ right: Ok([78, 113, 78, 112, 78, 117])
+test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+  left: {"chk": 11, "reset": 1, "trapv": 1}
+ right: {"chk": 11, "trapv": 1}
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+test reset_leaves_registers_flags_and_flow_alone ... FAILED
+  left: [(true, "`reset` is not a recognized 68000 mnemonic")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out
+```
+Restored: golden 11 passed, walk 3 passed, check 1 passed.
+
+Mutation B (extra), `reset` out of `cc_inert_data_op`:
+```
+ crates/sigil-frontend-emp/src/out_verify.rs | 2 +-
+-            | "reset" | "assume_some"
++            | "assume_some"
+test reset_leaves_registers_flags_and_flow_alone ... FAILED
+thread 'reset_leaves_registers_flags_and_flow_alone' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:318:5:
+flags across `reset`
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out
+```
+Restored: `a11_checks` 17 passed.
+
+Mutation C (extra), `reset` out of `branch_const`'s `cc_transparent`:
+```
+ crates/sigil-frontend-emp/src/branch_const.rs | 2 +-
+-            | "unlk" | "reset"
++            | "unlk"
+test reset_leaves_registers_flags_and_flow_alone ... FAILED
+thread 'reset_leaves_registers_flags_and_flow_alone' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:328:5:
+[]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out
+```
+Restored: `a11_checks` 17 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2887 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden --test
+frontend_differential_coverage` 3 suites, 15 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+No FD edit (no operand; `reset` is a `NO_OPERAND_FAMILIES` member the generator skips).
