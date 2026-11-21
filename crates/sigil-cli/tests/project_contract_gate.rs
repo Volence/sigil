@@ -361,3 +361,18 @@ fn project_report_and_check_refuse_what_the_legacy_grammar_refuses() {
         assert!(err.contains(want), "{args:?}: want {want:?}, got:\n{err}");
     }
 }
+
+/// G0b final review A-I5: `--project game.toml` (a bare file name, run from inside the
+/// game's directory) is the spec's `--project <file>` spelling. Its parent is the empty
+/// path, which `canonicalize` refuses, so the build stopped with `game directory : No such
+/// file or directory` after the description had loaded. It must read the game as
+/// `--project .` does: the gate runs and passes.
+#[test]
+fn a_bare_game_toml_file_name_is_the_game_in_the_current_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    tree(tmp.path(), |_, t| t);
+    let out = sigil(&tmp.path().join("games/g"), &["--project", "game.toml", "--shape", "release", "-o", "g.bin"], false);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("game directory"), "a bare file name must name the current directory, got:\n{err}");
+    assert!(err.contains(PASSED), "the game loads and its gate runs, got:\n{err}");
+}

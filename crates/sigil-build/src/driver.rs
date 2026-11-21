@@ -423,7 +423,12 @@ pub fn check_required_consts(p: &Project, manifest: &resolve::manifest::Manifest
 pub fn load_project(project: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Result<Project, BuildError> {
     let game_path = if project.is_dir() { project.join("game.toml") } else { project.to_path_buf() };
     let game = describe::load_game(&game_path)?;
-    let game_dir = game_path.parent().map(Path::to_path_buf).unwrap_or_default();
+    // A bare file name (`--project game.toml`) has the empty path as its parent, which
+    // `canonicalize` refuses: it names the current directory (G0b final review A-I5).
+    let game_dir = match game_path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
     let game_dir = std::fs::canonicalize(&game_dir)
         .map_err(|e| BuildError::Desc(format!("game directory {}: {e}", game_dir.display())))?;
     let observed = game_dir.ancestors().find(|a| a.join(&game.engine.root).join("engine.toml").is_file()).map(Path::to_path_buf);
