@@ -535,3 +535,36 @@ fn a_pop_into_ccr_restores_the_saved_condition_codes() {
     let d = diags("clobbers() preserves(sr.mask)", masked);
     assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-sr-unbalanced] `P` declares `preserves(sr.mask)`")), "{d:?}");
 }
+
+/// A frame with a call in it: `link a6` / `jsr Q` / `unlk a6` under a DECLARED
+/// `preserves(a6)`. The per-file pass runs calls under `ClobberAll`, so it
+/// cannot prove a6 there and DEFERS the claim to the corpus closure (the same
+/// deferral every call-blocked `preserves` gets); the `link` / `unlk` write of
+/// a6 must not then draw `[proc.clobber-undeclared]`, which pushed authors to a
+/// false `clobbers(a6)`. The control: when the callee does NOT preserve a6 the
+/// claim is false, and the closure gate (the authority for a deferred claim)
+/// still reports `P` writing a6.
+#[test]
+fn a_frame_around_a_call_is_judged_by_the_declared_preserves() {
+    let src = |q_clobbers: &str, q_body: &str| {
+        format!(
+            "module m\nproc Q () clobbers({q_clobbers}) {{\n{q_body}    rts\n}}\n\
+             proc P () clobbers(d0) preserves(a6) {{\n    link a6, #-8\n    jsr Q\n    unlk a6\n    rts\n}}\n"
+        )
+    };
+    let honest = src("d0", "    moveq #0, d0\n");
+    assert_eq!(module_diags(&honest), [], "the callee keeps a6: the frame restores it");
+    let lying = src("d0, a6", "    moveq #0, d0\n    movea.l d0, a6\n");
+    let p_a6 = |s: &str| {
+        let (f, perrs) = parse_str(s);
+        assert!(perrs.is_empty(), "{perrs:?}");
+        let r = sigil_frontend_emp::corpus_contracts::analyze_corpus(&[f]);
+        r.firings.iter().any(|f| f.proc == "P" && f.reg.as_deref() == Some("a6"))
+    };
+    assert!(p_a6(&lying), "control: a callee that clobbers a6 makes `preserves(a6)` false");
+    assert!(!p_a6(&honest), "control: the honest frame is not a closure firing");
+    // Control: without a declared `preserves(a6)` the frame's writes still draw the lint.
+    let d = module_diags(&honest.replace("preserves(a6) ", ""));
+    let charged = d.iter().filter(|(_, m)| m.starts_with("[proc.clobber-undeclared] `P` writes `a6`")).count();
+    assert_eq!(charged, 2, "{d:?}");
+}

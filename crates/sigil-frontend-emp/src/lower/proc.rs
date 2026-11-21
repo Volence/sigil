@@ -1359,6 +1359,7 @@ fn check_clobbers(
     // token (`sr` or `sr.mask`, in any clause) addresses it; `sr.ccr` alone
     // does not silence a mask write.
     let mask_covered = clob.sr.mask || outs.sr.mask || SrCover::of(&proc.preserves).mask;
+    let declared_preserves = preserve_mask(proc);
 
     for item in buf.items.iter() {
         let CodeItem::Instr { mnemonic, ops, span, author, .. } = item else { continue };
@@ -1417,6 +1418,18 @@ fn check_clobbers(
             // stacks) stays a genuine a7 clobber and is NOT exempt (tranche-3
             // review scoping).
             if r == crate::value::Reg::A7 && is_sp_discipline(mnemonic, ops) {
+                continue;
+            }
+            // A `link aN` / `unlk aN` frame write of a DECLARED `preserves(aN)`
+            // register is the frame's own save/restore. When the frame holds a
+            // call the per-file proof (under `ClobberAll`) cannot verify aN and
+            // defers the claim to the corpus closure, which judges it with the
+            // real callee effects and reports a false one; so the lint stays
+            // silent here rather than pushing the author to a false `clobbers(aN)`.
+            if matches!(mnemonic.as_str(), "link" | "unlk")
+                && matches!(ops.first(), Some(CodeOperand::Reg(fp)) if *fp == r)
+                && declared_preserves & (1 << (r as u16)) != 0
+            {
                 continue;
             }
             let name = r.to_string();
