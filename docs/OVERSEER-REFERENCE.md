@@ -729,7 +729,10 @@ happens to sit at the tip, which is the point of deriving rather than listing.
   it, and `--ab` that is not evidence (`ab_witness_fault`). **The G0b landing order** (controller
   ruling 2026-11-19, amended by the G0b final review D-I1, 2026-11-21; QUEUE G0B-DESCRIBE-TASK2-RESIDUE
   item 6 and the `refreeze.rs` header point here). Steps (a) to (c) are done: sigil G0a landed on master,
-  #209 was attested there, and `parcel/g0b-game-as-data` carries master (87b5c195). What remains, in order:
+  #209 was attested there, and `parcel/g0b-game-as-data` carries master (87b5c195). All later steps are done too
+  (landed 2026-11-21: empyrean `85f65cf6`, aeon `9b80db1d`, sigil `57a18265` with chain #212
+  `g0b-game-as-data-repin` at aeon_rev `9b80db1d`, oracle `3e617113`, Cherub `8e478cb`); the order is kept as
+  the record:
   (1) **empyrean first**: `feat/g0b-cherub-path` fast-forwards to empyrean `main` and is pushed (owner-gated).
   It goes first because two vendor-drift checks read the LIVE sibling empyrean checkout, not a pin: aeon's
   `tools/test_contract_build_vendor.py` (in the pytest lane `build.sh`, `landing_build.sh` and step (3)'s

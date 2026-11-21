@@ -2651,6 +2651,11 @@ until its row is removed.
   with Task 13a's root-relative `files` paths (`G0B-EXPORT-BY-ROOTS`): five exports, each classified against
   `02b8a8f4`'s as the stripped `<shape.game>/` plus `inputsSha256` and `tool.revision` only; trimmed fixture exactly
   `files[4].path`, `files[5].path`, `inputsSha256`, `tool.revision`; strict runner 9/9 OK.
+- 2026-11-21 (G0b landing step 6): re-checked at the landing SHAs, sigil `57a18265` on aeon `9b80db1d`: 5/5 ROMs,
+  5/5 normalized exports unchanged, the trimmed fixture moved only `inputsSha256` and `tool.revision`; strict runner
+  9/9 OK; oracle `3e617113`. Lane decision (controller ruling): stays manual, run at each cross-repo landing (as it
+  was at this one); moving it into a sigil landing-run lane behind an optional `ORACLE_G0A_DIR` is booked here for
+  the owner to decide.
 
 ## G0B-HELPER-CLOSURE-LOCATOR
 

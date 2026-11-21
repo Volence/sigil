@@ -35,6 +35,14 @@ gates' last output) follows the parcel record unchanged.
   out-of-tree game; the no-game-names counts made honest and CamelCase-aware); residue in
   QUEUE `G0B-FINAL-REVIEW-RESIDUE` and aeon DEFERRED_WORK of the same name.
 
+## Landed (2026-11-21)
+
+- empyrean main `85f65cf6`, aeon master `9b80db1d`, sigil master `57a18265`, oracle main `3e617113`,
+  Cherub `8e478cb` (local; its pins name these SHAs).
+- Landing step (3): chain entry #212 `g0b-game-as-data-repin`, `aeon_rev = 9b80db1d237b43d945fcef676a848e7007cfb839`,
+  goldens byte-identical to #211 (sigil `42ab4968`); step (4): attested passed, 557 suites, 6186 passed, 0 failed,
+  4 ignored (sigil `57a18265`); step (5): strict landing run GREEN, 557/6186/0/4, clippy 0, SHAPES 7/7 IDENTICAL.
+
 ## Rulings (from the ledger; one line each)
 
 - Base (proxy, Fable): the parcel stacked on G0a's tip, not master, to avoid a conflict-heavy rebase.
@@ -94,6 +102,8 @@ gates' last output) follows the parcel record unchanged.
   rather than deleted; CamelCase fixed, output stems booked (5 hits, 3 of them the S4LZ codec); the aeon
   description comments fixed in one commit though it moves export hashes; minors fixed or booked; the doc sync done
   on the branches.
+- Landing: the written order was followed (empyrean and aeon pushed before the sigil strict run was fully green),
+  because `refreeze --repin-aeon` refuses an aeon revision not reachable from aeon `origin/master`.
 
 ## Booked for G0c and step 4
 
@@ -103,7 +113,8 @@ gates' last output) follows the parcel record unchanged.
   own repo.
 - Step 4 (the engine/game contract): aeon `G0B-SECOND-GAME-FRICTIONS` items 1, 3, 4, 5, 7, 8, 10; whether
   `required_labels` and `required_consts` grow; per-zone scope; `entry_seeds` as named keys.
-- Landing-time: QUEUE `G0B-ORACLE-PIN-DRIFT`'s lane decision; the vendored `SOURCE` branch line.
+- Landing-time (done 2026-11-21): QUEUE `G0B-ORACLE-PIN-DRIFT`'s lane decision (recorded there); the vendored
+  `SOURCE` branch line (accepted: its commit `b7717eca` is on empyrean main).
 
 # Task 11 record
 
