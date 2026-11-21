@@ -614,3 +614,80 @@ Restored from HEAD: golden 7 passed, `a11_checks` 5 passed.
 TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2872 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 11 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Batch B fix round 1 (Tasks 2-3 review; commits 0d7470d3 rtr, 1dc70ae2 rte)
+
+**I1: `rtr` replaced the condition codes, but `out_verify` called it transparent.** Red before the fix
+(the reviewer's two probes in `a11_checks.rs`, and the production half in `tests/out_verify.rs`):
+
+```
+test rtr_replaces_the_condition_codes_a_conditional_out_reads ... FAILED
+panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:103:5:
+  left: [(true, "[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)` with `d0` absent from `clobbers(...)`, which claims `d0` still holds its entry value on every `!eq` return path, but `d0` does not provably hold its entry value on a `!eq` exit (written and not restored, or destroyed by a call / tail transfer there). Add `d0` to `clobbers(...)` if it is destroyed on the failure edges (the conditional result stands either way), or save/restore it across them")]
+ right: []
+test rtr_does_not_carry_the_computed_flags_to_the_caller ... FAILED
+panicked at crates/sigil-frontend-emp/tests/out_verify.rs:1150:5:
+the cc at `rtr` is the saved word's, unknown → Unverified, got Produced
+```
+
+(`right: []` is the `tst.w d1` probe, which was already silent.) Fix: `rtr` out of `is_branch_or_return`.
+After it, both probes print nothing (`[]`). That is right: the return's flags are the saved word's,
+unknown to the checker, and the survives half is obligated only on provably-`!eq` exits (the documented
+"unknown does not obligate" rule in `not_cc_exit_sites`); the production half now OWES `d0` at that
+return (Unverified, the sigil-build `[proc.out-unverified]` input), which is the unsafe direction closed.
+
+**Minor 1: `rtr` closes the `preserves(sr.ccr)` bracket.** Red before the fix:
+
+```
+test rtr_restores_the_saved_condition_codes ... FAILED
+panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:112:5:
+  left: [(true, "[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)` but the condition codes are not provably the caller's at return: the `move.w sr, -(sp)` save is never restored (the slice accepts only flag effects bracketed by the `move.w sr, -(sp)` … `move.w (sp)+, sr` pair; path-sensitive flag liveness is S2-D7)")]
+ right: []
+```
+
+After the fix the first control (`addq.l #2, sp; rts`) printed `` `rts` returns between the save and the
+restore, skipping it `` rather than the "never restored" text my first draft pinned; the test pins the
+real refusal text (same id, same strength).
+
+**RF step 3, on the clean committed HEAD (rtr commit)**, each restored with `git restore --source=HEAD`:
+
+```
+== M1: rtr back in is_branch_or_return
+-    matches!(mnem, "rts" | "rte" | "rtd" | "jmp" | "jra" | "jbra")
++    matches!(mnem, "rts" | "rte" | "rtr" | "rtd" | "jmp" | "jra" | "jbra")
+test rtr_replaces_the_condition_codes_a_conditional_out_reads ... FAILED   (left: the survives firing above, right: [])
+test rtr_does_not_carry_the_computed_flags_to_the_caller ... FAILED   (got Produced)
+== M2: rtr restore recognition off
+-        if mnemonic == "rtr" && saved {
++        if mnemonic == "rtr" && saved && false {
+test rtr_restores_the_saved_condition_codes ... FAILED   (left: "... the `move.w sr, -(sp)` save is never restored ...")
+== M-sbcd / M-nbcd / M-negx / M-subx: `if m == "<x>" { return false; }` at the top of writes_dest_register
+test each_new_arithmetic_word_is_charged_with_its_destination ... FAILED   `sbcd d0, d1`: []
+test each_new_arithmetic_word_is_charged_with_its_destination ... FAILED   `nbcd d1`: []
+test each_new_arithmetic_word_is_charged_with_its_destination ... FAILED   `negx.w d1`: []
+test each_new_arithmetic_word_is_charged_with_its_destination ... FAILED   `subx.w d0, d1`: []
+== restored: a11_checks 8 passed, out_verify 38 passed
+```
+
+**`rte`, its own commit.** Red before: `rte_does_not_carry_the_computed_flags_to_the_caller ... got Produced`.
+Fixed the same way. Gate: BN `SHAPES 7/7 IDENTICAL`; seven shape builds with the base binary and the rte
+candidate, warning tallies side by side (second summary line of each build; the first, `15 warnings,
+module.path-mismatch 15`, is identical too on every sonic4 shape):
+
+| Shape | Base `55c6ec32` | Candidate (rte fix) |
+|---|---|---|
+| plain | 161: clobber-undeclared 63, unreachable 59, undeclared-fallthrough 21, path-mismatch 15, no-names 2, out-unwritten 1 | identical |
+| debug | 148: 67, 58, path-mismatch 15, fallthrough 5, 2, 1 | identical |
+| demo | 84: 62, fallthrough 13, unreachable 8, 1 | identical |
+| demo_debug | 80: 66, unreachable 7, fallthrough 6, 1 | identical |
+| config_a | 147: 67, 57, 15, 5, 2, 1 | identical |
+| config_b | 163: 63, 61, 21, 15, 2, 1 | identical |
+| lean | 160: 63, 59, 20, 15, 2, 1 | identical |
+
+The whole build logs are identical once the scratch paths are normalised (`diff` empty). Mutation on the
+committed rte HEAD (`"rte"` back in the list): `rte_does_not_carry_the_computed_flags_to_the_caller` FAILED
+(got Produced); restored: 39 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2877 passed, 0 failed, 0 ignored;
+`frontend_differential` 7 passed; harness walk + golden + coverage 3 suites, 11 passed. Clippy clean.
+BN on both commits: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
