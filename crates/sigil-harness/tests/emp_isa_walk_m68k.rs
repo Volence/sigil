@@ -185,7 +185,6 @@ fn emp_writes(line: &str, want: &Instruction) -> Result<(), String> {
 /// each. A11 empties this table one task at a time; a row whose count is no
 /// longer true fails the walk, so a closed gap cannot keep its row.
 const KNOWN_REFUSED: &[(&str, usize)] = &[
-    ("link", 1), ("unlk", 1),
     ("stop", 1), ("andi-sr", 1), ("ori-sr", 1), ("eori-sr", 1),
     ("reset", 1),
     ("chk", 11), ("trapv", 1),

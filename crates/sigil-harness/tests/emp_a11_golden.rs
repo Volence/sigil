@@ -66,11 +66,13 @@ fn rtr_assembles() {
 /// A suffix the instruction does not have is refused, on both routes.
 #[test]
 fn a_size_suffix_the_instruction_lacks_is_refused() {
-    for line in ["rtr.w", "rtr.l"] {
+    for line in ["rtr.w", "rtr.l", "unlk.l a6", "link.l a6, #-8\n    unlk a6"] {
         let e = emp(line).unwrap_err();
         assert!(e[0].starts_with("[lower.size-suffix] "), "`{line}`: {e:?}");
         let a = asl(line).unwrap_err();
-        let want = format!("`{line}` is refused, as asl refuses it");
+        // The AS route names the written mnemonic, suffix included (`unlk.l`).
+        let word = line.split_whitespace().next().unwrap();
+        let want = format!("`{word}` is refused, as asl refuses it");
         assert!(a.iter().any(|m| m.contains(&want)), "AS route, `{line}`: {a:?}");
     }
 }
@@ -117,4 +119,24 @@ fn movem_to_a_pc_relative_destination_is_refused() {
         assert!(err.iter().any(|m| m.starts_with("illegal destination EA: (d")), "`{e}`: {err:?}");
         assert!(asl(a).is_err(), "AS route accepts `{a}`");
     }
+}
+
+#[test]
+fn link_and_unlk_assemble() {
+    use Operand::*;
+    assert_eq!(encode(&i(Mnemonic::Link, Size::W, &[An(6), Imm(-8)])).as_deref(), Ok(&[0x4E, 0x56, 0xFF, 0xF8][..]));
+    assert_eq!(encode(&i(Mnemonic::Unlk, Size::W, &[An(6)])).as_deref(), Ok(&[0x4E, 0x5E][..]));
+    let pair = framed(&[0x4E, 0x56, 0xFF, 0xF8, 0x4E, 0x5E]);
+    assert_eq!(emp("link a6, #-8\n    unlk a6"), Ok(pair.clone()));
+    assert_eq!(emp("link.w a6, #-8\n    unlk a6"), Ok(pair.clone()));
+    assert_eq!(asl("link a6,#-8\n\tunlk a6"), Ok(pair));
+    // A second frame register and a displacement with every nibble distinct.
+    // LINK.W is `0100 1110 0101 0rrr` + the 16-bit displacement: a3 -> $4E53,
+    // -$1234 -> $EDCC. UNLK is `0100 1110 0101 1rrr`: a3 -> $4E5B.
+    let link = [0x4E, 0x53, 0xED, 0xCC];
+    assert_eq!(encode(&i(Mnemonic::Link, Size::W, &[An(3), Imm(-0x1234)])).as_deref(), Ok(&link[..]));
+    assert_eq!(encode(&i(Mnemonic::Unlk, Size::W, &[An(3)])).as_deref(), Ok(&[0x4E, 0x5B][..]));
+    let pair = framed(&[0x4E, 0x53, 0xED, 0xCC, 0x4E, 0x5B]);
+    assert_eq!(emp("link a3, #-$1234\n    unlk a3"), Ok(pair.clone()));
+    assert_eq!(asl("link a3,#-$1234\n\tunlk a3"), Ok(pair));
 }

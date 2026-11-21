@@ -1818,8 +1818,6 @@ mod zero_model_tests {
     ///   last-operand rule cannot supply.
     const UNSPELLABLE: &[&str] = &[
         "chk",
-        "link",
-        "unlk",
         "reset",
         "trapv",
         "stop",

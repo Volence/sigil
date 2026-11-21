@@ -1829,10 +1829,12 @@ pub(crate) fn cc_inert_data_op(mnem: &str, ops: &[CodeOperand]) -> bool {
     // `assume_some` is the niche-option extraction marker: it emits no bytes and
     // executes nothing, so it writes no condition code. Listing it keeps a marker
     // placed between a conditional-out call and its guard from bailing the
-    // edge-credit walk on a mnemonic that is not even in the ROM.
+    // edge-credit walk on a mnemonic that is not even in the ROM. LINK and UNLK
+    // move sp and the frame register only: "Condition Codes: Not affected."
     matches!(
         mnem,
-        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "assume_some"
+        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "link" | "unlk"
+            | "assume_some"
     ) || is_usp_move(mnem, ops)
 }
 

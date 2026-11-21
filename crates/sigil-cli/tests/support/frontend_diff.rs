@@ -392,9 +392,11 @@ pub fn label(c: &Case) -> String {
 }
 
 /// The `.emp` program: the instruction framed by a backward label on a `nop`
-/// (the branch, `dbcc` and pc-relative target) and an `rts`.
+/// (the branch, `dbcc` and pc-relative target) and an `rts`. The proc allows
+/// `stack.unbalanced`: the differential compares one instruction at a time, so a
+/// `link` is necessarily alone in its frame, which it leaves open.
 pub fn emp_spelling(c: &Case) -> String {
-    format!("module m\nproc f() {{\n.tgt:\n    nop\n    {}\n    rts\n}}\n", inst_text(c, true))
+    format!("module m\n@allow(\"stack.unbalanced\")\nproc f() {{\n.tgt:\n    nop\n    {}\n    rts\n}}\n", inst_text(c, true))
 }
 
 /// The AS program: the same frame.
@@ -584,9 +586,9 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
     ),
     (
         "emp-lacks-mnemonic",
-        "`.emp` has no `chk`, `stop`, `link`, `unlk` \
+        "`.emp` has no `chk`, `stop` \
          (`m68k_mnemonic`, `lower/code.rs`: `is not a recognized 68000 mnemonic`); asl and the AS \
-         route assemble them (the ISA encodes all four).",
+         route assemble them (the ISA encodes both).",
     ),
     (
         "emp-lacks-sr-ccr-form",
@@ -639,7 +641,7 @@ fn is_branch_family(f: &str) -> bool {
 /// The mnemonics `.emp` does not recognise (row `emp-lacks-mnemonic`). A
 /// closed list: a newly unrecognised mnemonic is a new disagreement.
 pub const EMP_ABSENT_MNEMONICS: &[&str] =
-    &["chk", "stop", "link", "unlk"];
+    &["chk", "stop"];
 
 /// The families row `emp-requires-a-size-suffix` may name: those `.emp` has no
 /// default size for. Closed, so a NEW unsized refusal is a new disagreement.
@@ -719,8 +721,6 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                     .is_some_and(|m| m[0] == format!("`{mn}` is not a recognized 68000 mnemonic"))
                 && emp_refuses_as_assembles(&|s| {
                     s == format!("`{mn}` is not a recognized 68000 mnemonic")
-                        // `link` alone in a proc also trips the stack check.
-                        || (mn == "link" && s.starts_with("[stack.unbalanced]"))
                 })
         }
         "emp-lacks-sr-ccr-form" => {

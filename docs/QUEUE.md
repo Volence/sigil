@@ -3115,3 +3115,24 @@ until its row is removed.
 - Bare `move a0, usp` is refused for its missing size suffix, like every `move`.
 - Decide whether a register word in an immediate or a PC-relative target is refused on both routes (asl's
   behaviour to be probed first), and whether the unnamed refusals get the named id.
+
+## EMP-LINK-FRAME-BOUNDS
+
+- state: open 2026-11-22 (A11 Task 6)  size: `S`  project: `STEP0-A11`
+- `.emp` assembles `link aN, #d` / `unlk aN`, and the stack model (`preserves.rs` `apply_link` / `apply_unlk`) pairs
+  them: a closed frame is balanced, a frame open at a return is `[stack.unbalanced]`. Nothing checks that the
+  frame-relative accesses stay inside the frame: after `link a6, #-8`, `move.l d0, -12(a6)` writes below the frame
+  (where the next push lands) and `move.l d0, 4(a6)` writes over the return address; neither is examined.
+- Decide whether a frame-bounds check is wanted, and whether it is a check on `d(aN)` accesses between a `link` and
+  its `unlk`, or a frame construct in the language (plan Open question 1).
+
+## EMP-LINK-UNSIGNED-DISPLACEMENT
+
+- state: open 2026-11-22 (A11 Task 6)  size: `S`  project: `STEP0-A11`
+- `link a6, #$FFF8` assembles `4E56 FFF8`, the same instruction as `link a6, #-8`, on both routes (the encoder takes
+  -32768..=65535 for the word, as asl does). The stack model reads the immediate as the number written, +65528, so it
+  sees a positive displacement and bails the path to silence: `link a6, #$FFF8` then `rts` (an open frame) passes
+  where `link a6, #-8` then `rts` is `[stack.unbalanced]` (probed 2026-11-22). `link a6, #8` (a real positive
+  displacement, sp moved up) assembles and also bails the model.
+- Decide whether `.emp` refuses the unsigned spelling (or reads the word as signed in the model), and whether a
+  positive `link` displacement is refused.

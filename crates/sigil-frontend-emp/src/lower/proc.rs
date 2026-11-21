@@ -1540,7 +1540,9 @@ pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg
     // (4) `exg Rx,Ry` writes BOTH registers. The last-operand rule in (1)
     // already has `Ry`; `Rx` is not expressible as "the last operand", which is
     // exactly the operand-shape case `m68k::writes_last_operand`'s doc names.
-    if mnemonic == "exg" {
+    // `link aN, #d` writes `aN`, its FIRST operand (it loads `aN` from sp after
+    // pushing it); `unlk aN` is charged `aN` by the last-operand rule in (1).
+    if mnemonic == "exg" || mnemonic == "link" {
         if let Some(CodeOperand::Reg(r)) = ops.first() {
             regs.push(*r);
         }

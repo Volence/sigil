@@ -191,3 +191,37 @@ fn preserves_ccr_holds_across_a_usp_move() {
     let d = diags("clobbers(d0) preserves(sr.ccr)", "    move.l a0, d0\n    rts");
     assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
 }
+
+#[test]
+fn a_frame_is_balanced_only_when_it_is_closed() {
+    let d = diags("clobbers() preserves(a6)", "    link a6, #-8\n    move.w d0, -4(a6)\n    unlk a6\n    rts");
+    assert_eq!(d, [], "a paired frame that restores a6");
+    let d = diags("clobbers(a6)", "    link a6, #-8\n    rts");
+    assert_eq!(errors(&d).len(), 1, "{d:?}");
+    assert!(errors(&d)[0].starts_with("[stack.unbalanced] in `P`: this path returns with 12 bytes"), "{d:?}");
+    // `link` writes its frame register even though it is the FIRST operand.
+    let d = diags("clobbers()", "    link a6, #-8\n    unlk a6\n    rts");
+    let charged = d.iter().filter(|(_, m)| m.starts_with("[proc.clobber-undeclared] `P` writes `a6`")).count();
+    assert_eq!(charged, 2, "one for `link`, one for `unlk`: {d:?}");
+}
+
+/// LINK / UNLK: "Condition Codes: Not affected." The flags computed before a
+/// frame op are still the flags after it, for every check that reads flags.
+#[test]
+fn a_frame_op_leaves_the_condition_codes_alone() {
+    // The conditional-out SURVIVES half: `moveq #1, d1` leaves Z clear, so the
+    // return is a `!eq` exit where `d0` must survive, and it fires, provided the
+    // flags are still known at the return. Control: `move.l a0, d2` writes them.
+    let survives = |mid: &str| {
+        let body = format!("    link a6, #-8\n    moveq #5, d0\n    moveq #1, d1\n    {mid}\n    rts");
+        let d = diags("clobbers(d1, d2, a6) out(d0 if eq)", &body);
+        has(&d, "[proc.out-cond-survives-unverifiable] `P` declares `out(d0 if eq)`")
+    };
+    assert!(survives("unlk a6"), "flags across `unlk a6`");
+    assert!(!survives("move.l a0, d2\n    unlk a6"), "control: `move.l a0, d2` writes the flags");
+    // `preserves(sr.ccr)`: a frame opened and closed does not touch the
+    // caller's condition codes. Control: a flag write inside the frame does.
+    assert_eq!(diags("clobbers(a6) preserves(sr.ccr)", "    link a6, #-8\n    unlk a6\n    rts"), []);
+    let d = diags("clobbers(a6, d0) preserves(sr.ccr)", "    link a6, #-8\n    moveq #0, d0\n    unlk a6\n    rts");
+    assert!(errors(&d).iter().any(|m| m.starts_with("[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)`")), "control: {d:?}");
+}
