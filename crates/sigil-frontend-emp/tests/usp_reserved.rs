@@ -5,8 +5,10 @@
 //! `move.l a2, usp` assembled `21CA 0000` (`move.l a2, ($0000).w`) and
 //! `move.l usp, a3` `2678 0000`, where asl assembles `4E62` / `4E6B`. Now an
 //! item named `usp` is refused where it is declared, and `usp` in operand
-//! position never resolves to a symbol (refused until `EMP-USP-CCR-SURFACE`
-//! exposes the form).
+//! position never resolves to a symbol. Since A11 Task 4 it is the user stack
+//! pointer operand of `move.l aN, usp` / `move.l usp, aN` (assembling `4E6x`
+//! even beside an outside symbol named `usp`), and a named refusal everywhere
+//! else.
 
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
@@ -16,8 +18,9 @@ use sigil_span::Level;
 
 const DECL: &str = "[name.reserved-register] `usp` is the 68000 user stack pointer, a register word, \
                     and cannot name an item";
-const OPERAND: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; \
-                       `.emp` has no `move` to or from `usp` yet";
+/// The prefix both `usp` refusals share: the operand evaluator's (`(usp).w`)
+/// and the lowerer's (`usp` outside the two moves).
+const OPERAND: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, ";
 
 /// Lower and link `src` with `env` as the link environment: the bytes, or
 /// every ERROR message (with the source offset of its primary span).
@@ -54,35 +57,40 @@ fn has(errs: &[(String, usize)], prefix: &str) -> bool {
 }
 
 /// The reviewer's reproduction: a `proc usp` beside `move.l a2, usp`. It
-/// assembled `4E75 21CA 0000 4E75`.
+/// assembled `4E75 21CA 0000 4E75`. The declaration is the only error: the
+/// move itself is the user stack pointer form, not a read of the proc.
 #[test]
 fn a_proc_named_usp_no_longer_turns_move_to_usp_into_an_absolute_move() {
     let src = "module m\nproc usp() {\n    rts\n}\nproc f() {\n    move.l a2, usp\n    rts\n}\n";
     let e = refused(src, &SymbolTable::new());
     assert!(has(&e, DECL), "{e:?}");
-    assert!(has(&e, OPERAND), "{e:?}");
+    assert!(!has(&e, OPERAND), "{e:?}");
     // Located: the declaration error points at the `proc usp` item.
     let at = e.iter().find(|(m, _)| m.starts_with(DECL)).unwrap().1;
     assert!(src[at..].starts_with("proc usp"), "declaration error at {at}: {:?}", &src[at..]);
 }
 
 #[test]
-fn move_from_usp_is_refused_beside_a_data_item_named_usp() {
+fn a_data_item_named_usp_is_refused_and_move_from_usp_never_reads_it() {
     let src = "module m\ndata usp: u16 = 0\nproc f() {\n    move.l usp, a3\n    rts\n}\n";
     let e = refused(src, &SymbolTable::new());
     assert!(has(&e, DECL), "{e:?}");
-    assert!(has(&e, OPERAND), "{e:?}");
+    assert!(!has(&e, OPERAND), "{e:?}");
 }
 
 /// A `usp` the module cannot see being declared (another unit's symbol, in the
-/// link environment) never reaches the operand either.
+/// link environment) never reaches the operand either: the two moves assemble
+/// the user stack pointer forms (not `21CA 1234` / `2678 1234`), and every other
+/// `usp` operand is still refused.
 #[test]
 fn an_outside_symbol_named_usp_never_resolves_as_the_operand() {
     let mut env = SymbolTable::new();
     env.define("usp", SymbolValue::Int(0x1234));
-    for inst in ["move.l a2, usp", "move.l usp, a3", "move.l usp, d0", "lea usp, a0"] {
-        let src = format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
-        let e = refused(&src, &env);
+    let src = |inst: &str| format!("module m\nproc f() {{\n    {inst}\n    rts\n}}\n");
+    assert_eq!(emp(&src("move.l a2, usp"), &env), Ok(vec![0x4E, 0x62, 0x4E, 0x75]));
+    assert_eq!(emp(&src("move.l usp, a3"), &env), Ok(vec![0x4E, 0x6B, 0x4E, 0x75]));
+    for inst in ["move.l usp, d0", "lea usp, a0"] {
+        let e = refused(&src(inst), &env);
         assert!(has(&e, OPERAND), "`{inst}`: {e:?}");
     }
 }

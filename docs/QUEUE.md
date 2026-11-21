@@ -406,8 +406,13 @@ Why we take about 1.3 seconds on Sonic 1 where the old assembler takes half. One
 
 Whether a name may begin with a digit. The one-byte-short defect is closed; what remains splits into a compatibility call (mine) and a language call (yours).
 
-## EMP-USP-CCR-SURFACE
+## EMP-USP-CCR-SURFACE: USP HALF CLOSED IN BRANCH 2026-11-22 (A11 Task 4)
 
+- A11 Task 4 (`parcel/a11-complete-instruction-set`): `move.l aN, usp` and `move.l usp, aN` assemble in `.emp`
+  (`4E6x`, golden vectors in `crates/sigil-harness/tests/emp_a11_golden.rs`). `usp` is the operand
+  `CodeOperand::Usp`, and `[operand.usp-unsupported]` still refuses it everywhere else (`lea usp, a0`,
+  `move.l usp, d0`, `move.w a0, usp`, bare `move a0, usp`, `jsr usp`, ...), so it never becomes a symbol read
+  (`crates/sigil-frontend-emp/tests/usp_reserved.rs`, `a11_checks.rs`). The ccr half is A11 Task 5.
 - state at archive: `open`  size: `S`  project: `SIGIL-AS-REPLACEMENT`
 - blockedBy: nothing
 
@@ -3085,3 +3090,13 @@ until its row is removed.
   spellings assemble). The port of `in`/`out` is one byte, so these are not 16-bit address fields and stay out of A11
   (plan: "Not here: a symbolic 8-bit Z80 operand"). The walk's `SYM_REFUSED` carries `in mem` / `out mem` until this
   row decides them. Needs a link-time 8-bit fixup with a range check, not a truncation.
+
+## EMP-IMM-REGISTER-WORD
+
+- state: open 2026-11-22 (A11 Task 4, found by probing `usp` outside the two moves)  size: `S`  project: `STEP0-A11`
+- An immediate's expression still reads a register word as a symbol: with `usp = $1234` in the link environment,
+  `move.l #usp, d0` assembles `203C 0000 1234` (and `#usp+1` `203C 0000 1235`) in `.emp`; the AS route gives the
+  same bytes. `#sr` and `#d1` reach the linker as unresolved symbols in `.emp` (the AS route says
+  `` `d1` is a register, not a value ``). Pre-existing (Task 4 changed only the bare-operand path, not the
+  immediate evaluator); every bare, indirect, sized-absolute, `dc` and splice spelling of `usp` is refused.
+  Decide whether a register word in an immediate is refused on both routes (asl's behaviour to be probed first).

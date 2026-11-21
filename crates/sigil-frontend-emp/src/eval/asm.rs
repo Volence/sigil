@@ -3497,13 +3497,13 @@ impl Evaluator<'_> {
                 if seg == "ccr" {
                     return Some(CodeOperand::Ccr);
                 }
-                // `usp` is a register word too, but `.emp` has no operand for
-                // it yet. It must never fall through to a SYMBOL: beside an
-                // item named `usp`, `move.l a2, usp` assembled `21CA 0000`, a
-                // move to `($0000).w` (A6 fix round 1, EMP-USP-READ-AS-SYMBOL).
+                // `usp` is a register word too. It must never fall through to
+                // a SYMBOL: beside an item named `usp`, `move.l a2, usp`
+                // assembled `21CA 0000`, a move to `($0000).w` (A6 fix round
+                // 1, EMP-USP-READ-AS-SYMBOL). It is the operand `Usp`; the
+                // lowerer refuses it outside `move.l aN, usp` / `move.l usp, aN`.
                 if seg == "usp" {
-                    self.error(expr_span(expr), USP_UNSUPPORTED.to_string());
-                    return None;
+                    return Some(CodeOperand::Usp);
                 }
                 // S2-D12(e) — the forgotten-`#`: this bare name is about to
                 // become an ABSOLUTE ADDRESS. If it is a plain-valued
@@ -3813,7 +3813,7 @@ fn z80_regclass_operand(rc: Z80RegClass) -> CodeOperand {
 }
 
 /// The one `usp` refusal text, shared by every operand path that meets the word.
-const USP_UNSUPPORTED: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)";
+const USP_UNSUPPORTED: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; it is an operand of `move.l aN, usp` and `move.l usp, aN` only";
 
 /// A literal size-suffix string (`b`/`w`/`l`/`s`) to its [`Width`].
 fn width_from_text(t: &str) -> Option<Width> {

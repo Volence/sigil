@@ -225,6 +225,10 @@ fn lower_m68k_instr(
         push_err(diags, span, format!("`{mnemonic}` is not a recognized 68000 mnemonic"));
         return;
     };
+    if ops.iter().any(|o| matches!(o, CodeOperand::Usp)) && !is_usp_move(mnemonic, size, ops) {
+        push_err(diags, span, USP_ONLY_IN_MOVE.to_string());
+        return;
+    }
     if let Some(msg) = m68k_suffix_refusal(m, mnemonic, size) {
         push_err(diags, span, msg);
         return;
@@ -1571,6 +1575,7 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         }
         CodeOperand::Reg(r) => Ok(m68k_reg_operand(*r)),
         CodeOperand::Sr => Ok(M68kOperand::Sr),
+        CodeOperand::Usp => Ok(M68kOperand::Usp),
         CodeOperand::Ccr => Ok(M68kOperand::Ccr),
         CodeOperand::Ind(r) => {
             an_index(*r).map(M68kOperand::Ind).ok_or_else(|| ind_reg_err(*r))
@@ -1855,6 +1860,22 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
     })
 }
 
+/// The refusal for `usp` anywhere but the two instructions that take it.
+const USP_ONLY_IN_MOVE: &str = "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, an operand of `move.l aN, usp` and `move.l usp, aN` only";
+
+/// Is this `move.l aN, usp` or `move.l usp, aN`? An unsized `move aN, usp`
+/// passes too: it is then refused for its missing suffix, as every `move` is
+/// (`.emp` has no default size for `move`; the AS route defaults to long).
+fn is_usp_move(mnemonic: &str, size: Option<Width>, ops: &[CodeOperand]) -> bool {
+    let an = |o: &CodeOperand| matches!(o, CodeOperand::Reg(r) if reg_kind(*r).0);
+    mnemonic == "move"
+        && matches!(size, Some(Width::L) | None)
+        && match ops {
+            [a, CodeOperand::Usp] | [CodeOperand::Usp, a] => an(a),
+            _ => false,
+        }
+}
+
 /// The refusal for a size suffix one of the A11 instructions does not have, or
 /// `None`. The same rule, instruction by instruction, as the AS front end's
 /// `m68k_suffix_refusal` (which copies asl): `reset`, `rtr`, `trapv`, `stop` and
@@ -1933,6 +1954,8 @@ fn refine_m68k_mnemonic(m: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnemonic {
     match (m, ops) {
         (Move, [_, M68kOperand::Sr]) => MoveToSr,
         (Move, [M68kOperand::Sr, _]) => MoveFromSr,
+        (Move, [_, M68kOperand::Usp]) => MoveToUsp,
+        (Move, [M68kOperand::Usp, _]) => MoveFromUsp,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
         (Cmp, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Cmpi,

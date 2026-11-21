@@ -609,14 +609,6 @@ pub const EXCLUSIONS: &[(&str, &str)] = &[
          mapper`). asl and the AS route resolve the label.",
     ),
     (
-        "emp-lacks-usp",
-        "`move.l An,usp` / `move.l usp,An`: `.emp` has no `usp` operand yet and refuses it \
-         (`[operand.usp-unsupported]`, A6 fix round 1); asl and the AS route assemble `4E6x`. \
-         The frame's link environment DEFINES a `usp` symbol (`link_env`), so a `.emp` that read \
-         `usp` as a symbol again would assemble bytes (`21F8 1234`) and fail the gate instead \
-         of matching this row.",
-    ),
-    (
         "branch-b-suffix",
         "`bra.b`/`bsr.b`/`bcc.b`: asl and the AS route read `.b` as the short form (`.s`); `.emp` \
          accepts only `.s`/`.w` (`branch size suffix must be .s or .w`).",
@@ -655,20 +647,17 @@ pub const EMP_ABSENT_MNEMONICS: &[&str] =
 pub const SIZE_DEFAULT_GAP_FAMILIES: &[&str] = &[
     "addx", "subx", "negx", "asl", "asr", "lsl", "lsr", "rol", "ror", "roxl", "roxr", "bchg",
     "andi-ccr", "andi-sr", "ori-ccr", "ori-sr", "eori-ccr", "eori-sr",
-    "move-to-sr", "move-from-sr", "move-to-ccr",
+    "move-to-sr", "move-from-sr", "move-to-ccr", "move-to-usp", "move-from-usp",
 ];
 
 /// The families row `emp-lacks-sr-ccr-form` may name.
 pub const SR_CCR_GAP_FAMILIES: &[&str] = &["move-to-ccr", "eori-ccr", "andi-sr", "ori-sr", "eori-sr"];
 
-/// The families row `emp-lacks-usp` may name.
-pub const USP_FAMILIES: &[&str] = &["move-to-usp", "move-from-usp"];
-
 /// The families row `emp-label-operand-gap` may name.
 pub const LABEL_GAP_FAMILIES: &[&str] = &["move", "movem"];
 
 /// The families with NO form `.emp` assembles, derived from the exclusion
-/// tables above (absent mnemonics, the sr/ccr forms, usp). The measurement
+/// tables above (absent mnemonics, the sr/ccr forms). The measurement
 /// floor (`every_family_with_a_legal_emp_form_compared_bytes`) holds every
 /// OTHER family to at least one `SameBytes` case, and these to none.
 pub fn families_without_an_emp_form() -> BTreeSet<&'static str> {
@@ -677,7 +666,6 @@ pub fn families_without_an_emp_form() -> BTreeSet<&'static str> {
         .filter(|f| {
             EMP_ABSENT_MNEMONICS.contains(&mnemonic(f))
                 || SR_CCR_GAP_FAMILIES.contains(f)
-                || USP_FAMILIES.contains(f)
         })
         .collect()
 }
@@ -769,17 +757,6 @@ pub fn exclusion_matches(pattern: &str, c: &Case, o: &Outcome) -> bool {
                         && s.contains("` in a straight-line instruction is not yet supported"))
                         || s.starts_with("[lower.abs-sym-operand] ")
                         || s == "internal: a PC-relative operand reached the generic operand mapper"
-                })
-        }
-        "emp-lacks-usp" => {
-            // The operand refusal, plus the lowering's generic follow-on for
-            // the instruction it dropped; the refusal itself must be there.
-            USP_FAMILIES.contains(&c.family)
-                && emp_err_only(emp)
-                    .is_some_and(|m| m.iter().any(|s| s.starts_with("[operand.usp-unsupported] ")))
-                && emp_refuses_as_assembles(&|s| {
-                    s.starts_with("[operand.usp-unsupported] ")
-                        || s.starts_with("instruction dropped, a mnemonic, size, or operand did not resolve")
                 })
         }
         "branch-b-suffix" => {

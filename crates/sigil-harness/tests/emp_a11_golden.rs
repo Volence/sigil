@@ -72,3 +72,10 @@ fn a_size_suffix_the_instruction_lacks_is_refused() {
         assert!(asl(&line.replace("\n    ", "\n\t")).is_err(), "AS route accepts `{line}`");
     }
 }
+
+#[test]
+fn the_usp_moves_assemble() {
+    use Operand::*;
+    golden("move.l a0, usp", i(Mnemonic::MoveToUsp, Size::L, &[An(0), Usp]), &[0x4E, 0x60]);
+    golden("move.l usp, a0", i(Mnemonic::MoveFromUsp, Size::L, &[Usp, An(0)]), &[0x4E, 0x68]);
+}

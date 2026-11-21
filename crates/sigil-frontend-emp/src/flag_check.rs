@@ -1791,6 +1791,8 @@ mod zero_model_tests {
             "move-to-sr" => vec![("move".into(), imm_to(CodeOperand::Sr))],
             "move-to-ccr" => vec![("move".into(), imm_to(CodeOperand::Ccr))],
             "move-from-sr" => vec![("move".into(), vec![CodeOperand::Sr, CodeOperand::Reg(Reg::D0)])],
+            "move-to-usp" => vec![("move".into(), vec![CodeOperand::Reg(Reg::A0), CodeOperand::Usp])],
+            "move-from-usp" => vec![("move".into(), vec![CodeOperand::Usp, CodeOperand::Reg(Reg::A0)])],
             "andi-ccr" => vec![("andi".into(), imm_to(CodeOperand::Ccr))],
             "ori-ccr" => vec![("ori".into(), imm_to(CodeOperand::Ccr))],
             "eori-ccr" => vec![("eori".into(), imm_to(CodeOperand::Ccr))],
@@ -1803,16 +1805,12 @@ mod zero_model_tests {
 
     /// The ISA families no `.emp` CodeBuf can hold, each for a named reason.
     ///
-    /// - `move-to-usp` / `move-from-usp`: the `.emp` operand model has no `usp`
-    ///   operand.
     /// - `chk`, `link`, `unlk`, `reset`, `trapv`, `stop`: `.emp`'s
     ///   mnemonic table has no spelling for them (they are reached from the AS
     ///   front-end only). Spelling them in `.emp` is an owner-reviewed language
     ///   change, and it also needs `link`/`unlk` in the clobber model, which the
     ///   last-operand rule cannot supply.
     const UNSPELLABLE: &[&str] = &[
-        "move-to-usp",
-        "move-from-usp",
         "chk",
         "link",
         "unlk",

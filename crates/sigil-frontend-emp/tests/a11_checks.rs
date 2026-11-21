@@ -45,3 +45,19 @@ fn rtr_ends_a_proc_and_pops_the_saved_ccr_word() {
     let d = diags("clobbers()", "    move.l d0, -(sp)\n    move.w sr, -(sp)\n    rtr");
     assert!(has(&d, "[stack.unbalanced]"), "{d:?}");
 }
+
+#[test]
+fn usp_is_an_operand_of_the_two_moves_only() {
+    assert_eq!(diags("clobbers()", "    move.l a0, usp\n    rts"), []);
+    let d = diags("clobbers()", "    move.l usp, a1\n    rts");
+    assert!(has(&d, "[proc.clobber-undeclared] `P` writes `a1`"), "{d:?}");
+    for line in ["move.l usp, d0", "lea usp, a0", "move.w a0, usp", "move.l #1, usp", "tst.l usp"] {
+        let d = diags("clobbers(d0, a0)", &format!("    {line}\n    rts"));
+        assert!(errors(&d).iter().any(|m| m.starts_with("[operand.usp-unsupported] ")), "`{line}`: {d:?}");
+    }
+}
+
+/// The error-level messages only.
+fn errors(d: &[(bool, String)]) -> Vec<&str> {
+    d.iter().filter(|(e, _)| *e).map(|(_, m)| m.as_str()).collect()
+}

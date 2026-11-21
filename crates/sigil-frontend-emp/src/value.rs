@@ -574,6 +574,8 @@ pub enum CodeOperand {
     Sr,
     /// The 68k condition-code register operand: `ccr`.
     Ccr,
+    /// `usp`, the user stack pointer: an operand of `move.l aN, usp` and `move.l usp, aN` only.
+    Usp,
     /// A condition code used as an operand.
     Cc(Cc),
     /// A named symbol / label reference.
