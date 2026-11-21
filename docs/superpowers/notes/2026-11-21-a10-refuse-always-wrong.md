@@ -200,3 +200,39 @@ test a_z80_bare_number_is_untouched ... ok
 test a_spliced_integer_stays_an_immediate ... ok
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
+
+### Task 4: `[layout.odd-instruction]`
+
+Mutation (plan Task 4 Step 8): the guard `cpu == Cpu::M68000` on the new `first_odd_instr` call in `lower_code_buf` becomes `cpu == Cpu::Z80`. As the plan predicts, the two probes go red and `a_z80_body_is_untouched` goes red too (the check now fires on the Z80 body), so the Z80 control has teeth. The `a_z80_body_is_untouched` panic is a plain `assert!` and prints its diagnostics on one long line, filtered out here.
+
+```
+$ git status --short --untracked-files=no
+$ git diff --stat
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ grep -n -A1 'if cpu == Cpu::Z80 {' crates/sigil-frontend-emp/src/lower/code.rs | grep -B1 first_odd_instr
+78:    if cpu == Cpu::Z80 {
+79-        if let Some((span, n)) = first_odd_instr(&code.items) {
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test layout_odd_instruction   # mutated
+test an_instruction_after_an_odd_data_run_is_refused ... FAILED
+test as_compat_does_not_exempt_it ... FAILED
+test a_z80_body_is_untouched ... FAILED
+test even_and_trailing_data_stay_legal ... ok
+thread 'an_instruction_after_an_odd_data_run_is_refused' (2733245) panicked at crates/sigil-frontend-emp/tests/layout_odd_instruction.rs:47:5:
+  left: 0
+ right: 1
+thread 'as_compat_does_not_exempt_it' (2733246) panicked at crates/sigil-frontend-emp/tests/layout_odd_instruction.rs:60:5:
+  left: 0
+ right: 1
+thread 'a_z80_body_is_untouched' (2733244) panicked at crates/sigil-frontend-emp/tests/layout_odd_instruction.rs:82:5:
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p sigil-frontend-emp --test layout_odd_instruction`
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs
+$ git status --short --untracked-files=no
+$ CARGO_TARGET_DIR=.target-land cargo test --release -p sigil-frontend-emp --test layout_odd_instruction   # restored
+test as_compat_does_not_exempt_it ... ok
+test a_z80_body_is_untouched ... ok
+test an_instruction_after_an_odd_data_run_is_refused ... ok
+test even_and_trailing_data_stay_legal ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
