@@ -1722,18 +1722,25 @@ this differs from what the plan predicted, the difference is named.
   `stop #imm` (Task 7). The ccr forms are flag writes, not mask writes. Every sr form, `stop` included, is an
   undeclared mask write (`[proc.sr-undeclared]`) unless the proc declares `clobbers(sr)`; `stop` cannot hide
   behind `preserves(sr)`, and the gated build refuses it. What a mask VALUE means is review B's Q7, not here.
+  Final-review fix wave: `move.b <ea>, ccr` is a WORD read whatever the suffix (the same `44xx` word), so an
+  `(aN)+` / `-(aN)` source moves aN by 2 in the delta model, and the field-overrun lint checks a `.w` access.
 - **`movem` from a PC-relative source** (Task 5): the one refused form the card did not list (plan Open
   question 9). It assembles; the `internal:` message that used to reach the author is gone.
 - **`rtr`** ends a proc and pops the word `move.w sr, -(sp)` pushed, so the idiom is balanced. Added in fix
   round B (not in the plan): `rtr` and `rte` REPLACE the condition codes the caller sees, so a conditional out
   computed before them is not carried to the caller (`out_verify`); and inside a `move.w sr, -(sp)` bracket
-  `rtr` closes the bracket, as `move.w (sp)+, sr` does.
+  `rtr` closes the bracket, as `move.w (sp)+, sr` does; since the final-review fix wave so does the
+  non-privileged restore `move.w (sp)+, ccr` (it restores the CCR half only).
 - **`link` / `unlk`**: the stack model pairs them (a closed frame is balanced, a frame open at a return is
   `[stack.unbalanced]`), and both charge the frame register. Added in fix round D (not in the plan): `link`'s
   displacement is read as the signed extension word (`#$FFF8` is -8, as the 68000 reads it; a value outside
   the word gives up instead of adding a second error), and a write of the frame register inside its own frame
   (any write the register model knows, or a call not proven to preserve it) unpairs the `unlk`: that path's
-  depth is then unknown and is not judged.
+  depth is then unknown and is not judged. A frame around a call (`link a6` / `jsr Q` / `unlk a6`) under a
+  declared `preserves(a6)` no longer draws `[proc.clobber-undeclared]` at the `link` / `unlk` (final-review
+  fix wave, I3): the claim is deferred to the corpus closure like every call-blocked `preserves`, which
+  reports it when `Q` does not keep a6. Its stack verdict after the `unlk` is still lost
+  (`EMP-LINK-FRAME-BOUNDS`).
 - **`reset`, `chk`, `trapv`** are plain instructions to the checks: no call edge (plan Open question 5; booked
   `EMP-EXCEPTION-EDGE`). `chk` reads its operands and leaves the flags undefined; `trapv` falls through with
   the flags it found. `stop` is not a terminator (it resumes). Words that used to be free are now mnemonics:
@@ -1869,3 +1876,183 @@ check tests in `crates/sigil-frontend-emp/tests/a11_checks.rs` unless named othe
 `unsupported form: Roxl immediate count must be 1..=8, got 0`), `EMP-CCR-BRACKET-LINEAR` and
 `EMP-RTR-STACK-UNDERFLOW` (task-review findings, probed at `fcba640e`), and `STEP0-A11-INSTRUCTION-SET`
 (built, awaiting landing). `EMP-FRONTEND-DIFF-GAPS` rewritten with the counts above.
+
+## Final review fix wave (base 190143ec)
+
+The final whole-branch review (`.superpowers/sdd/2026-11-22-a11-complete-instruction-set/final-review.md`, Ready with fixes: 0 Critical, 3 Important, 12 Minor) fixed in one wave. Dispositions of every finding are in that directory's `final-fix-report.md`. Transcripts below; every mutation was applied to a clean committed tree (no tracked change) and restored with `git restore --source=HEAD`.
+
+### I1 RED (before the fix)
+
+```
+$ cargo test --release -p sigil-frontend-emp --test a11_checks a_byte_sized
+test a_byte_sized_move_to_ccr_moves_its_address_register_by_a_word ... FAILED
+assertion `left == right` failed: `move.b (a0)+, ccr` then `lea -2(a0), a0` restores a0
+  left: [(false, "[proc.clobber-undeclared] `P` writes `a0`, ..."), (false, "[proc.clobber-undeclared] `P` writes `a0`, ..."), (true, "[proc.preserves-unverifiable] `P` declares `preserves(a0)` but a0 not provably preserved, ...")]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out
+
+(same cell, second consumer: the field-overrun lint)
+test a_byte_sized_move_to_ccr_reads_a_word_of_its_field ... FAILED
+panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:510:9:
+`move.b flags(a0), ccr`: []
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out
+```
+
+GREEN after the fix: `test result: ok. 2 passed; 0 failed`. Probe (candidate): `move.b #$123, ccr` still `operand 291 out of range -128..=255` (the immediate range keeps the written size; base says the same); `move.b #$FF, ccr / move.b (a0)+, ccr / move.b -(a0), ccr / move.b 2(a0), ccr` = `44FC 00FF 44D8 44E0 44E8 0002`, unchanged.
+
+### I1 mutations (after commit 9611e434, `git status --short` clean of tracked changes)
+
+```
+$ git diff   # mutation 1, preserves.rs
+-        Some(CodeOperand::Ccr) => Some(Width::W),
++        Some(CodeOperand::Ccr) => instr_size(items, idx),
+ crates/sigil-frontend-emp/src/preserves.rs | 2 +-
+test a_byte_sized_move_to_ccr_moves_its_address_register_by_a_word ... FAILED
+assertion `left == right` failed: `move.b (a0)+, ccr` then `lea -2(a0), a0` restores a0
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/preserves.rs
+test result: ok. 2 passed; 0 failed
+
+$ git diff   # mutation 2, eval/asm.rs
+-        } else if to_ccr {
++        } else if false && to_ccr {
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+test a_byte_sized_move_to_ccr_reads_a_word_of_its_field ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/asm.rs
+test result: ok. 2 passed; 0 failed
+```
+
+### I2 RED (before the fix)
+
+```
+$ cargo test --release -p sigil-frontend-emp --test a11_checks a_pop_into
+test a_pop_into_ccr_restores_the_saved_condition_codes ... FAILED
+  left: [(true, "[proc.preserves-unverifiable] `P` declares `preserves(sr.ccr)` but the condition codes are not provably the caller's at return: `rts` returns between the save and the restore, skipping it (...)")]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out
+```
+
+GREEN: `test result: ok. 1 passed`. Controls in the same test: `move.w d0, -(sp) / move.w (sp)+, ccr` under `preserves(sr.ccr)` is refused; `move.w sr, -(sp) / ori.w #$0700, sr / move.w (sp)+, ccr` under `preserves(sr.mask)` is `[proc.preserves-sr-unbalanced]` (probed identical on the base binary's message).
+
+### I2 mutation (after commit 92dd2d4b, tracked tree clean)
+
+```
+-        if saved && matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Ccr]) {
++        if false && saved && matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Ccr]) {
+ crates/sigil-frontend-emp/src/lower/proc.rs | 2 +-
+test a_pop_into_ccr_restores_the_saved_condition_codes ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/proc.rs
+test result: ok. 1 passed; 0 failed
+```
+
+### I3 RED (before the fix)
+
+```
+$ cargo test --release -p sigil-frontend-emp --test a11_checks a_frame_around
+test a_frame_around_a_call_is_judged_by_the_declared_preserves ... FAILED
+  left: [(false, "[proc.clobber-undeclared] `P` writes `a6`, which is not in its `clobbers(...)` set or parameter list (...)"), (false, "[proc.clobber-undeclared] `P` writes `a6`, ...")]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out
+```
+
+Why the fix is safe (probed before writing it): the per-file `sigil emp` path already DEFERS every call-blocked `preserves` claim silently and leaves it to the corpus closure, e.g. `proc P () clobbers(d0) preserves(a5) { jsr Q / rts }` with `Q` clobbering a5 builds with no diagnostic on the candidate. With `Q` clobbering a6, the frame shape had only the two `[proc.clobber-undeclared]` warnings per file; after the fix the per-file run is silent for it as for the a5 shape, and the closure gate (`analyze_corpus`, which `sigil build` and the strict suite run) reports `P` writing `a6` (the test's control asserts the firing, and asserts no firing for the honest callee). Without a declared `preserves(a6)` the frame still draws both warnings (third control).
+
+GREEN: `a11_checks` `test result: ok. 27 passed; 0 failed`.
+
+### I3 mutations (after commit ee5fb72c, tracked tree clean)
+
+```
+$ git diff   # mutation 1: the exemption never applies
++                && false
+ crates/sigil-frontend-emp/src/lower/proc.rs | 1 +
+test a_frame_around_a_call_is_judged_by_the_declared_preserves ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/proc.rs
+test result: ok. 1 passed; 0 failed
+
+$ git diff   # mutation 2: the exemption ignores the declared preserves (the control)
+-                && declared_preserves & (1 << (r as u16)) != 0
++                && (true || declared_preserves & (1 << (r as u16)) != 0)
+ crates/sigil-frontend-emp/src/lower/proc.rs | 2 +-
+test a_frame_is_balanced_only_when_it_is_closed ... FAILED
+test a_frame_around_a_call_is_judged_by_the_declared_preserves ... FAILED
+  left: 0
+  left: 0
+test result: FAILED. 25 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/proc.rs
+test result: ok. 27 passed; 0 failed
+```
+
+### Triage (a) RED: `usp` read as a symbol (before the fix)
+
+```
+$ cargo test --release -p sigil-frontend-emp --test a11_checks usp_is_never
+test usp_is_never_a_symbol_even_beside_an_outside_symbol_of_that_name ... FAILED
+panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:609:5:
+against an outside `usp`: [("move.l #usp, d0", Ok([20, 3C, 00, 00, 12, 34, 4E, 75])), ("lea usp(pc), a0", Ok([41, FA, 12, 32, 4E, 75])), ("jmp usp(pc)", Ok([4E, FA, 12, 32, 4E, 75])), ("pea usp(pc)", Ok([48, 7A, 12, 32, 4E, 75])), ("move.l usp(pc), d0", Ok([20, 3A, 12, 32, 4E, 75]))]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out
+```
+
+All five linked silently to the outside `usp = $1234`. The controls (`#usp_save`, `usp_save(pc)`, `#my.usp`, `my.usp(pc)`, the two moves, the struct field `My.usp(a0)` = `2028 0004`) were run against the pre-fix source with the main assertion disabled: `test result: ok. 1 passed`. The pinned test broken by the fix: `usp_reserved.rs` `sized_absolute_dc_and_offset_spellings_of_usp_are_refused` pinned `unknown name \`usp\`` for `dc.l usp` / `dc.w usp`; it now pins the named `[operand.usp-unsupported]` (same strength, a named diagnostic). GREEN: `a11_checks` 28 passed, `usp_reserved` 7 passed.
+
+### Triage (a) mutations (after commit a6e7e139, tracked tree clean)
+
+```
+$ git diff   # mutation 1, map_pcrel_operand
+-        if p.segments.len() == 1 && p.segments[0] == "usp" {
++        if false && p.segments.len() == 1 && p.segments[0] == "usp" {
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+against an outside `usp`: [("lea usp(pc), a0", Ok([41, FA, 12, 32, 4E, 75])), ("jmp usp(pc)", Ok([4E, FA, 12, 32, 4E, 75])), ("pea usp(pc)", Ok([48, 7A, 12, 32, 4E, 75])), ("move.l usp(pc), d0", Ok([20, 3A, 12, 32, 4E, 75]))]
+test result: FAILED. 27 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out      (a11_checks)
+test result: ok. 7 passed; 0 failed                                                  (usp_reserved: movem keeps its own refusal in lower/code.rs)
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/asm.rs
+test result: ok. 28 passed; 0 failed / test result: ok. 7 passed; 0 failed
+
+$ git diff   # mutation 2, fallback_label
+-        if name == "usp" && self.cpu != Some(sigil_ir::backend::Cpu::Z80) {
++        if false && name == "usp" && self.cpu != Some(sigil_ir::backend::Cpu::Z80) {
+ crates/sigil-frontend-emp/src/eval/mod.rs | 2 +-
+against an outside `usp`: [("move.l #usp, d0", Ok([20, 3C, 00, 00, 12, 34, 4E, 75]))]
+test result: FAILED. 27 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/mod.rs
+test result: ok. 28 passed; 0 failed / test result: ok. 7 passed; 0 failed
+```
+
+### Triage (b), (c), (d): the pins and their mutations (after commit ef7d8366, tracked tree clean)
+
+These three pin behaviour already in the tree, so they were green when written; their red is the mutation.
+
+```
+=== (b) the movem PC-relative path drops the long-index bit
+-                (M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong }, pcrel_target_expr(t, *addend), true)
++                (M68kOperand::Pcd8Xn { d: 0, xn, long: false }, pcrel_target_expr(t, *addend), true)
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+panicked at crates/sigil-harness/tests/emp_a11_golden.rs:124:5:   (the new .l vector; the a2.w vector above it still passes)
+  left: Ok([78, 113, 76, 251, 0, 24, 144, 250, 78, 117])      (: W/L bit lost)
+ right: Ok([78, 113, 76, 251, 0, 24, 152, 250, 78, 117])      ()
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs
+test result: ok. 1 passed; 0 failed
+
+=== (c) the Z80 register guard skips `d`
+-                if p.segments.len() == 1
++                if p.segments.len() == 1 && seg != "d"
+ crates/sigil-frontend-emp/src/eval/asm.rs | 2 +-
+panicked at crates/sigil-frontend-emp/tests/a11_z80_mem_sym.rs:194:53:
+called `Result::unwrap_err()` on an `Ok` value: [58, 4, 0, 201, 201]      (`ld a, (d)` read `proc d`'s address)
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/eval/asm.rs
+test result: ok. 10 passed; 0 failed
+
+=== (d) the poisoned-frame bail text changes
+-            "`unlk {fp}` after `{fp}` was written inside its frame, sp becomes an unmodeled value"
++            "`unlk {fp}` after a write of `{fp}`"
+ crates/sigil-frontend-emp/src/preserves.rs | 2 +-
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 28 filtered out
+$ git restore --source=HEAD -- crates/sigil-frontend-emp/src/preserves.rs
+test result: ok. 1 passed; 0 failed
+```
+
+M2 (`rtr`, `stop #$2700` in `as_author_forms_stay_off_emp.rs`): restored as converted "no error" assertions, as the review said; green when written (the review probed both build clean in that frame). No mutation was run for them.

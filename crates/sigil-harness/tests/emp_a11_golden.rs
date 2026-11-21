@@ -179,7 +179,8 @@ fn chk_and_trapv_assemble() {
     golden("trapv", i(Mnemonic::Trapv, Size::W, &[]), &[0x4E, 0x76]);
     // `chk` has no default size on either route.
     assert_eq!(emp("chk d0, d1").unwrap_err(), ["instruction needs an explicit size suffix (.b/.w/.l)"]);
-    assert!(asl("chk d0,d1").is_err());
+    // The AS route's own message, pinned (batch E review minor 1: `is_err()` accepted any error).
+    assert_eq!(asl("chk d0,d1").unwrap_err(), ["instruction needs an explicit size suffix (.b/.w/.l)"]);
 }
 
 /// CHK.W is `0100 DDD 110 MMMRRR` (bound register DDD, bound source EA

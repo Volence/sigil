@@ -3124,6 +3124,9 @@ until its row is removed.
   supported as the 16-bit immediate of ... or as the 16-bit address of ld r, (Label) / ld (Label), r`; the
   `unknown name` / `got poison` pair above is gone. Still a refusal, never a truncation
   (`a11_z80_mem_sym.rs` `a_symbolic_port_is_refused_not_truncated`).
+- When this row lands (final review M10): `flag_check.rs` (~line 637) keys `in a, (n)`'s "Z untouched" on the
+  `Z80Mem` operand only; a symbolic port (`Z80MemSym`) must get the same cell, or `in a, (Sym)` will read as a Z
+  write. Unreachable today (`in a, (Sym)` is refused).
 
 ## EMP-IMM-REGISTER-WORD
 
@@ -3152,9 +3155,15 @@ until its row is removed.
 - Decide whether a register word in an immediate or a PC-relative target is refused on both routes (asl's
   behaviour to be probed first), and whether the unnamed `usp` refusals get the named id.
 
-## EMP-LINK-FRAME-BOUNDS
+## EMP-LINK-FRAME-BOUNDS: `link` / `jsr` / `unlk` (a call inside a frame) is not judged by the stack check; frame-relative accesses are unchecked
 
-- state: open 2026-11-22 (A11 Task 6)  size: `S`  project: `STEP0-A11`
+- state: open 2026-11-22 (A11 Task 6; subject line and the I3 paragraph added in the final-review fix wave)
+  size: `S`  project: `STEP0-A11`
+- The subject, plainly: a proc that opens a frame and calls inside it (`link a6, #-8` / `jsr Q` / `unlk a6` /
+  `rts`) loses the stack check's verdict after the `unlk`, because the per-file passes run calls under
+  `ClobberAll`. Probe (final review triage (e)): `move.l d1, -(sp) / link a6, #-8 / jsr Q / unlk a6 / rts`
+  builds with no stack diagnostic (fails towards silence, never a false error). The paragraphs below give the
+  frame-bounds half and the batch D detail.
 - `.emp` assembles `link aN, #d` / `unlk aN`, and the stack model (`preserves.rs` `apply_link` / `apply_unlk`) pairs
   them: a closed frame is balanced, a frame open at a return is `[stack.unbalanced]`. Nothing checks that the
   frame-relative accesses stay inside the frame: after `link a6, #-8`, `move.l d0, -12(a6)` writes below the frame
@@ -3170,6 +3179,15 @@ until its row is removed.
   positive, either give it the same-file declared contracts (`preserves.rs` `check_stack_balance` hard-codes
   `ClobberAll`; its caller `check_stack_balance` in `lower/proc.rs` already holds the whole `ast::File`), or move the
   check after the closure. Decide which.
+- Final review I3 (same root: per-file passes run under `ClobberAll`), FIXED in the fix wave: the frame above
+  with `Q` declared `clobbers(d0)` and `P` declaring `clobbers(d0) preserves(a6)` drew two false
+  `[proc.clobber-undeclared] \`P\` writes \`a6\`` warnings (at the `link` and the `unlk`), because the lint's
+  exemption (`verified_preserves_regs`) credits nothing once a call marks the frame written. `check_clobbers` now
+  skips the `link` / `unlk` write of a register in the DECLARED `preserves` set: the per-file path defers that
+  claim like every call-blocked `preserves`, and the corpus closure judges it with the real callee effects
+  (`a11_checks.rs` `a_frame_around_a_call_is_judged_by_the_declared_preserves`: with `Q` clobbering a6 the
+  closure reports `P` / `a6`). Still true: in a single-file `sigil emp` build, which runs no closure, that false
+  claim is now silent, as a false `preserves(a5)` around a plain `jsr Q` already was.
 
 ## EMP-LINK-UNSIGNED-DISPLACEMENT: UNSIGNED HALF CLOSED IN BRANCH 2026-11-22 (batch D fix round 1)
 
@@ -3187,11 +3205,14 @@ until its row is removed.
 - Four instructions can raise an exception, a transfer to a handler: `chk` (bound check), `trapv` (V set), `trap #n`
   and `divu` / `divs` (divide by zero). None has an edge to its handler in any check: the handler is assumed to
   return with the registers intact or not at all. No call edge, no clobber charge, flag roles as the ISA table has
-  them (`chk` writes C and Z, `trapv` and `trap` leave them), and no cycle row, so a `@budget` proc containing one is
+  them (`chk` leaves Z, V and C UNDEFINED and is modelled as a write of C and Z, so a flag result before it does not
+  survive it; `trapv` and `trap` leave them), and no cycle row, so a `@budget` proc containing one is
   refused as unpriceable.
 - One inconsistency left as found: `trapv` and `reset` are in the flag-inert allowlists (`cc_inert_data_op`,
   `branch_const`), but `trap #n` is not, though its carry and zero roles are also Untouched; the out-cond tracker and
   `preserves(sr.ccr)` read a `trap` as a flag write.
+- No check flags a branch that reads the flags `chk` left undefined (`chk.w d2, d1` / `beq .x`): the write model
+  makes them "computed", not "undefined" (batch E review minor 6, booked in the final-review fix wave).
 - Decide whether an exception gets an edge (a handler declared per vector, its contract checked at the raise site),
   and whether `trap #n` joins the flag-inert allowlists.
 
@@ -3226,9 +3247,18 @@ until its row is removed.
 - The saved-flags bracket check (`lower/proc.rs` `ccr_bracket_refusal`, behind `preserves(sr.ccr)` and the bare
   `preserves(sr)` advisory) is a linear walk with one `saved` flag, not a path walk. So `move.w sr, -(sp)` /
   `beq .x` / `rtr` / `.x: rts` is accepted under `preserves(sr.ccr)` though `.x` returns with the word still pushed;
-  the `move.w (sp)+, sr` / `rts` spelling has the same hole (probed at `fcba640e`). The stack check still reports
-  that path (`[stack.unbalanced] ... 2 bytes`), so the program is refused today, but the flags verdict itself is
-  wrong. Decide whether the bracket walk runs per path on the shared `Cfg`.
+  the `move.w (sp)+, sr` / `rts` spelling has the same hole (probed at `fcba640e`), and so does the
+  `move.w (sp)+, ccr` restore the fix wave accepted (final review I2). For THOSE branch shapes the stack check
+  still reports the path (`[stack.unbalanced] ... 2 bytes`), so the program is refused. It is NOT refused in
+  every variant (final review M3, corrected in the fix wave; this row used to say it always was):
+  - `link a6, #-8 / move.w sr, -(sp) / moveq #1, d1 / unlk a6 / rtr` under `clobbers(d1) preserves(sr.ccr)`
+    builds with only the two a6 clobber warnings: `unlk` discards the saved word, then
+    `rtr` pops the return address as flags. The bracket walk closes on the `rtr`, and the stack model's `rtr`
+    pop underflows silently (`EMP-RTR-STACK-UNDERFLOW`).
+  - Without an A11 word: `move.w sr, -(sp) / moveq #1, d1 / lea 2(sp), sp / move.w (sp)+, ccr / rts` builds
+    clean (re-probed in the fix wave, `40E7 7201 4FEF 0002 44DF 4E75`); the stack model gives up at the
+    `lea` on sp.
+  Decide whether the bracket walk runs per path on the shared `Cfg` and tracks the saved word's slot.
 
 ## EMP-RTR-STACK-UNDERFLOW
 
@@ -3236,4 +3266,73 @@ until its row is removed.
 - An `rtr` with nothing pushed (a proc whose body is just `rtr`) builds with no diagnostic: the stack model pops a
   word that was never pushed and does not report the underflow (probed at `fcba640e`). Under `preserves(sr.ccr)`
   the bracket walk refuses it (an `rtr` outside a bracket is a flag write); under any other contract nothing does.
+  The bracket form of the same underflow (final review M3): `link a6, #-8 / move.w sr, -(sp) / moveq #1, d1 /
+  unlk a6 / rtr` under `preserves(sr.ccr)` builds; the `unlk` drops the saved word and the `rtr` pops below
+  entry unreported (also in `EMP-CCR-BRACKET-LINEAR`).
   Decide whether a pop below the entry value is `[stack.unbalanced]`.
+
+## EMP-WALK-POOL-INDEX-REGISTERS
+
+- state: open 2026-11-22 (A11 final review triage (b), booked in the fix wave)  size: `S`  project: `STEP0-A11`
+- The 68000 walk (`crates/sigil-harness/tests/emp_isa_walk_m68k.rs` `pool()`) offers the encoder one indexed form
+  of each kind: `Disp8AnXn { xn: Xn::D(3), long: false }` and `Pcd8Xn { xn: Xn::D(0), long: false }`. It never
+  probes an ADDRESS-register index or a `.l` index, so a front end that mis-maps either passes the walk. The
+  goldens cover the one A11 path that maps an index register (`movem` PC-relative): `(pc,a2.w)` and, since the
+  fix wave, `(pc,a1.l)` = `4CFB 0018 98FA` (`emp_a11_golden.rs` `movem_loads_from_a_pc_relative_source`).
+- Widening the pool moves the measured floors (`MIN_ACCEPTED` 2439, `MIN_DISTINCT` 1527, and the role sweeps),
+  so it is its own change: add `Xn::A(n)` and `long: true` variants, re-measure, re-pin.
+
+## EMP-DIFF-STACK-ALLOW-BLANKET
+
+- state: open 2026-11-22 (A11 final review M12, booked in the fix wave)  size: `S`  project: `STEP0-A11`
+- Every differential case (`crates/sigil-cli/tests/support/frontend_diff.rs` `emp_spelling`) and every 68000 walk
+  probe (`emp_isa_walk_m68k.rs` `emp_src`) is wrapped in a proc carrying `@allow("stack.unbalanced")`, added so a
+  lone `link` (an open frame at the `rts`) can be compared. It hides that one named check only, so an encode error
+  cannot pass through it; but a later change that makes some other single instruction trip the stack check would
+  surface in neither place.
+- Tighten it: put the allow on the `link` cases only (or frame `link` with its `unlk`), and let every other case
+  run under the stack check.
+
+## EMP-Z80-CPU-DOMAIN-CHECK
+
+- state: open 2026-11-22 (A11 Task 11 review, pre-existing; booked in the final-review fix wave)  size: `S`
+  project: `STEP0-A11`
+- A Z80 operand that takes a link-time address (`ld a, (Label)` since A11, and before it `ld hl, Label`,
+  `jp Label`, `call Label`) accepts a label from a 68000 section whenever its address happens to fit 16 bits:
+  nothing checks that the symbol lives in the Z80's address space. The bytes are the 68000 address truncated to
+  the Z80's view, silently.
+- Decide whether a link-time symbol carries its section's CPU and the Z80 fixups refuse a 68000 one (and the
+  reverse), and where the bank-window rule lives.
+
+## A11-FINAL-REVIEW-RESIDUE
+
+- state: open 2026-11-22 (A11 final review, Minor findings and deferred triage rows not fixed in the fix wave)
+  size: `S`  project: `STEP0-A11`
+- One line each; none moves a byte.
+  - **M4** bare `chk d0, d1` is told `instruction needs an explicit size suffix (.b/.w/.l)`, then `chk.b` / `chk.l`
+    are refused (`[lower.size-suffix] the 68000 has only \`chk.w\``). A `chk`-specific "write `chk.w`" beside
+    `m68k_suffix_refusal` (`lower/code.rs`, the two generic sites) fixes it; the goldens pin today's text on both
+    routes.
+  - **M5** a `stop` line that fails to lower also gets `[proc.sr-undeclared]` (`stop d0`, `stop.l #$2700`,
+    `stop #$12345`, bare `stop`): the name test in `check_clobbers` runs on the item whatever lowering said. Noise
+    on a refused line only.
+  - **M6** unsized `abcd` / `sbcd` / `nbcd` with `(aN)+` / `-(aN)` are unverifiable under `preserves(aN)`
+    (`nbcd (a0)+ / lea -1(a0), a0`; `nbcd.b (a0)+` verifies): the delta model has no width for a defaulted size
+    (`tas (a0)+`, `st (a0)+` behave the same at base). Fails safe. Read `m68k_default_size` there.
+  - **M7** `rts.w`, `rte.l`, `nop.b` assemble (`rts.w` = `4E75`) while `rtr.w` is refused; `m68k_suffix_refusal`
+    lists only the A11 words. Older than A11; extend the list or move it to `EMP-FRONTEND-DIFF-GAPS`.
+  - **M8** the Z80 register guard is one segment only: with a `proc b`, `ld a, (b)` is refused by name but
+    `ld a, (b+0)` assembles `3A 05 00` (the proc's address); `(nz)`, `(pc)`, `(ixh)` read a proc of that name
+    (`eval/asm.rs`, the guard in the Z80 `(nn)` path). Z80 register words may still name items, unlike `usp`.
+  - **M9** Z80 refusals print Rust debug forms: `ld b, (q)` -> `unsupported form: Instruction { mnemonic: Ld, ops:
+    [Reg(B), Mem(0)] }` (the placeholder `Mem(0)` leaks); `ld (q), (q)` -> `operand \`Z80MemSym { target: Sym("q")
+    }\``. Refusals either way.
+  - **M11 (comments)** `cycle_budget.rs` (~line 1404) still says "`link` is real 68000 but absent from the corpus
+    and the table" over a test that now uses `trapv` (and `link` is priced); `sigil-isa` `m68k_cycles.rs` says
+    MOVE to / from USP "never appears in the corpus" (point at `ISA-CYCLE-TABLE-GAPS` instead), and its RTR row
+    comment copies the manual's misprinted read count (RTR pops 3 words; batch E minor 5). The plan forbids any
+    other `sigil-isa` edit in A11, so these wait. (The QUEUE half of M11 was fixed in `EMP-EXCEPTION-EDGE`.)
+  - **Task 11 minor** `a11_z80_mem_sym.rs`'s out-of-range test checks only the `link:` prefix of the error, not
+    the range message.
+  - **Task 1 minors (review: drop)** `emp_isa_walk_m68k.rs`: a comment above the wrong row, a dead `AbsW` arm,
+    and an `@allow` comment citing forms the pool lacks. Comments and dead code only.
