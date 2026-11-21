@@ -10,14 +10,15 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
+use sigil_ir::{Module, SymbolTable};
 use sigil_span::{Diagnostic, Level};
 
 const ID: &str = "[operand.bare-number]";
 
-fn lower_on(src: &str, cpu: Cpu) -> Vec<Diagnostic> {
+fn lower_module_on(src: &str, cpu: Cpu) -> (Module, Vec<Diagnostic>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(
+    lower_module(
         &file,
         &LowerOptions {
             roots: None,
@@ -26,8 +27,19 @@ fn lower_on(src: &str, cpu: Cpu) -> Vec<Diagnostic> {
             embed_base: None,
             defines: vec![],
         },
-    );
-    diags
+    )
+}
+
+fn lower_on(src: &str, cpu: Cpu) -> Vec<Diagnostic> {
+    lower_module_on(src, cpu).1
+}
+
+/// The linked bytes of a named section.
+fn section_bytes(module: &Module, name: &str) -> Vec<u8> {
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    linked.section(name).expect("linked section").bytes.clone()
 }
 
 fn lower(src: &str) -> Vec<Diagnostic> {
@@ -70,13 +82,32 @@ fn the_immediate_and_the_sized_absolute_stay_legal() {
     assert!(errors(&d).is_empty(), "{d:?}");
 }
 
-/// Review Focus 2: a spliced integer in a template is the macro idiom and stays an immediate.
+/// Review Focus 2: a spliced integer in a template is the macro idiom and stays an
+/// immediate. The bytes are the pin `EMP-SPLICED-INT-OPERAND` cites: `30 3C 00 05`
+/// is `move.w #5, d0`, then `4E 75` (`rts`).
 #[test]
 fn a_spliced_integer_stays_an_immediate() {
-    let d = lower(
-        "module m\ncomptime fn put(n: int) -> Code {\n    return asm {\n        move.w  {n}, d0\n    }\n}\nproc p () clobbers(d0) {\n    put(5)\n    rts\n}\n",
+    let (module, d) = lower_module_on(
+        "module m\ncomptime fn put(n: int) -> Code {\n    return asm {\n        move.w  {n}, d0\n    }\n}\nsection s (cpu: m68000, vma: $0) {\nproc p () clobbers(d0) {\n    put(5)\n    rts\n}\n}\n",
+        Cpu::M68000,
     );
     assert!(errors(&d).is_empty(), "{d:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x30, 0x3C, 0x00, 0x05, 0x4E, 0x75]);
+}
+
+/// The refusal must not replace a better diagnostic: when the mnemonic itself is
+/// not a 68000 mnemonic (an AS directive habit, a typo, a missing `cpu: z80`),
+/// the author sees the existing mnemonic error, not "write `#` before it".
+#[test]
+fn an_unrecognized_mnemonic_keeps_its_own_diagnostic() {
+    for (label, line) in [("AS directive", "align 2"), ("typo", "mvoe.w 5, d0")] {
+        let d = lower(&format!("module m\nproc p () clobbers(d0) {{\n    {line}\n    rts\n}}\n"));
+        assert!(
+            d.iter().any(|d| d.message.contains("not a recognized 68000 mnemonic")),
+            "{label}: expected the unrecognized-mnemonic error, got: {d:?}"
+        );
+        assert!(firings(&d).is_empty(), "{label}: [operand.bare-number] must not fire: {d:?}");
+    }
 }
 
 /// Review Focus 1: on the Z80 a bare number IS the immediate.

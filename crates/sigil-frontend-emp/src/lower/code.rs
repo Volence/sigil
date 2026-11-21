@@ -2365,7 +2365,6 @@ fn emit_data_frag(builder: &mut IrBuilder, df: DataFragment) {
     builder.emit_data(&df.bytes, df.fixups, df.span);
 }
 
-/// Push an error diagnostic at `span`.
 /// The first instruction of `items` reached while the inline `dc` bytes before it
 /// sum to an odd count, with that count (A10 W11, `[layout.odd-instruction]`).
 /// One answer per stream: everything after it is shifted by the same byte. The
@@ -2387,6 +2386,7 @@ fn first_odd_instr(items: &[CodeItem]) -> Option<(Span, usize)> {
     None
 }
 
+/// Push an error diagnostic at `span`.
 fn push_err(diags: &mut Vec<Diagnostic>, span: Span, message: impl Into<String>) {
     diags.push(Diagnostic { level: Level::Error, message: message.into(), primary: span });
 }

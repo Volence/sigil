@@ -626,7 +626,7 @@ fn a_newtype_declared_inside_a_section_resolves() {
 #[test]
 fn a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form() {
     for (label, src) in [
-        ("proc", "module m\nproc P () out(a0: u8) {\n lea 4, a0\n rts\n}\n"),
+        ("proc", "module m\nproc P () out(a0: u8) {\n lea (4).w, a0\n rts\n}\n"),
         ("extern proc", "module m\nextern proc E () out(a0: u8)\n"),
         ("contract type", "module m\ntype T = proc () out(a0: u8)\n"),
     ] {
@@ -642,7 +642,7 @@ fn a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form() {
     // NOT that it reaches `[call.slot-type-mismatch]`, which it does not: only a
     // `Type::Named` newtype leaf records a typed out slot there.
     for (label, src) in [
-        ("proc", "module m\nproc R () out(a0: *u8) {\n lea 4, a0\n rts\n}\n"),
+        ("proc", "module m\nproc R () out(a0: *u8) {\n lea (4).w, a0\n rts\n}\n"),
         ("extern proc", "module m\nextern proc F () out(a0: *u8)\n"),
         ("contract type", "module m\ntype U = proc () out(a0: *u8)\n"),
     ] {

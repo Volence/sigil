@@ -1656,6 +1656,13 @@ impl Evaluator<'_> {
         self.irq_frame_operand_pending = false;
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
+        // A10 W1 guard: `[operand.bare-number]` is about the OPERAND of a real
+        // 68000 instruction. When the mnemonic itself is not one (`align 2`, a
+        // typo'd `mvoe.w 5, d0`, a Z80 `ld a, 5` in a module missing `cpu: z80`)
+        // the mnemonic is the mistake, and the lowering's "not a recognized 68000
+        // mnemonic" must be what the author sees, so the operand falls through.
+        let refuse_bare_number =
+            crate::lower::is_recognized_mnemonic(&mnemonic, sigil_ir::backend::Cpu::M68000);
         if mnemonic == "dc" {
             // `dc` lowers to inline DATA, not a `CodeItem::Instr`, so it never
             // reaches the enumerated-dispatch validity check — refuse a stray
@@ -1680,7 +1687,7 @@ impl Evaluator<'_> {
         let targets: Vec<String> =
             instr.targets.iter().map(|t| scope.resolve_ref(t)).collect();
         if mnemonic == "movem" {
-            let ops = self.map_movem_operands(instr, scope, env, size)?;
+            let ops = self.map_movem_operands(instr, scope, env, size, refuse_bare_number)?;
             // Track the full-save/restore frame for the `irq_frame.pc` intrinsic
             // (bookmark ask 3). A `movem.<sz> <list>, -(sp)` establishes the
             // exception-frame anchor (saved-register bytes below the SR+PC the CPU
@@ -1738,7 +1745,7 @@ impl Evaluator<'_> {
                 ops.push(CodeOperand::Z80IndC);
                 continue;
             }
-            ops.push(self.map_operand(op, scope, env, op_width)?);
+            ops.push(self.map_operand(op, scope, env, op_width, refuse_bare_number)?);
         }
         self.check_raw_sentinel(&instr.operands, &ops, instr.span);
         // Update the irq_frame anchor's sp-mutation tracking (bookmark ask 3 GAP A)
@@ -2058,6 +2065,7 @@ impl Evaluator<'_> {
         scope: &LabelScope,
         env: &mut Env,
         size: Option<Width>,
+        refuse_bare_number: bool,
     ) -> Option<Vec<CodeOperand>> {
         let [op0, op1] = instr.operands.as_slice() else {
             self.error(
@@ -2070,11 +2078,11 @@ impl Evaluator<'_> {
         let list1 = movem_reg_list(op1);
         match (list0, list1) {
             (Some(mask), None) => {
-                let mem = self.map_operand(op1, scope, env, size)?;
+                let mem = self.map_operand(op1, scope, env, size, refuse_bare_number)?;
                 Some(vec![CodeOperand::RegList(mask), mem])
             }
             (None, Some(mask)) => {
-                let mem = self.map_operand(op0, scope, env, size)?;
+                let mem = self.map_operand(op0, scope, env, size, refuse_bare_number)?;
                 Some(vec![mem, CodeOperand::RegList(mask)])
             }
             (Some(_), Some(_)) => {
@@ -2157,12 +2165,15 @@ impl Evaluator<'_> {
     /// `.local`/symbol references resolve directly; an `#imm` / displacement
     /// evaluates its expr to an integer; a `{splice}` is typed against the operand
     /// classes (int / [`Reg`] / label). Returns `None` on any diagnosed failure.
+    /// `refuse_bare_number` is false when the line's mnemonic is not a 68000
+    /// mnemonic, so the mnemonic diagnostic is not replaced (A10 W1).
     fn map_operand(
         &mut self,
         op: &Operand,
         scope: &LabelScope,
         env: &mut Env,
         width: Option<Width>,
+        refuse_bare_number: bool,
     ) -> Option<CodeOperand> {
         // T1 (§3): under a Z80 section the operand grammar reads through a
         // CPU-aware mapper — a bare register word is a Z80 register, `(hl)` /
@@ -2241,7 +2252,7 @@ impl Evaluator<'_> {
                     }
                 }
             }
-            Operand::Plain { expr, .. } => self.map_plain(expr, scope, env),
+            Operand::Plain { expr, .. } => self.map_plain(expr, scope, env, refuse_bare_number),
             Operand::Ind { parts, size, first_spliced, span } => {
                 // Two-part `(An,Xn[.size])` — An-indexed with zero displacement
                 // (68k `(d8,An,Xn)`, d=0). Checked before the single-register
@@ -3457,6 +3468,7 @@ impl Evaluator<'_> {
         expr: &ast::Expr,
         scope: &LabelScope,
         env: &mut Env,
+        refuse_bare_number: bool,
     ) -> Option<CodeOperand> {
         // D2.33 review M6 (Volence-ratified): a top-level comptime INDEX as a
         // bare operand is FENCED — `move.w Tbl[2], d0` would read memory at
@@ -3559,7 +3571,9 @@ impl Evaluator<'_> {
         // (`(n).w` / `(n).l`), and guessing the immediate hid which. A `{splice}`
         // operand reaches `classify_operand_splice` by its own arm and keeps the
         // immediate (EMP-SPLICED-INT-OPERAND); Z80 never reaches `map_plain`.
-        if let Some(n) = v.as_stored_int() {
+        // Not under a mnemonic that is not a 68000 one: there the lowering's
+        // "not a recognized 68000 mnemonic" names the real mistake.
+        if let (true, Some(n)) = (refuse_bare_number, v.as_stored_int()) {
             self.error(
                 expr_span(expr),
                 format!(

@@ -2302,10 +2302,6 @@ impl Parser {
         ContextDecl { public, name, kind, params, span }
     }
 
-    /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
-    /// [preserves(...)]`, clause order free — shared by `extern proc` (§3) and
-    /// `type X = proc` contract types (§4). Unlike [`Parser::proc_decl`] there is
-    /// no `falls_into` (a signature has no physical successor) and no body.
     /// `[proc.repeated-clause]` (A10, W13): look at the next token without consuming it;
     /// if it is a contract clause word already written on this header, refuse it,
     /// otherwise record it. Called first in both clause loops (`proc_decl`, `proc_sig`),
@@ -2321,6 +2317,11 @@ impl Parser {
             seen.push(kw);
         }
     }
+
+    /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
+    /// [preserves(...)]`, clause order free — shared by `extern proc` (§3) and
+    /// `type X = proc` contract types (§4). Unlike [`Parser::proc_decl`] there is
+    /// no `falls_into` (a signature has no physical successor) and no body.
     fn proc_sig(&mut self) -> ProcSig {
         let params = self.sig_param_list();
         let mut clobbers = None;

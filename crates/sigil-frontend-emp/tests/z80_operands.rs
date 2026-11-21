@@ -245,12 +245,18 @@ fn module_cpu_z80_opening_m68000_section_mismatches() {
 fn module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized() {
     let src = "module m\n\
                proc P() {\n\
-                 ld a, b\n\
+                 ld a, 5\n\
                }\n";
     let (_module, diags) = lower(src);
     assert!(
         diags.iter().any(|d| d.message.contains("not a recognized 68000 mnemonic")),
         "expected the existing 68k unrecognized-mnemonic error, got: {diags:?}"
+    );
+    // A10 W1 must not replace it: the mnemonic is the real mistake (a missing
+    // `cpu: z80`), so "write `#` before 5" would be the wrong advice.
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[operand.bare-number]")),
+        "the unrecognized mnemonic must win over [operand.bare-number]: {diags:?}"
     );
     // And no misfired default warn about the omitted attribute.
     assert!(
