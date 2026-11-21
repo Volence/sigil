@@ -34,6 +34,18 @@ pub type ModuleId = String;
 pub struct ScannedModule {
     pub id: ModuleId,
     pub path: PathBuf,
+    /// The named root the module was scanned under (`None` outside every root), which
+    /// says which description its rule belongs in.
+    pub root: Option<sigil_span::roots::RootName>,
+}
+
+/// The two description files a build's `[[gate]]` rules come from, as a refusal names
+/// them: the engine's `engine.toml` and the game's `game.toml`. Empty for a caller with
+/// no description files (rules built in code).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GateHomes {
+    pub engine: String,
+    pub game: String,
 }
 
 /// Refuse a pattern spelling the matcher does not define. The error names the pattern.
@@ -81,26 +93,42 @@ pub fn glob_match(pattern: &str, id: &str) -> bool {
 /// The modules of `scan` that `shape` places, in `scan` order.
 ///
 /// Each module must match exactly one of `rules` (by [`glob_match`] on its `modules`):
-/// none is [`BuildError::Ungated`], naming the module's file and every description file
-/// whose rules were searched; two or more is [`BuildError::DoubleGated`], naming the first
+/// none is [`BuildError::Ungated`], naming the module's file, both description files
+/// (`homes`, plus the origin of any other rule) and, by the root the module was scanned
+/// under, the one its rule goes in; two or more is [`BuildError::DoubleGated`], naming the first
 /// two matching rules by pattern, file and row. The one rule then decides: `all` places it, `shapes = [..]`
 /// places it in exactly the listed shapes (`[]` in none), `feature = ".."` places it when
 /// the expression holds for the shape's features and defines (`shape.defines` must be the
 /// fully merged set, engine defaults included; a define the expression reads that the
 /// shape does not have is an error, never false).
-pub fn gate_modules(scan: &[ScannedModule], rules: &[GateRule], shape: &ResolvedShape) -> Result<Vec<ModuleId>, BuildError> {
+pub fn gate_modules(
+    scan: &[ScannedModule],
+    rules: &[GateRule],
+    homes: &GateHomes,
+    shape: &ResolvedShape,
+) -> Result<Vec<ModuleId>, BuildError> {
     let mut kept = Vec::new();
-    for ScannedModule { id, path } in scan {
+    for ScannedModule { id, path, root } in scan {
         let mut hits = rules.iter().enumerate().filter(|(_, r)| glob_match(&r.modules, id)).map(|(i, _)| i);
         let Some(first) = hits.next() else {
-            let mut searched: Vec<String> = Vec::new();
+            // Both description files, whether or not either has a rule yet: a game with no
+            // `[[gate]]` rows must still be pointed at its own game.toml (G0b Task 13).
+            let mut searched: Vec<String> =
+                [&homes.engine, &homes.game].into_iter().filter(|h| !h.is_empty()).cloned().collect();
             for r in rules {
                 let o = if r.origin.is_empty() { "(rules built in code)".to_string() } else { r.origin.clone() };
                 if !searched.contains(&o) {
                     searched.push(o);
                 }
             }
-            return Err(BuildError::Ungated { module: id.clone(), path: path.clone(), searched });
+            // Where this module's rule goes, by the root it was scanned under.
+            let home = match root {
+                Some(sigil_span::roots::RootName::Engine) => Some((false, homes.engine.clone())),
+                Some(sigil_span::roots::RootName::Game) => Some((true, homes.game.clone())),
+                _ => None,
+            }
+            .filter(|(_, h)| !h.is_empty());
+            return Err(BuildError::Ungated { module: id.clone(), path: path.clone(), searched, home });
         };
         if let Some(second) = hits.next() {
             return Err(BuildError::DoubleGated {
@@ -128,7 +156,12 @@ pub fn gate_modules(scan: &[ScannedModule], rules: &[GateRule], shape: &Resolved
 mod tests {
     use super::*;
     use crate::describe::{FeatureExpr, Features};
+    use sigil_span::roots::RootName;
     use std::collections::BTreeMap;
+
+    fn homes() -> GateHomes {
+        GateHomes { engine: "engine/engine.toml".into(), game: "games/g/game.toml".into() }
+    }
 
     fn rule(modules: &str, place_in: PlaceIn) -> GateRule {
         GateRule { modules: modules.into(), place_in, origin: String::new(), row: 0 }
@@ -144,7 +177,13 @@ mod tests {
     }
 
     fn scanned(v: &[&str]) -> Vec<ScannedModule> {
-        v.iter().map(|s| ScannedModule { id: s.to_string(), path: format!("src/{}.emp", s.replace('.', "/")).into() }).collect()
+        v.iter()
+            .map(|s| ScannedModule {
+                id: s.to_string(),
+                path: format!("src/{}.emp", s.replace('.', "/")).into(),
+                root: Some(if s.starts_with("engine.") { RootName::Engine } else { RootName::Game }),
+            })
+            .collect()
     }
 
     fn shape(name: &str, debug: bool) -> ResolvedShape {
@@ -173,13 +212,14 @@ mod tests {
             ],
         ));
         let scan = scanned(&["games.g.objects.ring", "games.g.test_player", "games.g.foo"]);
-        let err = gate_modules(&scan, &rules, &shape("release", false)).unwrap_err();
+        let err = gate_modules(&scan, &rules, &homes(), &shape("release", false)).unwrap_err();
         assert_eq!(
             err,
             BuildError::Ungated {
                 module: "games.g.foo".into(),
                 path: "src/games/g/foo.emp".into(),
                 searched: vec!["engine/engine.toml".into(), "games/g/game.toml".into()],
+                home: Some((true, "games/g/game.toml".into())),
             }
         );
         // The message names the module, its .emp file and both description files searched.
@@ -191,8 +231,30 @@ mod tests {
         let mut named = rules.clone();
         named.push(rule("games.g.foo", PlaceIn::All));
         assert_eq!(
-            gate_modules(&scan, &named, &shape("release", false)).unwrap(),
+            gate_modules(&scan, &named, &homes(), &shape("release", false)).unwrap(),
             ids(&["games.g.objects.ring", "games.g.foo"])
+        );
+    }
+
+    /// G0b Task 13 friction item 6: a game with NO `[[gate]]` rows whose map places one of
+    /// its own modules. The refusal used to list only the files that already had rules, so
+    /// it pointed the game's author at engine.toml alone. It names both descriptions and
+    /// says the game module's rule goes in the game's file; an engine module's in the
+    /// engine's.
+    #[test]
+    fn an_ungated_module_is_pointed_at_its_own_description() {
+        let rules = from_file("engine/engine.toml", vec![rule("engine.vdp", PlaceIn::All)]);
+        let scan = scanned(&["engine.vdp", "games.g.header"]);
+        let msg = gate_modules(&scan, &rules, &homes(), &shape("release", false)).unwrap_err().to_string();
+        assert!(
+            msg.contains("matches no [[gate]] rule in `engine/engine.toml` or `games/g/game.toml`; a game module's rule goes in `games/g/game.toml`"),
+            "{msg}"
+        );
+        let scan = scanned(&["engine.vdp", "engine.ram"]);
+        let msg = gate_modules(&scan, &rules, &homes(), &shape("release", false)).unwrap_err().to_string();
+        assert!(
+            msg.contains("matches no [[gate]] rule in `engine/engine.toml` or `games/g/game.toml`; an engine module's rule goes in `engine/engine.toml`"),
+            "{msg}"
         );
     }
 
@@ -208,7 +270,7 @@ mod tests {
             ],
         ));
         let scan = scanned(&["games.g.test_player"]);
-        let err = gate_modules(&scan, &rules, &shape("debug", true)).unwrap_err();
+        let err = gate_modules(&scan, &rules, &homes(), &shape("debug", true)).unwrap_err();
         assert_eq!(
             err,
             BuildError::DoubleGated {
@@ -230,7 +292,7 @@ mod tests {
         // Control: disjoint rules gate the same modules.
         let both = scanned(&["games.g.ring", "games.g.test_player"]);
         let disjoint = rules[1..].to_vec();
-        assert_eq!(gate_modules(&both, &disjoint, &shape("debug", true)).unwrap(), ids(&["games.g.ring", "games.g.test_player"]));
+        assert_eq!(gate_modules(&both, &disjoint, &homes(), &shape("debug", true)).unwrap(), ids(&["games.g.ring", "games.g.test_player"]));
     }
 
     #[test]
@@ -242,10 +304,10 @@ mod tests {
             rule("d", PlaceIn::Feature(FeatureExpr::parse("HOTKEYS").unwrap())),
         ];
         let scan = scanned(&["a", "b", "c", "d"]);
-        assert_eq!(gate_modules(&scan, &rules, &shape("debug", true)).unwrap(), ids(&["a"]));
-        assert_eq!(gate_modules(&scan, &rules, &shape("release", false)).unwrap(), ids(&["c"]));
+        assert_eq!(gate_modules(&scan, &rules, &homes(), &shape("debug", true)).unwrap(), ids(&["a"]));
+        assert_eq!(gate_modules(&scan, &rules, &homes(), &shape("release", false)).unwrap(), ids(&["c"]));
         let missing = vec![rule("e", PlaceIn::Feature(FeatureExpr::parse("NOPE").unwrap()))];
-        assert!(matches!(gate_modules(&scanned(&["e"]), &missing, &shape("x", false)), Err(BuildError::Gate(m)) if m.contains("NOPE")));
+        assert!(matches!(gate_modules(&scanned(&["e"]), &missing, &homes(), &shape("x", false)), Err(BuildError::Gate(m)) if m.contains("NOPE")));
     }
 
     #[test]

@@ -97,7 +97,8 @@ fn scan(root: &Path, game: &str) -> Manifest {
 }
 
 fn derive(m: &Manifest, order: &[String], prefix: &str, sh: &ResolvedShape, rules: &[GateRule], map: &str) -> Result<Vec<ModuleSpec>, String> {
-    derive_roots(&RootsInput { manifest: m, order, game_prefix: prefix, rules, shape: sh, seeds: &[], terminus: TERMINUS, map_name: map })
+    let homes = sigil_build::gating::GateHomes::default();
+    derive_roots(&RootsInput { manifest: m, order, game_prefix: prefix, rules, homes: &homes, shape: sh, seeds: &[], terminus: TERMINUS, map_name: map })
         .map_err(|e| e.to_string())
 }
 

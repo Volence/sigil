@@ -47,8 +47,9 @@ use crate::walk::{AnchorPin, WalkError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildError {
     /// A module the shape could place matches no `[[gate]]` rule: the module, its source
-    /// file, and the description files whose rules were searched.
-    Ungated { module: ModuleId, path: PathBuf, searched: Vec<String> },
+    /// file, the description files searched, and the one its rule goes in (`true` for the
+    /// game's, `false` for the engine's), chosen by the root the module was scanned under.
+    Ungated { module: ModuleId, path: PathBuf, searched: Vec<String>, home: Option<(bool, String)> },
     /// A module matches two `[[gate]]` rules: the module, its source file, and the first two
     /// matching rules, each by pattern, file and row.
     DoubleGated { module: ModuleId, path: PathBuf, first: Box<RuleRef>, second: Box<RuleRef> },
@@ -90,12 +91,21 @@ impl std::fmt::Display for RuleRef {
 impl std::fmt::Display for BuildError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BuildError::Ungated { module, path, searched } => write!(
+            BuildError::Ungated { module, path, searched, home } => write!(
                 f,
                 "[gate.ungated] module `{module}` ({}) is placed by a map row but matches no [[gate]] \
-                 rule in {}; name it in one of them (`place_in = \"all\"` if every shape places it)",
+                 rule in {}; {} (`place_in = \"all\"` if every shape places it)",
                 path.display(),
-                if searched.is_empty() { "any description (no rules were given)".to_string() } else { searched.join(" or ") }
+                if searched.is_empty() {
+                    "any description (no rules were given)".to_string()
+                } else {
+                    searched.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(" or ")
+                },
+                match home {
+                    Some((true, h)) => format!("a game module's rule goes in `{h}`"),
+                    Some((false, h)) => format!("an engine module's rule goes in `{h}`"),
+                    None => "name it in one of them".to_string(),
+                }
             ),
             BuildError::DoubleGated { module, path, first, second } => write!(
                 f,
@@ -853,11 +863,16 @@ fn derive_registry(
 ) -> Result<Vec<ModuleSpec>, BuildError> {
     let rules: Vec<describe::GateRule> = p.engine.gate.iter().chain(p.game.gate.iter()).cloned().collect();
     let map_name = p.map_path().display().to_string();
+    let homes = crate::gating::GateHomes {
+        engine: p.engine_path.display().to_string(),
+        game: p.game_path.display().to_string(),
+    };
     let registry = crate::roots::derive_roots(&crate::roots::RootsInput {
         manifest,
         order,
         game_prefix: p.game_prefix(),
         rules: &rules,
+        homes: &homes,
         shape: gate_shape,
         seeds,
         terminus: &p.engine.terminus,

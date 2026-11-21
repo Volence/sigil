@@ -107,6 +107,8 @@ pub struct RootsInput<'a> {
     pub game_prefix: &'a str,
     /// Engine rules then game rules, in that order (rule indices in errors count across both).
     pub rules: &'a [GateRule],
+    /// The description files the rules come from, so a refusal names where a rule goes.
+    pub homes: &'a crate::gating::GateHomes,
     pub shape: &'a ResolvedShape,
     /// The modules the synthetic entry `use`s before the placed ones.
     pub seeds: &'a [String],
@@ -125,7 +127,7 @@ pub fn in_candidate_scope(pm: &sigil_frontend_emp::resolve::manifest::ParsedModu
 /// The module roots `input.shape` places, one [`ModuleSpec`] per declared section, in
 /// `order` order with the terminus last.
 pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildError> {
-    let RootsInput { manifest, order, game_prefix, rules, shape, seeds, terminus, map_name } = *input;
+    let RootsInput { manifest, order, game_prefix, rules, homes, shape, seeds, terminus, map_name } = *input;
     let in_scope = |id: &str| manifest.by_id.get(id).is_some_and(|&i| in_candidate_scope(&manifest.modules[i]));
 
     let mut by_label: HashMap<String, Vec<usize>> = HashMap::new();
@@ -176,9 +178,13 @@ pub fn derive_roots(input: &RootsInput<'_>) -> Result<Vec<ModuleSpec>, BuildErro
     }
     let scan: Vec<ScannedModule> = scan_idx
         .iter()
-        .map(|&i| ScannedModule { id: manifest.modules[i].id.clone(), path: manifest.modules[i].path.clone() })
+        .map(|&i| ScannedModule {
+            id: manifest.modules[i].id.clone(),
+            path: manifest.modules[i].path.clone(),
+            root: manifest.modules[i].root,
+        })
         .collect();
-    let kept: HashSet<ModuleId> = gate_modules(&scan, rules, shape)?.into_iter().collect();
+    let kept: HashSet<ModuleId> = gate_modules(&scan, rules, homes, shape)?.into_iter().collect();
     if !kept.contains(terminus) {
         return Err(BuildError::Context(format!(
             "[gate.terminus-dropped] the engine terminus `{terminus}` is gated out of shape `{}`; it \
