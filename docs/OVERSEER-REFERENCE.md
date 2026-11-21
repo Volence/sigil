@@ -899,6 +899,53 @@ below requires zero `skip:` lines and this is not a missing reference.
   result set. Report failures-first with explicit pass/fail counts; never
   `grep | head` test output (it buries FAILED lines).
 
+- **THE ORACLE EXPORT LANE IS PART OF THE LANDING BAR** *(2026-11-21, closes QUEUE
+  `G0B-ORACLE-PIN-DRIFT`)*. Oracle pins the bytes of five real `sigil build` ROMs and their
+  normalized `empyrean.build` exports (`fixtures/g0a/{SHA256SUMS,EXPORTS.normalized}`), and
+  those pins drifted three times with nothing here noticing: once from a sigil byte move, twice
+  from aeon source edits (comments included) that moved the file hashes an export names.
+  `scripts/landing-run.sh` now runs, after the CI-shaped leg, with the binary the run built and
+  the run's own reference tree:
+  `<oracle>/tools/g0a-real-exports.sh --sigil <SIGIL_BUILD> --aeon-ref <AEON_DIR> --out <TARGET>/tmp/oracle-g0a.<pid> --test`
+  (Oracle's cargo build goes to `<TARGET>/oracle-g0a-target/`, never the Oracle checkout's own
+  `target/`; the `--out` scratch is removed on every outcome).
+  - **Which Oracle:** `ORACLE_G0A_DIR`, then `EMPYREAN_SUITE_ROOT/oracle`, then the sibling of
+    this checkout (the suite-paths contract). The log stamps `# ORACLE_G0A_DIR` with the step,
+    `# oracle HEAD` and `# oracle branch … (clean|DIRTY)`; a DIRTY Oracle checkout is reported
+    loudly in the stamp and the verdict, not refused.
+  - **Nothing resolvable is a REFUSAL** (`ORACLE_DIR`'s precedent). The one opt-out is
+    `ORACLE_G0A_LANE=off`, said out loud; the verdict then prints
+    `oracle exports  DID NOT RUN (ORACLE_G0A_LANE=off …)`. An unset variable never skips the
+    lane, `off` together with `ORACLE_G0A_DIR` is refused as a contradiction, and any other value
+    is refused. The RESULT line itself then reads `GREEN, ORACLE EXPORT LANE DID NOT RUN
+    (ORACLE_G0A_LANE=off)`, and `check_landing_log.py` echoes it. **An `off` run is NOT landing
+    evidence for a change that can move ROM bytes or an export; it is acceptable only for a
+    docs-only or test-only landing, and the landing note must say the lane was off.**
+  - **Three outcomes, never merged**, each its own `oracle exports` line in the verdict:
+    runner exit 0 → **OK**; exit 1 → **RED**; exit 2, any other code, or a checkout/runner that
+    is missing when the lane was asked for → **COULD NOT RUN**. RED and COULD NOT RUN both make
+    `RESULT FAILED`, exit 1. Recorded as `ORACLE_G0A_EXIT=` inside `##### ORACLE G0A SPAN`, which
+    the verdict lifts out before counting (the runner prints Oracle's own `test result:` line).
+    `--verdict-only` on a log older than the lane prints `NOT STATED` and does not fail it.
+  - **On RED:** classify the difference first: this sigil moved bytes, or the aeon reference is
+    not the aeon Oracle's pins were made against (Oracle's `fixtures/g0a/PROVENANCE.md` names the
+    aeon and sigil the pins record). Then re-pin Oracle on a feature branch as part of this
+    landing, with the classification in the commit body. Nothing re-pins automatically.
+    **A RED that names no ROM or export file is not drift.** The runner exits 1 (not 2) for
+    `cargo test exited N` when its own gates fail to build or panic; the verdict then says "a
+    broken build or gate, not drift" and prints no re-pin procedure. On any nonzero exit the
+    runner's scratch logs (`gates.log`, the per-shape build logs) are copied into the span
+    under `----- ORACLE G0A SCRATCH LOG <name>` before the scratch is removed. Read them; do not
+    re-pin pins that did not move. (QUEUE `ORACLE-G0A-RUNNER-BUILD-EXIT` asks Oracle for exit 2.)
+    **A landing run with any untracked or modified file in the sigil checkout makes every export
+    say `"tree": "clean-sources"`, so the lane goes RED on all five exports while all five ROMs
+    match** (measured 2026-11-21: an untracked `.superpowers/` folder did it). That signature,
+    ROMs OK, every export FAILED, and a 4-line diff in `tool.tree`, means "clean the tree and
+    re-run", never "re-pin" (QUEUE `LANDING-ORACLE-LANE-PROVENANCE`).
+  - Controls: `crates/sigil-harness/tests/landing_verdict.rs`, the `oracle export lane` block
+    (run mode against a stub runner: OK, RED, three COULD NOT RUN shapes, the refusal, the
+    opt-out, DIRTY, and the `--verdict-only` readings).
+
 - **THE PAIRING GATE IS ARMED — the ratchet disarmed at chain 167 and will not re-arm.**
   `aeon_dir_matches_the_provenance_tip` is now a live assertion in both modes, and its
   first real execution was exercised here both directions rather than assumed: pointed at

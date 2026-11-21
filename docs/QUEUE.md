@@ -2650,8 +2650,23 @@ until its row is removed.
 
 ## G0B-ORACLE-PIN-DRIFT
 
-- state: open 2026-11-20 (found in G0b Task 10)  size: `S`  project: `G0B-GAME-AS-DATA`
-- oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
+- state: **closed 2026-11-21 by the landing-run oracle export lane** (open 2026-11-20, found in G0b Task 10)
+  size: `S`  project: `G0B-GAME-AS-DATA`
+- 2026-11-21 (closed): `scripts/landing-run.sh` now runs Oracle's `tools/g0a-real-exports.sh --test` after the
+  CI-shaped leg, with the sigil binary the run built and the run's own `--aeon` tree, so the next drift from
+  either cause (a sigil byte move, or an aeon source edit to a file an export names) is red at the landing that
+  causes it. Oracle checkout: `ORACLE_G0A_DIR`, then `EMPYREAN_SUITE_ROOT/oracle`, then the sibling; none
+  resolvable is a refusal (the `ORACLE_DIR` precedent) unless `ORACLE_G0A_LANE=off`, which the verdict prints as
+  DID NOT RUN. Runner exit 0 is OK, 1 is RED, 2 or a missing checkout/runner is COULD NOT RUN; RED and COULD NOT
+  RUN both fail the landing. On RED: classify (sigil moved bytes, or the aeon reference differs from the one in
+  oracle `fixtures/g0a/PROVENANCE.md`), then re-pin oracle on a feature branch in the same landing; no automatic
+  re-pin. Procedure in `docs/OVERSEER-REFERENCE.md` ("THE ORACLE EXPORT LANE IS PART OF THE LANDING BAR").
+  **What stays open, outside sigil:** oracle's own CI and default suite still do not run the runner (its default
+  suite reads only the trimmed fixture, which never rebuilds), so an oracle-side change that breaks the gates
+  against unchanged pins is seen only at the next sigil landing; and an aeon landing that edits an exported file
+  without a sigil landing in between is seen only at the next sigil landing, not at aeon's. Both are oracle's and
+  aeon's to book.
+- (history, 2026-11-20, superseded by the closing bullet above) oracle's real-export gates (`tools/g0a-real-exports.sh --test`, `fixtures/g0a/{SHA256SUMS,EXPORTS.normalized,
   s4.trim.build.json}`) pin sigil `3f211b78`'s bytes. The walk merge (87b5c195) moved every shape's bytes, and from
   then on the runner was red against every sigil on this branch (with c6725ab3 and the same aeon `99cb963d`: none of
   the five ROMs reproduced), and nothing on sigil's side noticed: no sigil lane runs the oracle runner, and oracle's
@@ -2676,6 +2691,58 @@ until its row is removed.
   9/9 OK; oracle `3e617113`. Lane decision (controller ruling): stays manual, run at each cross-repo landing (as it
   was at this one); moving it into a sigil landing-run lane behind an optional `ORACLE_G0A_DIR` is booked here for
   the owner to decide.
+
+## ORACLE-G0A-RUNNER-BUILD-EXIT
+
+- state: open 2026-11-21 (oracle-lane review, fix round 1)  size: `S`  owner: **oracle** (oracle is read-only from sigil)
+- oracle `tools/g0a-real-exports.sh` (3e617113) exits **1** for `RED: cargo test exited $RC` when its own gate tests
+  fail to build or panic (a compile error, a missing toolchain component, a dependency fetch, a full disk), the same
+  code it uses for a ROM or export that differs from its pins. Its contract says 2 = could not run, never a pass; a
+  gate that could not be built did not measure anything, so it should exit **2**. Sigil's landing lane works around
+  it (a RED naming no ROM or export file is reported as "a broken build or gate, not drift", and the scratch logs are
+  copied into the landing log), but the runner's own exit code still conflates the two. Also for oracle: the runner's
+  `cargo test` runs without `--locked`, so a stale `Cargo.lock` in the checkout could be rewritten (dirtying it).
+
+## ORACLE-G0A-NORMALISE-TOOL-TREE
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  owner: **oracle** (oracle is read-only from sigil)
+- every `empyrean.build` export records `tool.tree`, the build-time state of the sigil checkout that compiled the
+  binary (`clean`, `clean-sources`, `dirty`, `unknown`; `crates/sigil-cli/src/tree_class.rs`, written by
+  `crates/sigil-link/src/export/inputs.rs`). Oracle's `tools/g0a-real-exports.sh` normaliser blanks `tool.revision`
+  and `inputsSha256` but not `tool.tree`, so its pins say `"clean"` and any landing built in a checkout with an
+  untracked or modified file is RED on all five exports with all five ROMs OK. Measured at sigil 601be264: a 4-line
+  diff, `"tree": "clean"` -> `"clean-sources"`, nothing else; master 573930be built clean reproduces every pin. The
+  normaliser should blank `tool.tree` as it blanks the revision (or pin it on purpose and say so).
+
+## LANDING-ORACLE-LANE-PROVENANCE
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  project: `G0B-GAME-AS-DATA`
+- the lane's RED text names two causes (sigil moved bytes; the aeon reference differs) and misses a third: build
+  provenance, the export's `tool.tree` saying `clean-sources` because the sigil tree that built the binary was not
+  clean. The RED text should name it (signature: ROMs OK, every export FAILED, only `tool.tree` differs: clean the
+  tree and re-run, never re-pin), and the lane should warn or refuse up front when the sigil tree is not clean
+  (the stamp already records `sigil branch … (DIRTY)`).
+
+## LANDING-ORACLE-LANE-STALE-BINARY
+
+- state: open 2026-11-21 (oracle-lane landing prep, diagnosis)  size: `S`  project: `G0B-GAME-AS-DATA`
+- the lane hands the runner `SIGIL_BUILD_RESOLVED`, which the preflight builds only when absent. A full run's strict
+  span rebuilds it before the lane, but a `--scoped -- -p sigil-span` run does not: fix round 1's scoped OK at
+  4518d037 used the d3440875 binary. The lane should make sure the binary was built from the current tip and tree
+  state (rebuild `sigil` itself, or compare the binary's own `--version` revision and tree against the stamp and
+  refuse a mismatch).
+
+## LANDING-ORACLE-LANE-MINORS
+
+- state: open 2026-11-21 (oracle-lane review, fix round 1, the Minors not fixed in that round)  size: `S`
+- `scripts/check_landing_log.py` `EXITS` does not include `CI_EXIT` or `ORACLE_G0A_EXIT` in its "GREEN contradicted by
+  its own exit lines" check (allowed lane values 0 or `off`); adding them changes the pre-span refusal path, so it is
+  its own change with its own fixtures.
+- `scripts/landing-run.sh` EXIT trap: a TERM to the landing PID alone removes `oracle-g0a.<pid>` while the runner
+  child may still write into it; killing the process group is the operator's job, edge case only.
+- Red-first for the exit-1-versus-2 split (exit 2 not rendered RED) is shown by the stub test's assertion only, not by
+  an on-disk mutation transcript.
+- `shellcheck` is not installed on this host, so `landing-run.sh` was checked with `bash -n` and a hand read only.
 
 ## G0B-HELPER-CLOSURE-LOCATOR
 
@@ -3336,3 +3403,46 @@ until its row is removed.
     the range message.
   - **Task 1 minors (review: drop)** `emp_isa_walk_m68k.rs`: a comment above the wrong row, a dead `AbsW` arm,
     and an `@allow` comment citing forms the pool lacks. Comments and dead code only.
+
+## STEPA-PRIVATE-WORKLISTS
+
+- state: open 2026-11-21 (booked by step A piece 1, branch `parcel/stepA-p1-shared-walker`)  size: `L` (fifteen loops in eight files, each its own risk)  project: `STEP-A`
+- blockedBy: nothing. Step A pieces 2 to 5 do NOT need these moved.
+
+**Fifteen private worklist loops, in eight files, still walk `flag_check::Cfg` on their own.** (The plan's brief
+said seven; the grep found eight files, and `preserves` is the eighth. Eight is a count of files, not of loops.) Piece 1 added the shared walker,
+`forward_in_states` in `crates/sigil-frontend-emp/src/context.rs` (a `Lattice` state, a per-instruction step, a
+follow predicate), and moved the two existing callers onto it (`check_regions` and `z80_bus`). The spec
+(verbatim): "moving the other seven private walking loops over. That is worth doing, but each is its own
+risk, and none is needed for pieces 2 to 5. It is recorded as owed."
+
+Found by `grep -ln "VecDeque" crates/sigil-frontend-emp/src/*.rs`, minus `context.rs` (the shared walker
+itself), then reading every `VecDeque` loop at HEAD `199a376f`. The first seven files are the brief's names;
+`preserves.rs` is the one beyond it. Loops, with line numbers of the `VecDeque` declaration:
+
+- `calls.rs`: 165 (must-def, fixpoint; applies a per-edge credit, see below), 363 (callee out-set union, fixpoint),
+  416 (SEARCH: visited set, early return on a read; not a candidate).
+- `out_verify.rs`: 585 (helper exit-state intersection, fixpoint), 702 (out-verify, fixpoint; per-edge credit),
+  1168 (in/out preservation, fixpoint), 1601 (condition-code flags, fixpoint; per-edge `split_cc`).
+- `type_slice.rs`: 240 (fixpoint).
+- `branch_const.rs`: 172 (fixpoint).
+- `z80_preserves.rs`: 467 (fixpoint).
+- `z80_out_verify.rs`: 266 (fixpoint).
+- `flag_check.rs`: 1691 (SEARCH: visited set, early return; not a candidate), 1744 (SEARCH: visited set, early
+  return; queues `Edge` values, not indices; not a candidate).
+- `preserves.rs`: 580 (fixpoint; calls an observer `obs.merge` inside the loop), 1552 (fixpoint; `break`s out on a
+  bail and fills a side map).
+
+That is 12 fixpoint walks and 3 searches, 15 loops. Each loop must FIRST be classified as fixpoint dataflow
+(a candidate) or search (not a candidate): the three searches cannot be written as a `forward_in_states`
+closure, and should stay as they are or get their own shared search helper.
+
+Caveat for the fixpoint walks: `forward_in_states` runs `step` once per instruction and gives its one result to
+every `Follow` successor. A walker that needs a different state on each edge (`calls.rs:165`, `out_verify.rs:702`
+and `out_verify.rs:1601` do) cannot move over without a signature change. Loops that report from inside the walk
+(`preserves.rs`'s observer, `out_verify.rs`'s exit accumulation) must first be split into a pure step plus a read
+of the returned map, since `step` may run on intermediate states.
+
+Method for each fixpoint walk, one at a time: write the walker's step as a `forward_in_states` closure, prove byte-neutral
+(protocol BN, 7/7 shapes) and report-neutral (RN, three contract reports), and red-first a test that fails when
+the edge model or the meet is broken. Do not batch them: a moved diagnostic is a stop, not an adjustment.

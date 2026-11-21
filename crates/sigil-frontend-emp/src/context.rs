@@ -8,12 +8,13 @@
 //! **Two tiers, one CFG, one lattice.** `z80_bus` infers bus ownership from the
 //! instruction stream over [`crate::flag_check::Cfg`]; a declared context
 //! generalizes that to a per-context [`Tri`] whose seed is a DECLARATION rather
-//! than an observation. Both machine-state tiers instantiate [`must_in_states`]
+//! than an observation. Both machine-state tiers instantiate [`forward_in_states`]
 //! over the one shared `Cfg` — the private lattice, meet and worklist `z80_bus`
 //! used to carry are gone. (Other nets in the tree — `branch_const`,
 //! `type_slice`, `out_verify`, `preserves` — still carry their own worklists over
 //! that same CFG with their own lattices; unifying THOSE is a separate, wider
-//! job and is ledgered, not claimed here.)
+//! job and is ledgered, not claimed here: see the `STEPA-PRIVATE-WORKLISTS` row in
+//! `docs/QUEUE.md`.)
 //!
 //! **Why the declared tier is total where the inferred tier is not.** `z80_bus`
 //! seeds proc entry `Unknown`: a caller may already hold the bus and that is not
@@ -88,9 +89,45 @@ fn tri_meet(a: Tri, b: Tri) -> Tri {
     }
 }
 
-/// The per-instruction IN-state fixpoint: a forward MUST dataflow over the
-/// shared CFG from `seeds`, transfer `step`, join = [`tri_meet`], worklist to a
-/// fixpoint. Monotone on a three-point lattice, so it terminates.
+/// A state a forward walk can carry. `meet` combines the states of two paths
+/// arriving at one instruction. It must be commutative, associative and
+/// idempotent, and repeated meets from any start must reach a fixed point in
+/// finitely many steps; the walk terminates only because of that.
+///
+/// `PartialEq` must be equality of MEANING: keep one representation per value.
+/// If two representations stand for one value (say, the full set of levels and
+/// an "unknown" variant), the loop sees them as two distinct heights, and a meet
+/// that alternates between them never settles.
+pub(crate) trait Lattice: Clone + PartialEq {
+    fn meet(&self, other: &Self) -> Self;
+}
+
+impl Lattice for Tri {
+    fn meet(&self, other: &Self) -> Self {
+        tri_meet(*self, *other)
+    }
+}
+
+/// The per-instruction IN-state fixpoint: forward over the shared CFG from
+/// `seeds`, transfer `step`, join = [`Lattice::meet`], worklist to a fixpoint.
+/// `step` receives the instruction's index as well as its mnemonic and
+/// operands. It runs once per visit of an instruction, on whatever IN-state that
+/// instruction holds at the time (an intermediate one until the fixpoint), so it
+/// may run several times for one instruction. Its one result goes to every
+/// `Follow` successor; there is no separate state per edge.
+///
+/// `step` must be a pure, monotone function of its inputs; report from the
+/// returned map, never from inside `step`. Termination does not need monotone
+/// (a node's state only ever changes to `existing.meet(out)`), but a unique,
+/// order-independent result does. A `step` that records findings through a
+/// `RefCell` would record things that are not true at the fixpoint.
+///
+/// Seeds: each `(index, state)` is stored and queued without a meet, so two
+/// seeds on one index leave the last one's state (it overwrites). A seed is
+/// processed even where `follow` is false for its index, because `follow` only
+/// gates edges into successors. An empty seed list returns an empty map. A seed
+/// index past the end of the items panics (`Cfg::instr` indexes the items
+/// directly).
 ///
 /// `follow` GATES edge propagation. The inferred tier walks the whole proc
 /// (`|_| true`); a region-scoped instantiation stops at its own boundary, which
@@ -99,31 +136,33 @@ fn tri_meet(a: Tri, b: Tri) -> Tri {
 ///
 /// `cpu` selects the CFG's successor model ([`Cfg::edges`] vs
 /// [`Cfg::z80_edges`]) — the same choice every other consumer of this CFG makes.
-pub(crate) fn must_in_states(
+// The `step` signature is the contract; an alias would only hide it.
+#[allow(clippy::type_complexity)]
+pub(crate) fn forward_in_states<S: Lattice>(
     cfg: &Cfg,
     cpu: Cpu,
-    seeds: &[(usize, Tri)],
-    step: &dyn Fn(Tri, &str, &[CodeOperand]) -> Tri,
+    seeds: &[(usize, S)],
+    step: &dyn Fn(&S, usize, &str, &[CodeOperand]) -> S,
     follow: &dyn Fn(usize) -> bool,
-) -> BTreeMap<usize, Tri> {
-    let mut in_state: BTreeMap<usize, Tri> = BTreeMap::new();
+) -> BTreeMap<usize, S> {
+    let mut in_state: BTreeMap<usize, S> = BTreeMap::new();
     let mut work: VecDeque<usize> = VecDeque::new();
     for (idx, st) in seeds {
-        in_state.insert(*idx, *st);
+        in_state.insert(*idx, st.clone());
         work.push_back(*idx);
     }
     while let Some(idx) = work.pop_front() {
-        let st_in = in_state[&idx];
+        let st_in = in_state[&idx].clone();
         let Some((mnem, ops)) = cfg.instr(idx) else { continue };
-        let st_out = step(st_in, mnem, ops);
+        let st_out = step(&st_in, idx, mnem, ops);
         for edge in edges_for(cfg, cpu, idx) {
             let Edge::Follow(succ) = edge else { continue };
             if !follow(succ) {
                 continue;
             }
             let merged = match in_state.get(&succ) {
-                None => st_out,
-                Some(existing) => tri_meet(*existing, st_out),
+                None => st_out.clone(),
+                Some(existing) => existing.meet(&st_out),
             };
             if in_state.get(&succ) != Some(&merged) {
                 in_state.insert(succ, merged);
@@ -302,7 +341,7 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
 /// Run the `with`-bracket proofs over one proc's evaluated CodeBuf (§3.2).
 ///
 /// Per region, over the instructions reachable from the acquire WITHIN the
-/// region (the [`must_in_states`] walk seeded [`Tri::Held`] and gated by
+/// region (the [`forward_in_states`] walk seeded [`Tri::Held`] and gated by
 /// [`Region::contains`]):
 ///
 /// - **escape** — an edge out of the acquire+body range that does not land back
@@ -359,7 +398,7 @@ pub fn check_regions(
                 span,
             });
         };
-        let state = must_in_states(
+        let state = forward_in_states(
             &cfg,
             cpu,
             &[(entry, Tri::Held)],
@@ -368,7 +407,7 @@ pub fn check_regions(
             // a declaration and no transfer can move it. What is actually proven
             // is stated in the module header, and it is a REACHABILITY property,
             // not a dominance one.
-            &|st, _, _| st,
+            &|st, _, _, _| *st,
             &|i| region.contains(i),
         );
         for &idx in state.keys() {
@@ -522,4 +561,195 @@ fn is_transfer_mnemonic(mnem: &str, cpu: Cpu) -> bool {
 /// body; the caller unions the two.
 pub fn bracketed_at(regions: &[Region], idx: usize) -> std::collections::BTreeSet<String> {
     regions.iter().filter(|r| r.contains(idx)).map(|r| r.ctx.clone()).collect()
+}
+
+#[cfg(test)]
+mod walker_tests {
+    //! `forward_in_states` proven on a state that is NOT [`Tri`], so the walker's
+    //! generality is shown rather than assumed.
+
+    use super::*;
+    use crate::value::{CodeItem, ItemAuthor};
+    use sigil_span::SourceId;
+    use std::cell::RefCell;
+
+    fn sp() -> Span {
+        Span { source: SourceId(0), start: 0, end: 0 }
+    }
+    fn instr(mnemonic: &str, ops: Vec<CodeOperand>) -> CodeItem {
+        CodeItem::Instr {
+            mnemonic: mnemonic.to_string(),
+            size: None,
+            ops,
+            span: sp(),
+            as_type: None,
+            targets: Vec::new(),
+            author: ItemAuthor::User,
+        }
+    }
+    fn label(name: &str) -> CodeItem {
+        CodeItem::Label { name: name.to_string(), export: false, span: sp() }
+    }
+    fn sym(n: &str) -> CodeOperand {
+        CodeOperand::Sym(n.to_string())
+    }
+
+    /// A set of small numbers, as a bitmask. Meet is union. Eight bits, so finite.
+    #[derive(Clone, PartialEq, Debug)]
+    struct Levels(u8);
+    impl Lattice for Levels {
+        fn meet(&self, o: &Self) -> Self {
+            Levels(self.0 | o.0)
+        }
+    }
+
+    /// Index of the `n`th (0-based) instruction named `mnem` in `items`.
+    fn nth(items: &[CodeItem], mnem: &str, n: usize) -> usize {
+        items
+            .iter()
+            .enumerate()
+            .filter(|(_, it)| matches!(it, CodeItem::Instr { mnemonic, .. } if mnemonic == mnem))
+            .nth(n)
+            .map(|(i, _)| i)
+            .expect("instruction present")
+    }
+
+    #[test]
+    fn straight_line_carries_a_number() {
+        let items = vec![instr("moveq", vec![]), instr("moveq", vec![]), instr("rts", vec![])];
+        let cfg = Cfg::build(&items);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(0, Levels(1))],
+            &|s: &Levels, _, m, _| if m == "moveq" { Levels(s.0 << 1) } else { s.clone() },
+            &|_| true,
+        );
+        assert_eq!(got.get(&nth(&items, "rts", 0)), Some(&Levels(0b100)));
+    }
+
+    #[test]
+    fn join_of_unequal_states_requeues() {
+        let items = vec![
+            instr("beq", vec![sym(".a")]),
+            instr("moveq", vec![]),
+            label(".a"),
+            instr("nop", vec![]),
+            instr("rts", vec![]),
+        ];
+        let cfg = Cfg::build(&items);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(0, Levels(1))],
+            &|s: &Levels, _, m, _| if m == "moveq" { Levels(2) } else { s.clone() },
+            &|_| true,
+        );
+        assert_eq!(got.get(&nth(&items, "nop", 0)), Some(&Levels(0b11)));
+        assert_eq!(got.get(&nth(&items, "rts", 0)), Some(&Levels(0b11)));
+    }
+
+    #[test]
+    fn loop_reaches_fixpoint_on_a_counting_state() {
+        let items = vec![
+            label(".top"),
+            instr("moveq", vec![]),
+            instr("bne", vec![sym(".top")]),
+            instr("rts", vec![]),
+        ];
+        let cfg = Cfg::build(&items);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(nth(&items, "moveq", 0), Levels(1))],
+            &|s: &Levels, _, m, _| {
+                if m == "moveq" {
+                    Levels((s.0 << 1) | s.0)
+                } else {
+                    s.clone()
+                }
+            },
+            &|_| true,
+        );
+        assert_eq!(got.get(&nth(&items, "rts", 0)), Some(&Levels(0xFF)));
+    }
+
+    #[test]
+    fn follow_false_stops_propagation() {
+        let items = vec![instr("nop", vec![]), instr("nop", vec![]), instr("rts", vec![])];
+        let cfg = Cfg::build(&items);
+        let second = nth(&items, "nop", 1);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(0, Levels(1))],
+            &|s: &Levels, _, _, _| s.clone(),
+            &|i| i < second,
+        );
+        assert!(got.contains_key(&nth(&items, "nop", 0)));
+        assert!(!got.contains_key(&second));
+        assert!(!got.contains_key(&nth(&items, "rts", 0)));
+    }
+
+    #[test]
+    fn z80_cpu_uses_z80_edges() {
+        let items = vec![
+            instr("jr", vec![sym(".a")]),
+            instr("nop", vec![]),
+            label(".a"),
+            instr("ret", vec![]),
+        ];
+        let cfg = Cfg::build(&items);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::Z80,
+            &[(0, Levels(1))],
+            &|s: &Levels, _, _, _| s.clone(),
+            &|_| true,
+        );
+        // An unconditional Z80 `jr` has only its taken edge; the 68k model
+        // would fall through to the `nop` as well.
+        assert!(!got.contains_key(&nth(&items, "nop", 0)), "nop is skipped by the jr");
+        assert!(got.contains_key(&nth(&items, "ret", 0)));
+    }
+
+    #[test]
+    fn seed_on_non_instruction_is_inert() {
+        let items = vec![label(".l"), instr("rts", vec![])];
+        let cfg = Cfg::build(&items);
+        let got = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(0, Levels(1))],
+            &|s: &Levels, _, _, _| s.clone(),
+            &|_| true,
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got.get(&0), Some(&Levels(1)));
+    }
+
+    #[test]
+    fn step_receives_the_instruction_index() {
+        let items = vec![instr("nop", vec![]), instr("nop", vec![]), instr("rts", vec![])];
+        let cfg = Cfg::build(&items);
+        let seen: RefCell<Vec<usize>> = RefCell::new(Vec::new());
+        forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &[(0, Levels(1))],
+            &|s: &Levels, idx, _, _| {
+                seen.borrow_mut().push(idx);
+                s.clone()
+            },
+            &|_| true,
+        );
+        assert_eq!(*seen.borrow(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn tri_meet_through_the_trait() {
+        assert_eq!(Tri::Held.meet(&Tri::Held), Tri::Held);
+        assert_eq!(Tri::Held.meet(&Tri::NotHeld), Tri::Unknown);
+        assert_eq!(Tri::Unknown.meet(&Tri::Held), Tri::Unknown);
+    }
 }
