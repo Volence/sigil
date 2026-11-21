@@ -3103,3 +3103,46 @@ until its row is removed.
   - **M8** `name_duplicate_const.rs`'s `use other.{Foo}` control is parse-only; booked in `EMP-CONST-EQU-SAME-NAME`.
   - **M9** `crates/sigil-cli/src/main.rs` prints the gated-refusal header and FAILED line with a hardcoded
     `[proc.sr-undeclared]` while `GATED_WARNING_IDS` is a list; a second id would print under the wrong name.
+
+## STEPA-PRIVATE-WORKLISTS
+
+- state: open 2026-11-21 (booked by step A piece 1, branch `parcel/stepA-p1-shared-walker`)  size: `L` (fifteen loops in eight files, each its own risk)  project: `STEP-A`
+- blockedBy: nothing. Step A pieces 2 to 5 do NOT need these moved.
+
+**Fifteen private worklist loops, in eight files, still walk `flag_check::Cfg` on their own.** (The plan's brief
+said seven; the grep found eight files, and `preserves` is the eighth. Eight is a count of files, not of loops.) Piece 1 added the shared walker,
+`forward_in_states` in `crates/sigil-frontend-emp/src/context.rs` (a `Lattice` state, a per-instruction step, a
+follow predicate), and moved the two existing callers onto it (`check_regions` and `z80_bus`). The spec
+(verbatim): "moving the other seven private walking loops over. That is worth doing, but each is its own
+risk, and none is needed for pieces 2 to 5. It is recorded as owed."
+
+Found by `grep -ln "VecDeque" crates/sigil-frontend-emp/src/*.rs`, minus `context.rs` (the shared walker
+itself), then reading every `VecDeque` loop at HEAD `199a376f`. The first seven files are the brief's names;
+`preserves.rs` is the one beyond it. Loops, with line numbers of the `VecDeque` declaration:
+
+- `calls.rs`: 165 (must-def, fixpoint; applies a per-edge credit, see below), 363 (callee out-set union, fixpoint),
+  416 (SEARCH: visited set, early return on a read; not a candidate).
+- `out_verify.rs`: 585 (helper exit-state intersection, fixpoint), 702 (out-verify, fixpoint; per-edge credit),
+  1168 (in/out preservation, fixpoint), 1601 (condition-code flags, fixpoint; per-edge `split_cc`).
+- `type_slice.rs`: 240 (fixpoint).
+- `branch_const.rs`: 172 (fixpoint).
+- `z80_preserves.rs`: 467 (fixpoint).
+- `z80_out_verify.rs`: 266 (fixpoint).
+- `flag_check.rs`: 1691 (SEARCH: visited set, early return; not a candidate), 1744 (SEARCH: visited set, early
+  return; queues `Edge` values, not indices; not a candidate).
+- `preserves.rs`: 580 (fixpoint; calls an observer `obs.merge` inside the loop), 1552 (fixpoint; `break`s out on a
+  bail and fills a side map).
+
+That is 12 fixpoint walks and 3 searches, 15 loops. Each loop must FIRST be classified as fixpoint dataflow
+(a candidate) or search (not a candidate): the three searches cannot be written as a `forward_in_states`
+closure, and should stay as they are or get their own shared search helper.
+
+Caveat for the fixpoint walks: `forward_in_states` runs `step` once per instruction and gives its one result to
+every `Follow` successor. A walker that needs a different state on each edge (`calls.rs:165`, `out_verify.rs:702`
+and `out_verify.rs:1601` do) cannot move over without a signature change. Loops that report from inside the walk
+(`preserves.rs`'s observer, `out_verify.rs`'s exit accumulation) must first be split into a pure step plus a read
+of the returned map, since `step` may run on intermediate states.
+
+Method for each fixpoint walk, one at a time: write the walker's step as a `forward_in_states` closure, prove byte-neutral
+(protocol BN, 7/7 shapes) and report-neutral (RN, three contract reports), and red-first a test that fails when
+the edge model or the meet is broken. Do not batch them: a moved diagnostic is a stop, not an adjustment.
