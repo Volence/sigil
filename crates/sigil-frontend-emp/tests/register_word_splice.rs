@@ -84,12 +84,16 @@ fn label_template(word: &str) -> String {
 }
 
 /// The reviewer's first reproduction, for each word: `put usp` assembled
-/// `21CA 1234`. Refused at the argument, like `put d0` always was.
+/// `21CA 1234`. Refused at the argument, like `put d0` always was. Since the
+/// A11 final-review fix wave the label fallback itself refuses `usp` by name
+/// (`[operand.usp-unsupported]`, at the same argument), as the splice tests
+/// below already expect for `usp`; `sr` / `ccr` keep the argument-class text.
 #[test]
 fn a_label_argument_naming_a_register_word_is_refused_at_the_call() {
     for w in WORDS {
         let src = label_template(w);
-        refused_at(&src, LABEL_ARG, w);
+        let needle = if w == "usp" { USP } else { LABEL_ARG };
+        refused_at(&src, needle, w);
     }
 }
 
