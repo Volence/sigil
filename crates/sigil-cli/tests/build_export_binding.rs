@@ -330,13 +330,16 @@ fn files_have_no_absolute_paths() {
         assert!(!text.contains(needle), "the export names a build location: {needle}");
     }
 
-    // Per-file hashes are of the bytes on disk (the tree is unchanged since the build).
+    // Per-file hashes are of the bytes on disk (the tree is unchanged since the build). A
+    // row's path is relative to its root's directory in the build: `game` rows to the
+    // project directory, `games/<shape.game>` (G0b Task 13a).
     let aeon = &tree;
+    let game_dir = aeon.join("games").join(v["shape"]["game"].as_str().expect("shape.game"));
     for f in files {
         let rel = f["path"].as_str().unwrap();
         let disk = match f["root"].as_str().unwrap() {
             "engine" => aeon.join("engine").join(rel),
-            "game" => aeon.join("games").join(rel),
+            "game" => game_dir.join(rel),
             "generated" => {
                 let (area, rest) = rel.split_once('/').unwrap();
                 aeon.join("engine").join(area).join("generated").join(rest)
@@ -359,6 +362,120 @@ fn lst_unchanged_by_export() {
     let (with, without) = (std::fs::read(dir.join("a.lst")).unwrap(), std::fs::read(dir.join("b.lst")).unwrap());
     assert!(with == without, "the export changed the .lst (the source digest or the listing moved)");
     assert!(with.starts_with(b"  Source Digest"), "no digest section: the comparison would be vacuous");
+}
+
+/// The `(root, path)` a listing digest row names, in the export's spelling. A row outside
+/// the aeon tree carries `root=` and is taken as written; a row inside it is written
+/// tree-relative (the listing's second spelling, sigil QUEUE `G0B-LISTING-ROOT-SPELLING`),
+/// and is read here by the one rule the listing states for that tree: `engine/<sub>/generated/<rest>`
+/// is the generated root's `<sub>/<rest>` (the digest's generated mount), any other
+/// `engine/<p>` is the engine root's `<p>`. `None` for a tree row under neither.
+fn listing_key(r: &sigil_link::DigestRead) -> Option<(String, String)> {
+    use sigil_link::DigestRoot;
+    let named = |root: &str| Some((root.to_string(), r.file.path.clone()));
+    match r.file.root {
+        DigestRoot::Engine => named("engine"),
+        DigestRoot::Game => named("game"),
+        DigestRoot::Generated => named("generated"),
+        DigestRoot::Sigil => named("sigil"),
+        DigestRoot::Filesystem => None,
+        DigestRoot::Aeon => {
+            let p = r.file.path.strip_prefix("engine/")?;
+            let mut parts = p.splitn(3, '/');
+            match (parts.next(), parts.next(), parts.next()) {
+                (Some(sub), Some("generated"), Some(rest)) if !rest.is_empty() => {
+                    Some(("generated".to_string(), format!("{sub}/{rest}")))
+                }
+                _ => Some(("engine".to_string(), p.to_string())),
+            }
+        }
+    }
+}
+
+/// G0b Task 13a (`G0B-EXPORT-BY-ROOTS`): a game in its own directory, outside the engine's
+/// checkout, gets a build export, and every source file's export `(root, path)` is the
+/// `(root, path)` its listing row names. Before the fix the export placed files by
+/// aeon-checkout prefixes (`<aeon>/games/`) and refused this build outright ("a source file
+/// the build read from outside the aeon tree ... so no export root holds it").
+///
+/// The fixture is the reference tree's own `games/demo`, copied beside the tree copy (not
+/// under it) and built with `AEON_DIR` naming the tree copy, so its `engine = { suite_path
+/// = "aeon" }` resolves there.
+#[test]
+fn an_out_of_tree_games_export_rows_are_its_listing_rows() {
+    let Some((_g, tree)) = tree() else { return skip() };
+    let dir = scratch(&tree, "out_of_tree");
+    let game = dir.join("own-repo-game");
+    sigil_harness::test_support::copy_tree(&tree.join("games/demo"), &game);
+    let game = game.canonicalize().unwrap();
+    assert!(!game.starts_with(&tree), "the fixture game must sit outside the engine's checkout");
+    let (rom, lst) = (dir.join("g.bin"), dir.join("g.lst"));
+    let o = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args(["build", "--project"])
+        .arg(&game)
+        .args(["--shape", "release", "-o"])
+        .arg(&rom)
+        .arg("--emit-lst")
+        .arg(&lst)
+        .env("AEON_DIR", &tree)
+        .env_remove("SIGIL_TEST_FAIL_BEFORE_SIDECAR")
+        .env_remove("SIGIL_TEST_FAIL_EXPORT")
+        .output()
+        .expect("spawn sigil");
+    assert!(o.status.success(), "the out-of-tree build (export on) failed:\n{}", String::from_utf8_lossy(&o.stderr));
+    let export = json(&dir.join("g.build.json"));
+    let exported: std::collections::BTreeSet<(String, String)> = export["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|f| (f["root"].as_str().unwrap().to_string(), f["path"].as_str().unwrap().to_string()))
+        .collect();
+    let text = std::fs::read_to_string(&lst).expect("listing");
+    let (digest, _) = sigil_link::parse_source_digest(&text).expect("the listing's digest parses");
+    let is_source = |p: &str| [".emp", ".asm", ".z80"].iter().any(|e| p.ends_with(e));
+    let mut listed = std::collections::BTreeSet::new();
+    let mut unplaced = Vec::new();
+    for r in digest.reads.iter().filter(|r| r.origin != sigil_link::DigestOrigin::Tool && is_source(&r.file.path)) {
+        match listing_key(r) {
+            Some(k) => {
+                listed.insert(k);
+            }
+            None => unplaced.push(format!("{:?} {}", r.file.root, r.file.path)),
+        }
+    }
+    assert!(unplaced.is_empty(), "listing source rows under no export root: {unplaced:?}");
+    let game_rows: Vec<&(String, String)> = exported.iter().filter(|(r, _)| r == "game").collect();
+    // The game's own sources: every `.emp`/`.asm` in the copied directory is read by the
+    // build (its scan and residual root), so each is a `game` row named relative to it.
+    let mut on_disk = Vec::new();
+    for e in walk_files(&game) {
+        let rel = e.strip_prefix(&game).unwrap().to_str().unwrap().to_string();
+        if is_source(&rel) {
+            on_disk.push(("game".to_string(), rel));
+        }
+    }
+    on_disk.sort();
+    assert!(!on_disk.is_empty(), "the fixture game holds no source file: the comparison would be vacuous");
+    assert_eq!(game_rows.into_iter().cloned().collect::<Vec<_>>(), on_disk, "the `game` rows are the game directory's sources, relative to it");
+    let only_export: Vec<_> = exported.difference(&listed).collect();
+    let only_listing: Vec<_> = listed.difference(&exported).collect();
+    assert!(
+        only_export.is_empty() && only_listing.is_empty(),
+        "export and listing disagree on (root, path): only in the export {only_export:?}; only in the listing {only_listing:?}"
+    );
+}
+
+fn walk_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            out.extend(walk_files(&p));
+        } else {
+            out.push(p);
+        }
+    }
+    out
 }
 
 fn skip() {

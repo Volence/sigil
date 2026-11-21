@@ -103,7 +103,7 @@ mod tests {
         let shape = ShapeRecord { game: "demo".into(), shape: "demo plain".into(), defines: vec![] };
         let defines = vec![("B".to_string(), 2i128), ("A".to_string(), 1)];
         let r = |root: &str, path: &str, b: &[u8]| InputRead { root: root.into(), path: path.into(), sha256: sha256_of(b) };
-        let inputs = vec![r("game", "demo/map.toml", b"a"), r("engine", "data/sine.bin", b"z"), r("aeon", "art/x.bin", b"q")];
+        let inputs = vec![r("game", "map.toml", b"a"), r("engine", "data/sine.bin", b"z"), r("aeon", "art/x.bin", b"q")];
         (tool, exes, shape, defines, inputs)
     }
 
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(&lines[4..6], ["define A=1", "define B=2"]);
         assert!(lines[6].starts_with("input aeon art/x.bin "), "{}", lines[6]);
         assert!(lines[7].starts_with("input engine data/sine.bin "), "{}", lines[7]);
-        assert!(lines[8].starts_with("input game demo/map.toml "), "{}", lines[8]);
+        assert!(lines[8].starts_with("input game map.toml "), "{}", lines[8]);
         assert_eq!(lines.len(), 9);
         assert!(!text.contains("/home") && !text.lines().any(|l| l.contains(" /")), "no absolute path");
     }

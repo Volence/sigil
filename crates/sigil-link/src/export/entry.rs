@@ -304,12 +304,13 @@ mod tests {
         FileRecord { root, path: path.into(), lang: Lang::Emp, sha256: [0; 32], size: 0 }
     }
 
-    /// `/abs/engine/x.emp` -> `(engine, x.emp)`; anything else fits no root.
+    /// `/abs/engine/x.emp` -> `(engine, x.emp)`, `/abs/s4/x.emp` (the project directory)
+    /// -> `(game, x.emp)`; anything else fits no root.
     fn key(p: &str) -> Result<(RootName, String), String> {
         if let Some(r) = p.strip_prefix("/abs/engine/") {
             return Ok((RootName::Engine, r.into()));
         }
-        if let Some(r) = p.strip_prefix("/abs/games/") {
+        if let Some(r) = p.strip_prefix("/abs/s4/") {
             return Ok((RootName::Game, r.into()));
         }
         Err(format!("{p} fits no root"))
@@ -325,9 +326,9 @@ mod tests {
     /// The locator's ids are not the files rows: a row's `file` indexes the SORTED files.
     #[test]
     fn a_rows_file_is_its_index_in_the_sorted_files() {
-        let i = inputs(&["/abs/games/s4/a.emp", "/abs/engine/z.emp"], vec![data(2, 0, 3), data(2, 1, 4)]);
-        // Given unsorted: game before engine. Sorted: engine/z.emp (0), engine/zz.emp (1), game/s4/a.emp (2).
-        let files = vec![row(RootName::Game, "s4/a.emp"), row(RootName::Engine, "zz.emp"), row(RootName::Engine, "z.emp")];
+        let i = inputs(&["/abs/s4/a.emp", "/abs/engine/z.emp"], vec![data(2, 0, 3), data(2, 1, 4)]);
+        // Given unsorted: game before engine. Sorted: engine/z.emp (0), engine/zz.emp (1), game/a.emp (2).
+        let files = vec![row(RootName::Game, "a.emp"), row(RootName::Engine, "zz.emp"), row(RootName::Engine, "z.emp")];
         let e = build(&i, 4, files, &[]).unwrap();
         assert_eq!(e.files[0].path, "z.emp");
         let r = &e.lines.sections[0].rows;

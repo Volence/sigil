@@ -298,12 +298,14 @@ fn gate2(rom: &[u8], end_of_rom: u64, phased: &[u64], export: &serde_json::Value
     bad
 }
 
-/// A `files` row's path on disk.
-fn source_path(tree: &Path, f: &serde_json::Value) -> Option<PathBuf> {
+/// A `files` row of `export` on disk. Each root's path is relative to that root's
+/// directory in the build (G0b Task 13a): a `game` row is under the project directory the
+/// shape was built from, `games/<shape.game>`.
+fn source_path(tree: &Path, export: &serde_json::Value, f: &serde_json::Value) -> Option<PathBuf> {
     let (root, path) = (f["root"].as_str()?, f["path"].as_str()?);
     Some(match root {
         "engine" => tree.join("engine").join(path),
-        "game" => tree.join("games").join(path),
+        "game" => tree.join("games").join(export["shape"]["game"].as_str()?).join(path),
         "generated" => {
             let (area, rest) = path.split_once('/')?;
             tree.join("engine").join(area).join("generated").join(rest)
@@ -405,7 +407,7 @@ fn attribution(tree: &Path, listing: &str, export: &serde_json::Value, rows: &[R
     let texts: Vec<Vec<String>> = files
         .iter()
         .map(|f| {
-            source_path(tree, f)
+            source_path(tree, export, f)
                 .and_then(|p| std::fs::read_to_string(p).ok())
                 .map(|t| t.lines().map(str::to_string).collect())
                 .unwrap_or_default()
@@ -502,7 +504,7 @@ fn row_at_label<'a>(listing: &str, rows: &'a [Row], label: &str) -> Option<&'a R
 /// The source text of a row's line.
 fn line_text(tree: &Path, export: &serde_json::Value, r: &Row) -> String {
     let f = &export["files"][r.file as usize];
-    let text = source_path(tree, f).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let text = source_path(tree, export, f).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
     // Line 0 (a no-source line) is no text: a row wrongly carrying it fails the caller's check.
     (r.line as usize).checked_sub(1).and_then(|i| text.lines().nth(i)).unwrap_or("").to_string()
 }

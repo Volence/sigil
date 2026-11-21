@@ -431,11 +431,14 @@ fn declared_equate(line: &str) -> Option<&str> {
     (is_const || equ || assign).then_some(name)
 }
 
-fn source_path(tree: &Path, f: &Value) -> Option<PathBuf> {
+/// The file a `files` row of `export` names in `tree`: each root's path is relative to
+/// that root's directory in the build (G0b Task 13a), so a `game` row resolves under the
+/// project directory the shape was built from, `games/<shape.game>`.
+fn source_path(tree: &Path, export: &Value, f: &Value) -> Option<PathBuf> {
     let (root, path) = (f["root"].as_str()?, f["path"].as_str()?);
     Some(match root {
         "engine" => tree.join("engine").join(path),
-        "game" => tree.join("games").join(path),
+        "game" => tree.join("games").join(export["shape"]["game"].as_str()?).join(path),
         "generated" => {
             let (area, rest) = path.split_once('/')?;
             tree.join("engine").join(area).join("generated").join(rest)
@@ -460,7 +463,7 @@ fn equate_origins(tree: &Path, export: &Value) -> Vec<(String, Origin)> {
     let mut declared: std::collections::HashMap<String, (bool, bool)> =
         std::collections::HashMap::new();
     for f in export["files"].as_array().unwrap() {
-        let Some(path) = source_path(tree, f) else {
+        let Some(path) = source_path(tree, export, f) else {
             continue;
         };
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -469,7 +472,7 @@ fn equate_origins(tree: &Path, export: &Value) -> Vec<(String, Origin)> {
                 path.display()
             )
         });
-        let sonic4 = f["root"] == "game" && sym_field(f, "path").starts_with("sonic4/");
+        let sonic4 = f["root"] == "game" && export["shape"]["game"] == "sonic4";
         for line in text.lines() {
             if let Some(n) = declared_equate(line) {
                 let e = declared.entry(n.to_string()).or_default();

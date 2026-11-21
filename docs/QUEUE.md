@@ -2034,9 +2034,15 @@ until its row is removed.
   `convsym` executable is hashed by file name into the tool part. What is still true: a changed blob is visible
   only through `inputsSha256` and the ROM hash, never as a stale FILE row, so a consumer cannot say WHICH blob changed.
 
-## G0A-SCAN-READS-TOOL-FIXTURES
+## G0A-SCAN-READS-TOOL-FIXTURES: CLOSED
 
-- state: **OPEN** 2026-11-18  size: `S`  project: `G0A-BUILD-EXPORT`
+- state: **CLOSED** 2026-11-21 (G0b Task 13a)  size: `S`  project: `G0A-BUILD-EXPORT`
+- **Closed by deletion.** `UNROOTED_AEON_DIRS` and its test `tools_fixtures_is_the_one_named_hole` are gone from
+  `sigil-harness/src/export_files.rs`, together with the `tools/` special case. The export now places every read by
+  the build's own roots (`G0B-EXPORT-BY-ROOTS`), and a `--project` build's scan never reads `tools/fixtures/` (G0b
+  Task 9). Should a source file under no root ever be read again, it is refused naming the file and each root with
+  its directory (`a_source_read_outside_every_root_is_an_error_naming_the_path_and_the_roots` holds
+  `tools/fixtures/anchor_sweep/f.emp` among its cases). The original text follows.
 - 2026-11-20 (G0b Task 9): a `--project` build no longer reads `tools/fixtures/` (its scan is the engine and game
   roots). The constant stays while the legacy driver walks the tree; it goes at Task 11 (see
   G0A-SCAN-READS-OTHER-GAME's residue).
@@ -2805,3 +2811,56 @@ until its row is removed.
   `crates/sigil-frontend-as/tests/{as_interp_radix,as_warning_exitm,as_odd_address}.rs`,
   `crates/sigil-harness/tests/{suite_paths_precedence,reference_tree_write_guard,reference_tree_named_write}.rs`.
   A shared helper (pid + counter, or `tempfile`) would close the class.
+
+## G0B-EXPORT-BY-ROOTS: CLOSED
+
+- state: **CLOSED** 2026-11-21, G0b Task 13a (found in G0b Task 13, Cherub)  size: `S`  project: `G0B-GAME-AS-DATA`
+- **Found:** `sigil build --project <cherub> -o ...` refused the build export for a game in its own repository:
+  "`.../cherub/game_root.asm` is a source file the build read from outside the aeon tree ... so no export root holds
+  it". `export_files::place_path(aeon, sigil, path)` assigned export roots by aeon-checkout prefixes
+  (`<aeon>/engine/`, `<aeon>/games/`) instead of by the build's own `SourceRoots`, and `source_row_key` (the line
+  table's file key) had the same shape. The ROM built and booted; only the export was blocked.
+- **Fixed (proxy ruling, Fable 2026-11-21, owner may override):** one rule for every game, a `files` row is (root
+  name, path relative to that root's directory in this build). `export_files`/`source_row_key`/`place_path` take
+  `ExportRoots` (the build's `SourceRoots`: `engine` = the engine root, `game` = the project directory holding
+  `game.toml`, NOT `sources_root()`, `generated` = the build's generated directory; plus the sigil checkout and,
+  for hash-only `aeon` data rows, the engine's checkout). Longest root wins. A source file under no root is refused
+  naming each root and its directory. Spelling change for aeon's games: `game sonic4/config/header.emp` is now
+  `game config/header.emp`; `shape.game` names the game. Contract version stays 1.0 (empyrean `protocol.md`).
+- **The generated mount is kept, by decision (Task 13a report):** under the engine root, `<sub>/generated/<rest>` is
+  still the `generated` row `<sub>/<rest>`, the mount `mount_generated` and the `.lst` digest already state. aeon's
+  build.sh writes `engine/debug/generated/compression_vectors.emp` into the engine checkout, every shape reads it, and
+  every export has carried it as `generated debug/compression_vectors.emp`. Placing it literally (engine
+  `debug/generated/compression_vectors.emp`) would reorder `files` and shift every later file index, which the
+  ruling's proof (only the game prefix moves) forbids. The mount now applies to any `<sub>`, as
+  `GeneratedRoot::mounted` does, instead of the literal `sound`/`debug` pair; no aeon read changes row by it.
+- **Proof:** `scripts/export_roots_cmp.sh` (old 02b8a8f4 vs new, 7 shapes: old export with `<id>/` stripped from
+  every game row equals the new export except `inputsSha256` and `tool.revision`), output committed under
+  `docs/evidence/g0b-export-by-roots/`. `build_export_binding::an_out_of_tree_games_export_rows_are_its_listing_rows`
+  builds `games/demo` copied outside the checkout and holds each export `(root, path)` to its listing row.
+
+## G0B-LISTING-ROOT-SPELLING
+
+- state: open 2026-11-21 (found in G0b Task 13a)  size: `S`  project: `G0B-GAME-AS-DATA`
+- The `.lst` source digest still has two spellings for one file, left alone by ruling in Task 13a: a read inside the
+  engine's checkout is written tree-relative with no `root=` (`path=engine/vdp.emp`,
+  `path=games/sonic4/config/header.emp`, `origin=generated path=engine/debug/generated/...`), a read outside it under
+  its named root (`root=game path=config/header.emp`). The build export now has one spelling for both (root plus
+  root-relative path). So an in-tree game's listing and export name the same file differently, and a consumer joining
+  the two must know the tree layout. `an_out_of_tree_games_export_rows_are_its_listing_rows` states the one mapping
+  (`engine/<sub>/generated/<rest>` is generated `<sub>/<rest>`, other `engine/<p>` is engine `<p>`). Fix: write every
+  digest row under its named root, which is a `.lst` text change for every aeon shape (its own proof, and aeon's
+  `.lst` readers re-checked), or retire the digest's tree spelling with the transitional tree
+  (`G0B-UNROOTED-TREE-READS`).
+
+## G0B-BLIND-REFUSAL-UNNAMED
+
+- state: open 2026-11-21 (found in G0b Task 13, Cherub; booked in Task 13a)  size: `S`  project: `G0B-GAME-AS-DATA`
+- A game missing the defines `HAS_ACT_ART_POOL` or `VRAM_RING_PLACEHOLDER` gets only the contract closure's generic
+  "analysis is blind" refusal ("1 comptime condition(s) did not resolve", "the contract closure DROPPED 1
+  instruction(s)"), which names the module or proc but not the symbol. The unresolved-condition report HOLDS a `Span`
+  (`sigil-frontend-emp/src/corpus_contracts.rs` ~216, `comptime_unresolved: Vec<(String, String, Span)>`) and
+  `sigil-cli/src/main.rs` ~2268-2287 prints the first two fields and discards it; the dropped-instruction report
+  (`dropped_by_proc: Vec<(String, usize)>`, ~201) keeps only proc and count, so naming the symbol there needs the span
+  recorded first. Fix: render file:line and the unresolved name in both refusals. Pre-G0b gate code with pinned
+  message text, so not landing work for G0b.

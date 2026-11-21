@@ -3245,6 +3245,7 @@ fn run_project_build(project: &sigil_build::driver::Project, opts: &ProjectOpts)
         &out.export_inputs,
         &generated,
         &[(sigil_link::DigestRoot::Engine, project.engine_dir.clone()), (sigil_link::DigestRoot::Game, project.sources_root())],
+        (&project.engine_dir, &project.game_dir),
     );
     println!(
         "Built {} ({} bytes, assembled {}, {} warning(s)) from {} shape `{}`",
@@ -3430,6 +3431,7 @@ fn write_build_artifacts(
     export_inputs: &sigil_link::export::ExportInputs,
     generated: &sigil_harness::export_files::GeneratedRoot,
     named_roots: &[(sigil_link::DigestRoot, std::path::PathBuf)],
+    export_roots: (&std::path::Path, &std::path::Path),
 ) {
     // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested, opens with
     // the source digest, which names the FULL shipped file above, appendix included. So
@@ -3460,7 +3462,7 @@ fn write_build_artifacts(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            match prepare_export(aeon, identity, generated)
+            match prepare_export(aeon, export_roots, identity, generated)
                 .and_then(|parts| render_export(parts, export_inputs, rom_name, full, assembled_len))
             {
                 Ok(text) => Some(text),
@@ -3538,14 +3540,20 @@ struct ExportParts {
     shape: sigil_link::export::ShapeRecord,
     inputs_sha256: [u8; 32],
     files: Vec<sigil_link::export::FileRecord>,
-    /// The canonical aeon root and sigil checkout the `files` rows are relative to; the
-    /// line table maps each located source file to its row through the same roots.
-    aeon_root: std::path::PathBuf,
+    /// The build's named roots the `files` rows are relative to (canonical), with the
+    /// engine's checkout and the sigil checkout; the line table maps each located source
+    /// file to its row through the same roots.
+    roots: sigil_span::roots::SourceRoots,
+    checkout: std::path::PathBuf,
     sigil_root: std::path::PathBuf,
 }
 
+/// `aeon` is the engine's checkout; `(engine, game)` the build's engine root and project
+/// directory (the one holding `game.toml`), the directories of its `engine` and `game`
+/// export roots.
 fn prepare_export(
     aeon: &std::path::Path,
+    (engine, game): (&std::path::Path, &std::path::Path),
     identity: &BuildIdentity,
     generated: &sigil_harness::export_files::GeneratedRoot,
 ) -> Result<ExportParts, String> {
@@ -3558,11 +3566,17 @@ fn prepare_export(
         })?;
         defines.push((name.clone(), narrow));
     }
-    let aeon_root = std::fs::canonicalize(aeon)
-        .map_err(|e| format!("resolve the aeon root {}: {e}", aeon.display()))?;
+    let canon = |what: &str, d: &std::path::Path| {
+        std::fs::canonicalize(d).map_err(|e| format!("resolve the {what} {}: {e}", d.display()))
+    };
+    let checkout = canon("engine checkout", aeon)?;
+    let roots = sigil_span::roots::SourceRoots::new(canon("engine root", engine)?, canon("game root", game)?)
+        .with_generated(generated.dir.clone());
     let sigil_root = sigil_harness::source_digest::sigil_source_root();
     let snapshot = sigil_harness::export_files::mount_generated(&sigil_span::read_set::snapshot(), generated)?;
-    let rooted = sigil_harness::export_files::export_files(&aeon_root, &sigil_root, &snapshot)?;
+    let export_roots =
+        sigil_harness::export_files::ExportRoots { roots: &roots, checkout: &checkout, sigil: &sigil_root };
+    let rooted = sigil_harness::export_files::export_files(&export_roots, &snapshot)?;
     let files = rooted.files;
     let tool = ToolRecord {
         name: "sigil".into(),
@@ -3572,7 +3586,7 @@ fn prepare_export(
     };
     let shape = ShapeRecord { game: identity.game.clone(), shape: identity.shape.clone(), defines };
     let inputs_sha256 = inputs_sha256(&tool, &rooted.tool_exes, &shape, defines_wide, &rooted.inputs);
-    Ok(ExportParts { tool, shape, inputs_sha256, files, aeon_root, sigil_root })
+    Ok(ExportParts { tool, shape, inputs_sha256, files, roots, checkout, sigil_root })
 }
 
 /// Render the sidecar for the ROM bytes `full`, which are the bytes about to be installed.
@@ -3616,8 +3630,12 @@ fn render_export(
             kind: NoSourceKind::HeaderChecksum,
         });
     }
-    let (aeon_root, sigil_root) = (parts.aeon_root, parts.sigil_root);
-    let key = |name: &str| sigil_harness::export_files::source_row_key(&aeon_root, &sigil_root, name);
+    let export_roots = sigil_harness::export_files::ExportRoots {
+        roots: &parts.roots,
+        checkout: &parts.checkout,
+        sigil: &parts.sigil_root,
+    };
+    let key = |name: &str| sigil_harness::export_files::source_row_key(&export_roots, name);
     let mut export = build_export(inputs, &rom, parts.tool, parts.shape, parts.files, &post_link, &key)
         .map_err(|e| e.to_string())?;
     export.inputs_sha256 = parts.inputs_sha256;

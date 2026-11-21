@@ -4,26 +4,32 @@
 //! The recorder (`sigil_span::read_set`) is the one source of truth for what a build
 //! read, so everything here is a PROJECTION of it and never a second walk of the tree.
 //! Each read is placed in one of exactly four roots, `engine`, `game`, `generated` and
-//! `sigil`, with a path relative to that root:
+//! `sigil`, by ONE rule for every game (G0b Task 13a): a `files` row is (root name, path
+//! relative to that root's directory in this build). The directories are the build's own
+//! named roots ([`SourceRoots`]), never a layout of the engine's checkout:
 //!
-//! | read (under the aeon root unless stated)  | root        | path is relative to        |
-//! |-------------------------------------------|-------------|----------------------------|
-//! | `engine/sound/generated/...`              | `generated` | `engine/` with `generated/` dropped, so `sound/...` |
-//! | `engine/debug/generated/...`              | `generated` | likewise, so `debug/...`   |
-//! | `engine/...`                              | `engine`    | `engine/`                  |
-//! | `games/<game>/...`                        | `game`      | `games/`, so `<game>/...`  |
-//! | under the sigil source checkout           | `sigil`     | the checkout               |
+//! | root        | directory                                                       |
+//! |-------------|-----------------------------------------------------------------|
+//! | `engine`    | the engine root (aeon's `engine/`)                              |
+//! | `game`      | the project directory, the one holding `game.toml`              |
+//! | `generated` | the build's own generated directory                             |
+//! | `sigil`     | the sigil source checkout                                       |
 //!
-//! A build writes its generated files into its own generated root, a directory outside
-//! the tree ([`sigil_build::build_dir`], G0b Task 6), and the sources reach them through
-//! the build's named `generated` root (`generated/sound/...`). [`mount_generated`] writes
-//! each read of that directory under its engine-tree name (`generated/<sub>/<rest>` is
-//! `engine/<sub>/generated/<rest>`, the convention this table states), so the table above
-//! places it, and a build's rows do not depend on where its private directory was.
+//! A read under more than one root's directory belongs to the LONGEST one. No path carries
+//! a game id or a checkout-layout segment: the export's `shape.game` names the game, so
+//! aeon's `games/sonic4/config/header.emp` and a game in its own repository's
+//! `config/header.emp` are both the row `game config/header.emp`.
 //!
-//! `game` paths keep the game's directory name because one build reads more than one
-//! game's modules (the module scan reads every `*.emp`), and two games each have a
-//! `config/game.emp`: relative to a single game's directory those two would collide.
+//! A build writes its generated files into its own generated directory, outside the
+//! tree ([`sigil_build::build_dir`], G0b Task 6), and the sources reach them through the
+//! build's named `generated` root (`generated/sound/...`). The record layer names a read
+//! of that directory at its mount, `<engine>/<sub>/generated/<rest>`
+//! ([`mount_generated`], the name the `.lst` digest has always written), and the export
+//! states that mount as the `generated` root: under the engine root, `<sub>/generated/<rest>`
+//! is the row `generated <sub>/<rest>`, which is also where a read of the generated
+//! directory itself lands. So a build's rows do not depend on where its private directory
+//! was, and a generator output the engine checkout holds in place (aeon's
+//! `engine/debug/generated/`, written by aeon's build.sh) keeps the row it always had.
 //!
 //! # Two outputs, two scopes
 //!
@@ -31,34 +37,22 @@
 //!    `.emp`, `.asm` or `.z80`, because `lang` is a closed enum of exactly those.
 //!  * `inputs` (what `inputsSha256` hashes): EVERY read under a root, sources, art and
 //!    sound blobs and `map.toml` alike, by root-relative path and SHA-256. A changed
-//!    blob therefore moves `inputsSha256` although no file row changes. A read under
-//!    the aeon tree but under no root (the `art/` directory) is still an input; it is
-//!    hashed under the hash-only root name `aeon` and never reaches the schema.
-//!  * A DATA file read from outside both the aeon tree and the sigil checkout (the
+//!    blob therefore moves `inputsSha256` although no file row changes. A DATA file under
+//!    the engine's checkout but under no root (aeon's `art/` directory) is still an input;
+//!    it is hashed under the hash-only root name `aeon`, relative to that checkout, and
+//!    never reaches the schema.
+//!  * A DATA file read from outside every root and the engine's checkout (the
 //!    `--anchor-overlay` file) is an input too: hashed under the hash-only root
-//!    `external` by file name alone. A SOURCE file from there fits no root and is an
-//!    error naming the path.
+//!    `external` by file name alone.
+//!  * A SOURCE file under no root, inside the engine's checkout or out of it, fits no row
+//!    and is an error naming the path and each root with its directory.
 //!  * `tool_exes`: executables the build ran (`convsym`) are tool identity, recorded
 //!    by file name and hash only, wherever they live.
-//!
-//! # The one named hole: `tools/fixtures`
-//!
-//! Four `.emp` fixtures under `tools/fixtures/anchor_sweep/` are read by every build,
-//! only because the module scan reads every `*.emp` in the tree. They are not part of
-//! the program and fit none of the four roots. Controller ruling (G0a Task 3): this is
-//! a scan-scope defect, not a missing root, so reads under exactly `tools/fixtures` are
-//! left out of both outputs ([`UNROOTED_AEON_DIRS`]), and G0b's two-root resolution
-//! deletes the hole by scoping the scan to the engine and game roots (queue row
-//! `G0A-SCAN-READS-TOOL-FIXTURES`). Any other read under `tools/` is an error naming
-//! the path, and so is any read that fits no root and is not an aeon-tree data file.
 
 use sigil_link::export::{FileRecord, InputRead, Lang, RootName, ToolExe};
 use sigil_span::read_set::{FileRead, Snapshot};
+use sigil_span::roots::SourceRoots;
 use std::path::{Component, Path, PathBuf};
-
-/// Aeon-relative directories whose reads are left out of the export, pending G0b. See
-/// the module doc.
-pub const UNROOTED_AEON_DIRS: &[&str] = &["tools/fixtures"];
 
 /// Everything the export derives from one snapshot.
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -100,85 +94,111 @@ fn rel_text(rel: &Path, full: &Path) -> Result<String, String> {
 enum Placed {
     /// Under a schema root.
     Rooted(RootName, String),
-    /// Under the aeon tree, under no root, a data file: hashed as `aeon`.
+    /// Under the engine's checkout, under no root, a data file: hashed as `aeon`.
     AeonData(String),
-    /// Outside the aeon tree and the sigil checkout, a data file the caller handed the
+    /// Outside every root and the engine's checkout, a data file the caller handed the
     /// build (the `--anchor-overlay` file): hashed as `external` by FILE NAME only, since
     /// its directory says where the build ran.
     External(String),
-    /// Deliberately left out.
-    Skip,
 }
 
-fn place(aeon: &Path, sigil: &Path, r: &FileRead) -> Result<Placed, String> {
-    place_path(aeon, sigil, &r.path)
+/// The directories a build's export places its reads against: the build's named roots,
+/// the engine's checkout (for the hash-only `aeon` data rows) and the sigil checkout.
+/// Every directory canonical, as the read set records paths.
+#[derive(Clone, Copy, Debug)]
+pub struct ExportRoots<'a> {
+    /// The build's named roots: `engine` = the engine root, `game` = the project
+    /// directory (the one holding `game.toml`), `generated` = the build's generated
+    /// directory.
+    pub roots: &'a SourceRoots,
+    /// The checkout holding the engine root.
+    pub checkout: &'a Path,
+    /// The sigil source checkout.
+    pub sigil: &'a Path,
+}
+
+impl ExportRoots<'_> {
+    /// Each schema root with its directory, in schema order (a build with no generated
+    /// root has three).
+    fn dirs(&self) -> Vec<(RootName, &Path)> {
+        use sigil_span::roots::RootName as R;
+        let mut out = vec![(RootName::Engine, self.roots.dir(R::Engine).expect("every build has an engine root"))];
+        out.push((RootName::Game, self.roots.dir(R::Game).expect("every build has a game root")));
+        if let Some(g) = self.roots.dir(R::Generated) {
+            out.push((RootName::Generated, g));
+        }
+        out.push((RootName::Sigil, self.sigil));
+        out
+    }
+
+    fn named(&self) -> String {
+        self.dirs().iter().map(|(r, d)| format!("`{}` = {}", r.as_str(), d.display())).collect::<Vec<_>>().join(", ")
+    }
+}
+
+fn place(roots: &ExportRoots<'_>, r: &FileRead) -> Result<Placed, String> {
+    place_path(roots, &r.path)
 }
 
 /// The `files` row key `(root, path)` of a source file the build located a span in,
 /// given the name its front end opened it under (resolved like the read set resolves
 /// it: [`sigil_span::read_set::canonical`]). The line table maps each located byte to
 /// its row through this, so it is the same placement the `files` rows came from.
-pub fn source_row_key(aeon: &Path, sigil: &Path, name: &str) -> Result<(RootName, String), String> {
+pub fn source_row_key(roots: &ExportRoots<'_>, name: &str) -> Result<(RootName, String), String> {
     let path = sigil_span::read_set::canonical(Path::new(name));
     if lang_of(&path).is_none() {
         return Err(format!("{} is not a source file (.emp, .asm or .z80), so it has no `files` row", path.display()));
     }
-    match place_path(aeon, sigil, &path)? {
+    match place_path(roots, &path)? {
         Placed::Rooted(root, rel) => Ok((root, rel)),
-        Placed::Skip => Err(format!("{} is under a directory the export leaves out", path.display())),
         Placed::AeonData(_) | Placed::External(_) => Err(format!("{} fits no export root", path.display())),
     }
 }
 
-fn place_path(aeon: &Path, sigil: &Path, path: &Path) -> Result<Placed, String> {
+/// Under the engine root, the generated root's mount `<sub>/generated/<rest>` (module
+/// doc): `Some(<sub>/<rest>)`, else `None`.
+fn generated_mount(under_engine: &Path) -> Option<PathBuf> {
+    let mut comps = under_engine.components();
+    let sub = comps.next()?;
+    let rest = comps.as_path().strip_prefix("generated").ok()?;
+    if rest.as_os_str().is_empty() {
+        return None;
+    }
+    Some(Path::new(sub.as_os_str()).join(rest))
+}
+
+fn place_path(roots: &ExportRoots<'_>, path: &Path) -> Result<Placed, String> {
     let lang = lang_of(path);
-    if let Ok(rel) = path.strip_prefix(aeon) {
-        let first = rel.components().next().and_then(|c| c.as_os_str().to_str()).unwrap_or("");
-        let (root, under): (RootName, PathBuf) = match first {
-            "engine" => {
-                let under = rel.strip_prefix("engine").expect("first component");
-                let generated =
-                    ["sound", "debug"].iter().find(|area| under.starts_with(Path::new(area).join("generated")));
-                match generated {
-                    Some(area) => {
-                        let tail = under.strip_prefix(Path::new(area).join("generated")).expect("checked");
-                        (RootName::Generated, Path::new(area).join(tail))
-                    }
-                    None => (RootName::Engine, under.to_path_buf()),
-                }
+    // The longest root directory holding the path owns it.
+    let owner = roots
+        .dirs()
+        .into_iter()
+        .filter(|(_, d)| path.starts_with(d))
+        .max_by_key(|(_, d)| d.components().count());
+    if let Some((root, dir)) = owner {
+        let rel = path.strip_prefix(dir).expect("filtered on starts_with");
+        if root == RootName::Engine {
+            if let Some(mounted) = generated_mount(rel) {
+                return Ok(Placed::Rooted(RootName::Generated, rel_text(&mounted, path)?));
             }
-            "games" => (RootName::Game, rel.strip_prefix("games").expect("first component").to_path_buf()),
-            _ => {
-                if UNROOTED_AEON_DIRS.iter().any(|d| rel.starts_with(d)) {
-                    return Ok(Placed::Skip);
-                }
-                if first == "tools" || lang.is_some() {
-                    return Err(format!(
-                        "{} is read by the build from the aeon tree outside engine/ and games/, and no export root holds it",
-                        path.display()
-                    ));
-                }
-                return Ok(Placed::AeonData(rel_text(rel, path)?));
-            }
-        };
-        return Ok(Placed::Rooted(root, rel_text(&under, path)?));
+        }
+        return Ok(Placed::Rooted(root, rel_text(rel, path)?));
     }
-    if let Ok(rel) = path.strip_prefix(sigil) {
-        return Ok(Placed::Rooted(RootName::Sigil, rel_text(rel, path)?));
+    if lang.is_some() {
+        return Err(format!(
+            "{} is a source file the build read from under no export root ({}), so no `files` row can name it",
+            path.display(),
+            roots.named()
+        ));
     }
-    if lang.is_none() {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("{} has no UTF-8 file name", path.display()))?;
-        return Ok(Placed::External(name.to_string()));
+    if let Ok(rel) = path.strip_prefix(roots.checkout) {
+        return Ok(Placed::AeonData(rel_text(rel, path)?));
     }
-    Err(format!(
-        "{} is a source file the build read from outside the aeon tree {} and the sigil checkout {}, so no export root holds it",
-        path.display(),
-        aeon.display(),
-        sigil.display()
-    ))
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("{} has no UTF-8 file name", path.display()))?;
+    Ok(Placed::External(name.to_string()))
 }
 
 /// A build's `generated` root as the record layer names its reads (G0b Task 9).
@@ -260,11 +280,11 @@ pub fn mount_generated(snapshot: &Snapshot, root: &GeneratedRoot) -> Result<Snap
     Ok(out)
 }
 
-/// The export's file rows, hashed inputs and helper executables for `snapshot`. `aeon`
-/// and `sigil` are the canonical roots. A snapshot with a conflict (a file read with two
+/// The export's file rows, hashed inputs and helper executables for `snapshot`, placed
+/// against `roots` (module doc). A snapshot with a conflict (a file read with two
 /// contents) cannot be stated as one row per file and is an error, as it is for the
 /// `.lst` digest.
-pub fn export_files(aeon: &Path, sigil: &Path, snapshot: &Snapshot) -> Result<ExportInputs, String> {
+pub fn export_files(roots: &ExportRoots<'_>, snapshot: &Snapshot) -> Result<ExportInputs, String> {
     if !snapshot.conflicts.is_empty() {
         let lines: Vec<String> = snapshot.conflicts.iter().map(|c| format!("  {c}")).collect();
         return Err(format!("the build's read set cannot be exported as one row per file:\n{}", lines.join("\n")));
@@ -280,7 +300,7 @@ pub fn export_files(aeon: &Path, sigil: &Path, snapshot: &Snapshot) -> Result<Ex
             out.tool_exes.push(ToolExe { name: name.to_string(), sha256: r.sha256 });
             continue;
         }
-        match place(aeon, sigil, r)? {
+        match place(roots, r)? {
             Placed::Rooted(root, path) => {
                 out.inputs.push(InputRead { root: root.as_str().to_string(), path: path.clone(), sha256: r.sha256 });
                 if let Some(lang) = lang_of(&r.path) {
@@ -293,7 +313,6 @@ pub fn export_files(aeon: &Path, sigil: &Path, snapshot: &Snapshot) -> Result<Ex
             Placed::External(name) => {
                 out.inputs.push(InputRead { root: "external".to_string(), path: name, sha256: r.sha256 })
             }
-            Placed::Skip => {}
         }
     }
     out.files.sort_by(|a, b| (a.root, &a.path).cmp(&(b.root, &b.path)));
@@ -310,9 +329,22 @@ mod tests {
         FileRead { path: PathBuf::from(path), crc: 0, size: 3, sha256: [9; 32], generated: false, tool: false }
     }
 
-    fn run(paths: &[&str]) -> Result<ExportInputs, String> {
+    /// An in-tree game: engine `/a/engine`, game `/a/games/demo`, checkout `/a`.
+    fn in_tree() -> SourceRoots {
+        SourceRoots::new("/a/engine", "/a/games/demo").with_generated("/b/generated")
+    }
+
+    fn with<T>(roots: &SourceRoots, f: impl FnOnce(&ExportRoots<'_>) -> T) -> T {
+        f(&ExportRoots { roots, checkout: Path::new("/a"), sigil: Path::new("/s") })
+    }
+
+    fn run_on(roots: &SourceRoots, paths: &[&str]) -> Result<ExportInputs, String> {
         let snap = Snapshot { reads: paths.iter().map(|p| read(p)).collect(), ..Default::default() };
-        export_files(Path::new("/a"), Path::new("/s"), &snap)
+        with(roots, |r| export_files(r, &snap))
+    }
+
+    fn run(paths: &[&str]) -> Result<ExportInputs, String> {
+        run_on(&in_tree(), paths)
     }
 
     fn rows(paths: &[&str]) -> Result<Vec<(RootName, String)>, String> {
@@ -323,10 +355,9 @@ mod tests {
     fn each_read_lands_in_its_root_with_a_relative_path() {
         let got = rows(&[
             "/a/engine/vdp.emp",
-            "/a/engine/sound/generated/seq.z80",
             "/a/engine/debug/generated/compression_vectors.emp",
+            "/b/generated/sound/seq.z80",
             "/a/games/demo/config/game.emp",
-            "/a/games/sonic4/config/game.emp",
             "/a/engine/debug/debugger.asm",
             "/s/crates/prelude.emp",
         ])
@@ -336,8 +367,7 @@ mod tests {
             vec![
                 (RootName::Engine, "debug/debugger.asm".to_string()),
                 (RootName::Engine, "vdp.emp".to_string()),
-                (RootName::Game, "demo/config/game.emp".to_string()),
-                (RootName::Game, "sonic4/config/game.emp".to_string()),
+                (RootName::Game, "config/game.emp".to_string()),
                 (RootName::Generated, "debug/compression_vectors.emp".to_string()),
                 (RootName::Generated, "sound/seq.z80".to_string()),
                 (RootName::Sigil, "crates/prelude.emp".to_string()),
@@ -345,9 +375,37 @@ mod tests {
         );
     }
 
+    /// One rule for every game: a game in its own repository gets the same rows as the
+    /// same game inside the engine's checkout, and no row names the game.
+    #[test]
+    fn a_game_outside_the_engine_checkout_is_placed_by_its_own_directory() {
+        let own = SourceRoots::new("/a/engine", "/elsewhere/cherub");
+        let e = run_on(&own, &["/elsewhere/cherub/game_root.asm", "/elsewhere/cherub/src/ship.emp", "/elsewhere/cherub/map.toml", "/a/engine/vdp.emp"])
+            .unwrap();
+        let got: Vec<(RootName, &str)> = e.files.iter().map(|f| (f.root, f.path.as_str())).collect();
+        assert_eq!(got, vec![(RootName::Engine, "vdp.emp"), (RootName::Game, "game_root.asm"), (RootName::Game, "src/ship.emp")]);
+        assert!(e.inputs.iter().any(|i| i.root == "game" && i.path == "map.toml"), "{:?}", e.inputs);
+        let inside = run(&["/a/games/demo/src/ship.emp"]).unwrap();
+        assert_eq!(inside.files[0].path, "src/ship.emp", "the in-tree spelling is the same row");
+    }
+
+    /// Longest root wins: a game directory under the engine root's directory is still
+    /// placed by the root nearest the file.
+    #[test]
+    fn the_longest_root_holding_a_read_owns_it() {
+        let game_in_engine = SourceRoots::new("/a/engine", "/a/engine/sub/game");
+        let got: Vec<(RootName, String)> = run_on(&game_in_engine, &["/a/engine/sub/game/g.emp", "/a/engine/sub/e.emp"])
+            .unwrap()
+            .files
+            .into_iter()
+            .map(|f| (f.root, f.path))
+            .collect();
+        assert_eq!(got, vec![(RootName::Engine, "sub/e.emp".to_string()), (RootName::Game, "g.emp".to_string())]);
+    }
+
     #[test]
     fn blobs_and_toml_are_hashed_inputs_but_not_file_rows() {
-        let e = run(&["/a/engine/data/sine.bin", "/a/games/demo/map.toml", "/a/engine/sound/generated/x.bin", "/a/art/pal/s.bin", "/a/engine/vdp.emp"]).unwrap();
+        let e = run(&["/a/engine/data/sine.bin", "/a/games/demo/map.toml", "/b/generated/sound/x.bin", "/a/art/pal/s.bin", "/a/engine/vdp.emp"]).unwrap();
         assert_eq!(e.files.len(), 1, "only the .emp is a row");
         let got: Vec<(&str, &str)> = e.inputs.iter().map(|i| (i.root.as_str(), i.path.as_str())).collect();
         assert_eq!(
@@ -356,7 +414,7 @@ mod tests {
                 ("aeon", "art/pal/s.bin"),
                 ("engine", "data/sine.bin"),
                 ("engine", "vdp.emp"),
-                ("game", "demo/map.toml"),
+                ("game", "map.toml"),
                 ("generated", "sound/x.bin"),
             ]
         );
@@ -374,31 +432,22 @@ mod tests {
         let mut tool = read("/a/tools/convsym");
         tool.tool = true;
         let snap = Snapshot { reads: vec![tool], ..Default::default() };
-        let e = export_files(Path::new("/a"), Path::new("/s"), &snap).unwrap();
+        let e = with(&in_tree(), |r| export_files(r, &snap)).unwrap();
         assert_eq!(e.tool_exes, vec![ToolExe { name: "convsym".into(), sha256: [9; 32] }]);
         assert!(e.inputs.is_empty() && e.files.is_empty());
     }
 
+    /// A source file under no root is refused naming it and every root with its
+    /// directory, inside the engine's checkout (another game's file, a tool fixture) or
+    /// out of it.
     #[test]
-    fn tools_fixtures_is_the_one_named_hole() {
-        let e = run(&["/a/tools/fixtures/anchor_sweep/f.emp", "/a/tools/fixtures/x.bin"]).unwrap();
-        assert_eq!(e, ExportInputs::default());
-    }
-
-    #[test]
-    fn any_other_read_under_tools_is_an_error_naming_the_path() {
-        for p in ["/a/tools/other.emp", "/a/tools/gen.bin", "/a/tools/fixturesque/x.emp"] {
-            let e = run(&[p]).unwrap_err();
-            assert!(e.contains(p), "{e}");
+    fn a_source_read_outside_every_root_is_an_error_naming_the_path_and_the_roots() {
+        for p in ["/a/other/x.emp", "/a/games/sonic4/config/game.emp", "/a/tools/fixtures/anchor_sweep/f.emp", "/elsewhere/y.asm"] {
+            let e = rows(&["/a/engine/ok.emp", p]).unwrap_err();
+            for want in [p, "`engine` = /a/engine", "`game` = /a/games/demo", "`generated` = /b/generated", "`sigil` = /s"] {
+                assert!(e.contains(want), "the refusal does not name `{want}`: {e}");
+            }
         }
-    }
-
-    #[test]
-    fn a_source_read_outside_every_root_is_an_error_naming_the_path() {
-        let e = rows(&["/a/engine/ok.emp", "/a/other/x.emp"]).unwrap_err();
-        assert!(e.contains("/a/other/x.emp"), "{e}");
-        let e = rows(&["/elsewhere/y.asm"]).unwrap_err();
-        assert!(e.contains("/elsewhere/y.asm"), "{e}");
     }
 
     #[test]
@@ -411,12 +460,14 @@ mod tests {
         let paths: Vec<&Path> = mounted.reads.iter().map(|r| r.path.as_path()).collect();
         assert_eq!(paths, [Path::new("/a/engine/sound/generated/z80_sound_blob.bin"), Path::new("/a/engine/vdp.emp")]);
         assert!(mounted.reads[0].generated, "the generated mark survives the rename");
-        let e = export_files(Path::new("/a"), Path::new("/s"), &mounted).unwrap();
+        let want = vec![("engine", "vdp.emp"), ("generated", "sound/z80_sound_blob.bin")];
+        let e = with(&in_tree(), |r| export_files(r, &mounted)).unwrap();
         let got: Vec<(&str, &str)> = e.inputs.iter().map(|i| (i.root.as_str(), i.path.as_str())).collect();
-        assert_eq!(got, vec![("engine", "vdp.emp"), ("generated", "sound/z80_sound_blob.bin")]);
-        // Unmounted, the same read is an external data file named by its file name only.
-        let raw = export_files(Path::new("/a"), Path::new("/s"), &snap).unwrap();
-        assert!(raw.inputs.iter().any(|i| i.root == "external"), "{:?}", raw.inputs);
+        assert_eq!(got, want);
+        // Unmounted, the read is under the build's generated root directly: the same row.
+        let raw = with(&in_tree(), |r| export_files(r, &snap)).unwrap();
+        let got: Vec<(&str, &str)> = raw.inputs.iter().map(|i| (i.root.as_str(), i.path.as_str())).collect();
+        assert_eq!(got, want);
     }
 
     #[test]
@@ -439,6 +490,17 @@ mod tests {
             conflicts: vec![sigil_span::read_set::Conflict::Read { path: "/a/engine/m.emp".into(), observations: vec![(1, 2), (3, 4)] }],
             ..Default::default()
         };
-        assert!(export_files(Path::new("/a"), Path::new("/s"), &snap).is_err());
+        assert!(with(&in_tree(), |r| export_files(r, &snap)).is_err());
+    }
+
+    #[test]
+    fn the_row_key_is_the_files_placement() {
+        let roots = in_tree();
+        with(&roots, |r| {
+            assert_eq!(source_row_key(r, "/a/games/demo/config/game.emp").unwrap(), (RootName::Game, "config/game.emp".into()));
+            assert_eq!(source_row_key(r, "/b/generated/sound/d.z80").unwrap(), (RootName::Generated, "sound/d.z80".into()));
+            assert!(source_row_key(r, "/a/art/x.bin").is_err());
+            assert!(source_row_key(r, "/a/other/x.emp").unwrap_err().contains("`game` = /a/games/demo"));
+        });
     }
 }
