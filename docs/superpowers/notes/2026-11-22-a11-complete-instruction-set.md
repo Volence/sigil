@@ -413,3 +413,82 @@ Restored with `git restore --source=HEAD -- crates/sigil-frontend-emp/src/preser
 TC (after the last code edit): `sigil-frontend-emp` 148 suites, 2869 passed, 0 failed, 0 ignored;
 `sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
 --test frontend_differential_coverage` 3 suites, 8 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
+
+### Task 4: `move` to and from `usp` (code commit d87bddf4)
+
+The brief's code blocks compiled. One differs from the brief, because the brief contradicted itself: Step 5's
+guard required `size == Some(Width::L)`, so bare `move a2, usp` was refused `[operand.usp-unsupported]`, while
+Step 7 moves both families into `SIZE_DEFAULT_GAP_FAMILIES`, whose row matches only `instruction needs an explicit
+size suffix (.b/.w/.l)`. The differential printed exactly that:
+
+```
+test emp_and_as_front_ends_agree_on_every_generated_m68k_case ... FAILED
+2 front-end disagreement(s) not covered by EXCLUSIONS:
+  `move a2, usp`: emp refused ["[operand.usp-unsupported] `usp` is the 68000 user stack pointer, an operand of `move.l aN, usp` and `move.l usp, aN` only"] | AS bytes 4E714E624E75
+  `move usp, a4`: emp refused ["[operand.usp-unsupported] `usp` is the 68000 user stack pointer, an operand of `move.l aN, usp` and `move.l usp, aN` only"] | AS bytes 4E714E6C4E75
+```
+
+No later task closes it (Tasks 6-12 do not touch `usp` or this row). `is_usp_move` now takes
+`matches!(size, Some(Width::L) | None)`: an unsized `move aN, usp` passes the guard and is refused for its missing
+suffix, as every `move` is. Still refused, never a symbol; every other `usp` operand keeps the named refusal.
+
+Probed beside the guard (frontend_diff link environment, `usp = $1234`; not committed as a test): `jsr usp`,
+`jmp usp`, `bra.w usp`, `bsr.s usp`, `beq.s usp`, `dbra d0, usp`, `pea usp`, `movem.l usp, d0-d1` all refuse
+`[operand.usp-unsupported]`; `move.l usp, a7` / `move.l sp, usp` assemble `4E6F` / `4E67`. One hole that predates
+this task: `move.l #usp, d0` assembles `203C 0000 1234` on BOTH routes (the immediate evaluator reads the
+symbol). Booked `EMP-IMM-REGISTER-WORD`.
+
+**RF step 1, red before implementing.** `("move-to-usp", 1), ("move-from-usp", 1)` deleted from `KNOWN_REFUSED`,
+`the_usp_moves_assemble` and `usp_is_an_operand_of_the_two_moves_only` appended, nothing else changed:
+
+```
+test the_usp_moves_assemble ... FAILED
+thread 'the_usp_moves_assemble' panicked at crates/sigil-harness/tests/emp_a11_golden.rs:79:5:
+assertion `left == right` failed: `.emp`, `move.l a0, usp`
+  left: Err(["[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)", "instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)"])
+ right: Ok([78, 113, 78, 96, 78, 117])
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out
+test emp_assembles_every_68000_instruction_the_shared_encoder_accepts ... FAILED
+    "move-from-usp": [
+        "`move.l usp, a2`: [operand.usp-unsupported] ... `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE) | instruction dropped, ...  ||  `move usp, a2`: [operand.usp-unsupported] ...",
+    ],
+    "move-to-usp": [
+        "`move.l a2, usp`: [operand.usp-unsupported] ... | instruction dropped, ...  ||  `move a2, usp`: [operand.usp-unsupported] ...",
+    ],
+  left: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-from-usp": 1, "move-to-ccr": 11, "move-to-usp": 1, "movem": 4, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+ right: {"andi-sr": 1, "chk": 11, "eori-ccr": 1, "eori-sr": 1, "link": 1, "move-to-ccr": 11, "movem": 4, "ori-sr": 1, "reset": 1, "stop": 1, "trapv": 1, "unlk": 1}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out
+test usp_is_an_operand_of_the_two_moves_only ... FAILED
+thread 'usp_is_an_operand_of_the_two_moves_only' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:51:5:
+assertion `left == right` failed
+  left: [(true, "[operand.usp-unsupported] `usp` is the 68000 user stack pointer, never a symbol; `.emp` has no `move` to or from `usp` yet (EMP-USP-CCR-SURFACE)"), (true, "instruction dropped, a mnemonic, size, or operand did not resolve (a missing import or type in scope?)")]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out
+```
+
+**RF step 2, green.** golden 5 passed, walk 3 passed, `a11_checks` 3 passed, `usp_reserved` 6 passed, differential 7 passed.
+
+**RF step 3, mutation on the clean committed HEAD** (`git status --short` empty). The guard's condition to `false`:
+
+```
+ crates/sigil-frontend-emp/src/lower/code.rs | 2 +-
+-    if ops.iter().any(|o| matches!(o, CodeOperand::Usp)) && !is_usp_move(mnemonic, size, ops) {
++    if ops.iter().any(|o| matches!(o, CodeOperand::Usp)) && false {
+```
+
+`cargo test --release -p sigil-frontend-emp --test a11_checks usp_is`:
+
+```
+test usp_is_an_operand_of_the_two_moves_only ... FAILED
+thread 'usp_is_an_operand_of_the_two_moves_only' panicked at crates/sigil-frontend-emp/tests/a11_checks.rs:56:9:
+`move.l usp, d0`: [(true, "unsupported form: MoveFromUsp requires An,usp / usp,An operands, got [Usp, Dn(0)]")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out
+```
+
+Red on `move.l usp, d0`, as predicted. Without the guard the encoder still refuses it, with an unnamed message:
+the guard is what makes it the named `[operand.usp-unsupported]`. Restored with
+`git restore --source=HEAD -- crates/sigil-frontend-emp/src/lower/code.rs`: 1 passed.
+
+TC (after the last code edit): `sigil-frontend-emp` 150 suites, 2870 passed, 0 failed, 0 ignored;
+`sigil-cli --test frontend_differential` 7 passed; `sigil-harness --test emp_isa_walk_m68k --test emp_a11_golden
+--test frontend_differential_coverage` 3 suites, 9 passed. Clippy clean. BN: `SHAPES 7/7 IDENTICAL`, `STEP0_CMP_END rc=0`.
