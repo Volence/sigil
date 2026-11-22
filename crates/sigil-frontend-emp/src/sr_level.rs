@@ -372,14 +372,20 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
                 Edge::Follow(_) => None,
                 Edge::Return if mnemonic == "rte" => Some(MaskFindingKind::Rte),
                 Edge::Return => judge_level(out.level, &lost_at),
-                // `FallOff` is judged as a tail: control leaves the body here.
-                Edge::TailOut | Edge::BranchOut | Edge::FallOff => {
+                // A transfer out: skipped when it diverges (an assert rail, a
+                // noreturn target), as the stack check's `ExitKind::Defer` does.
+                Edge::TailOut | Edge::BranchOut => {
                     if exit_diverges(&items[idx], noreturn) {
                         None
                     } else {
                         judge_level(out.level, &lost_at)
                     }
                 }
+                // Running off the end is an ordinary way out and never diverges.
+                // `exit_diverges` judges the whole instruction, not the edge: it
+                // would drop a passing assert's `bcc` to the closing label, or the
+                // fall-through of a last `beq Fatal`.
+                Edge::FallOff => judge_level(out.level, &lost_at),
             };
             // Several leaving edges of one instruction are judged on the one OUT
             // state, so their findings are equal: keep the first.
@@ -1227,7 +1233,7 @@ mod tests {
 
     #[test]
     fn a_known_level_with_the_entry_is_judged_by_its_fixed_levels() {
-        // One path masks, the other does not: {ENTRY, 7} at the return.
+        // One path sets level 3, the other does not: {ENTRY, 3} at the return.
         let items = vec![
             tst_d0(),                       // 0
             op("beq", vec![sym(".r")]),     // 1
@@ -1252,5 +1258,62 @@ mod tests {
             found(items),
             vec![(1, MaskFindingKind::Unreached), (4, not_callers(&[7])), (5, not_callers(&[7]))]
         );
+    }
+
+    #[test]
+    fn a_known_set_of_all_nine_bits_is_not_untracked() {
+        let all = (0u8..8).fold(LevelSet::ENTRY, |acc, l| acc.union(LevelSet::only(l)));
+        assert_eq!(
+            judge_level(Level::Known(all), &None),
+            Some(MaskFindingKind::NotTheCallers { levels: vec![0, 1, 2, 3, 4, 5, 6, 7] })
+        );
+        assert_eq!(judge_level(Level::Unknown, &None), Some(MaskFindingKind::Untracked { lost_at: None }));
+    }
+
+    /// save; level 7 (or not); an assert expansion that is the body's last
+    /// statement: its `bcc` skips the rail to the closing label.
+    fn body_ending_in_an_assert(masked: bool) -> Vec<CodeItem> {
+        let mut items = vec![save()]; // 0
+        if masked {
+            items.push(set_sr(0x2700)); // 1
+        } else {
+            items.push(op("nop", vec![])); // 1
+        }
+        items.extend([
+            restore_if(!masked),                                         // 2
+            by_assert(op("bcc", vec![sym(".ok")])),                      // 3: FallOff + Follow
+            by_assert(ins(0, "move", W, vec![O::Reg(Reg::D0), O::PreDec(SP)])), // 4
+            by_assert(op("jmp", vec![sym("AssertFail")])),               // 5: TailOut
+            label(".ok"),                                                // 6
+        ]);
+        items
+    }
+    /// The restore when `yes`, else a `nop` holding its place.
+    fn restore_if(yes: bool) -> CodeItem {
+        if yes {
+            restore()
+        } else {
+            op("nop", vec![])
+        }
+    }
+
+    #[test]
+    fn a_masked_body_ending_in_a_passing_assert_is_found() {
+        assert_eq!(found(body_ending_in_an_assert(true)), vec![(3, not_callers(&[7]))]);
+    }
+
+    #[test]
+    fn an_unmasked_body_ending_in_a_passing_assert_is_clean() {
+        assert_eq!(found(body_ending_in_an_assert(false)), vec![]);
+    }
+
+    #[test]
+    fn a_masked_last_branch_to_a_noreturn_target_still_judges_the_fall_through() {
+        let items = vec![
+            save(),                         // 0
+            set_sr(0x2700),                 // 1
+            op("beq", vec![sym("Fatal")]),  // 2: BranchOut (diverges) + FallOff
+        ];
+        assert_eq!(found_with(items, &["Fatal"]), vec![(2, not_callers(&[7]))]);
     }
 }
