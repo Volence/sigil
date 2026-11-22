@@ -187,3 +187,53 @@ round-trip test (32 such declarations in the aeon ref: the `Sound_*` API, `Music
 own; its engine modules come from the aeon ref. Restored with
 `git checkout c731702c -- crates/sigil-frontend-emp/src/lower/proc.rs`; `git status
 --short` empty.
+
+### Task 3 review fix: FallOff is always judged
+
+Review finding (controller ruled the reviewer right, against the earlier resolution):
+`exit_diverges` judges the whole instruction, not the edge, so skipping a `FallOff` on it
+dropped ordinary exits: a passing assert's `AssertDesugar` `bcc .ok` to the body-closing
+label, and the fall-through of a last `beq Fatal` with `Fatal` noreturn. Fixed in
+4870e983: `FallOff` always judged on the OUT level; `TailOut`/`BranchOut` keep the skip
+(as `ExitKind::Defer` in the stack check). New tests:
+`a_masked_body_ending_in_a_passing_assert_is_found`,
+`an_unmasked_body_ending_in_a_passing_assert_is_clean`,
+`a_masked_last_branch_to_a_noreturn_target_still_judges_the_fall_through`,
+`a_known_set_of_all_nine_bits_is_not_untracked` (`judge_level` on ENTRY + 0..7 →
+`NotTheCallers [0..7]`). Comment in `a_known_level_with_the_entry_is_judged_by_its_fixed_levels`
+corrected to {ENTRY, 3}. sr_level 56 passed; front-end 2979 passed, 0 failed (149 result
+lines; 2975 + 4); clippy exit 0.
+
+Minor 3 (seed helpers for any call operand form): NOT done. `flag_check::transfer_target_sym`
+reads `Sym`, `SymOff`, `AbsSym`, not `PcRel`, so `jsr .h(pc)` returns `None`; per the
+controller's rule seeding is left as it was (`Sym` only), and no
+`a_helper_called_pc_relative_is_walked` test was added.
+
+RF (put the skip back on `FallOff`). From disk:
+`388:                Edge::FallOff => if exit_diverges(&items[idx], noreturn) { None } else { judge_level(out.level, &lost_at) },`
+`git diff --stat`: `sr_level.rs | 2 +-`. `cargo test ... sr_level::tests::a_masked_` RED:
+`a_masked_body_ending_in_a_passing_assert_is_found ... FAILED` (`left: []` /
+`right: [(3, NotTheCallers { levels: [7] })]`) and
+`a_masked_last_branch_to_a_noreturn_target_still_judges_the_fall_through ... FAILED`
+(`left: []` / `right: [(2, NotTheCallers { levels: [7] })]`); `1 passed; 2 failed`.
+Restored with `git checkout 4870e983 -- crates/sigil-frontend-emp/src/sr_level.rs`;
+`git status --short` empty; sr_level 56 passed. Transcript `.stepA-p2a-scratch/t3fix-rf.txt`.
+
+Step 7 re-run with the fixed code: same temporary probe in `check_preserves_sr`, binary
+`sigil-probe` = `4870e983-dirty` (1 modified), outputs `.stepA-p2a-scratch/step7-fix/`.
+W2 liveness (rc 0, printed twice):
+`P2A-FINDING P MaskFinding { idx: 5, span: Span { source: SourceId(0), start: 145, end: 148 }, kind: NotTheCallers { levels: [7] } }`
+
+| shape | rc | CRC/bytes (= baseline) | `P2A-FINDING` lines |
+|---|---|---|---|
+| sonic4 release | 0 | 142a39b9/850262 | 0 |
+| sonic4 debug | 0 | 20acdb67/870606 | 0 |
+| sonic4 config-a | 0 | 2ce7438f/870972 | 0 |
+| sonic4 config-b | 0 | 128361b3/617715 | 0 |
+| sonic4 lean | 0 | f6b07847/798198 | 0 |
+| demo release | 0 | 4587df52/99980 | 0 |
+| demo debug | 0 | 37d66535/106981 | 0 |
+| Cherub release | 0 | 800f166e/104533 | 0 |
+
+Every `.err` present. Reference trees' `git status --short` empty. Restored with
+`git checkout 4870e983 -- crates/sigil-frontend-emp/src/lower/proc.rs`; `git status --short` empty.
