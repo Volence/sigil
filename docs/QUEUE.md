@@ -3482,8 +3482,9 @@ the edge model or the meet is broken. Do not batch them: a moved diagnostic is a
 **The stack-balance check's `transfer` (`crates/sigil-frontend-emp/src/preserves.rs`) does not model `pea`.**
 `pea (a0)` followed by `rts` builds with no stack finding, although the routine returns with four bytes still
 pushed. Piece 2a's `sp_effect` (same file) counts `pea` as a 4-byte push; `transfer` should too, and then the two
-agree on that row. `sp_effect` and `transfer` now differ in three stated ways, each pinned by a row the
-agreement test skips:
+agree on that row. When this entry was opened `sp_effect` and `transfer` differed in the three stated ways
+below; the final review (I3) added four and the re-review (N3) one more, eight in all (listed on `sp_effect`),
+each pinned by a row the agreement test skips:
 
 - `pea <ea>`: `sp_effect` says `Push(4)`, `transfer` does not model it (this entry).
 - `lea` / `pea` with an sp-based source: `sp_effect` says `Lost`, `transfer` exempts `lea (sp), aN`.
@@ -3509,6 +3510,17 @@ reads as `Lost`; `transfer` has the same holes in all but one sub-case (rows mar
   (`c03_cmpm_double_pop`, with a `pea` + `cmpm` pair hiding the imbalance from `transfer`).
 
 The same fix question applies: move `transfer` to `Lost`/bail on these, and prove it neutral.
+
+**Extended by the piece 2a re-review (N3), fixed in `sp_effect` only (`f84de117`).** A push or pop on an
+instruction that takes no size suffix: `st`/`seq` (every `Scc`), `tas`, `nbcd`, `btst`/`bset`/`bclr`/`bchg`
+on memory, with `-(sp)` or `(sp)+`. These are byte operations, so the machine moves sp by 2, but `slot_bytes(None)`
+says 4. `sp_effect` now reads such a line as `Lost`; `transfer` still counts 4 (the same defect, not fixed there).
+Measured before the fix: `u2_btst_pop_min` (`move.l #$27002700, -(sp) / btst #0, (sp)+ / move.w (sp)+, sr /
+addq.l #2, sp / rts` under a save and mask) built clean on master, 7d46ec3d and ae04cac7 and returns at level 7;
+`st (sp)+`, `seq (sp)+`, `tas (sp)+`, `nbcd (sp)+`, `bset #0, (sp)+`, `btst d0, (sp)+` the same. With an explicit
+`.b` the width is right. `movem` always carries a size (an unsized one is refused by the parser). Better later:
+give those mnemonics their true width (2) in both readings. A correct routine stays refused for the same reason
+(`u5_st_roundtrip_correct`: `st -(sp)` then `tst.b (sp)+` inside a bracket; refused since 7d46ec3d).
 
 ## STEPA-P2B-CALLS
 
@@ -3536,12 +3548,19 @@ when 2b lands.
   (`beq Other`), where `Other` masks and returns. Only a LAST unconditional tail is checked against the
   callee (`terminal_external_tail` in `check_preserves_sr`). 2b must judge every tail and branch out, not only
   `bsr`/`jsr`.
+- (Piece 2a re-review, minor.) A local helper that throws away its own return address AND the caller's save, and
+  so returns to the caller's caller at level 7: save; mask; `bsr .h`; restore; `rts`; `.h: addq.l #6, sp / rts`
+  (`c01_helper_drops_return_bsr`), the same through `lea .h(pc), a0 / jsr (a0)` (`c02_helper_drops_return_ptr`),
+  and `.h: addq.l #6, sp / bra .out` back into the caller's tail (`c03_helper_jumps_back_into_caller_tail`). rc 0
+  on master, 7d46ec3d, ae04cac7 and f84de117 (probes in `.stepA-p2a-scratch/rereview/p/`). The helper is walked as
+  a routine of its own and its stack underflows (lost), but the level it leaves at is its entry level; the call in
+  the caller is not judged and changes nothing.
 
 ## STEPA-P2A-FALSE-REFUSALS
 
 - state: open 2026-11-21 (booked by step A piece 2a; re-measured by its final-review fix wave on
-  `sigil-cand-5c01239d`, after F1b on `sigil-cand-1cd657b0` and after F1c on `sigil-cand-ae04cac7`: every row
-  below holds on each unless it says otherwise)  size: `S` each  project: `STEP-A`
+  `sigil-cand-5c01239d`, after F1b on `sigil-cand-1cd657b0`, after F1c on `sigil-cand-ae04cac7` and after the
+  re-review fixes on `sigil-cand-f84de117`: every row below holds on each unless it says otherwise)  size: `S` each  project: `STEP-A`
 - blockedBy: nothing. None occurs in aeon today (0 firings across the 7 shapes and Cherub).
 
 **Correct shapes the level walk refuses.** Each row measured on master (`sigil-base`) and on the fix-wave
@@ -3557,8 +3576,9 @@ binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-
 - A balanced local helper reached only pc-relative (`jsr .h(pc)`, `r2_pcrel_helper_balanced`) or through a pointer
   (`lea .h(pc), a0 / jsr (a0)`, `r3_ptr_helper_balanced`): NOW CLEAN (the fix wave walks every unreached
   instruction as an extra entry). A masking helper reached that way is refused on its own `rts`
-  (`r4_pcrel_helper_masking`, as on master). Remaining nuance: such a helper is walked from its first unreached
-  instruction, not from the label the call names.
+  (`r4_pcrel_helper_masking`, as on master). Since F1b every label in unreached code is an entry, and since the
+  re-review's N2 fix (`f84de117`) a label a call or jump names pc-relative is one too, so such a helper is walked
+  from the label the call names.
 - (Final review M1.) A `d(sp)` read by anything other than `move`/`movea` between save and restore:
   `cmp.w 2(sp), d0` (`f01_disp_read_cmp`): master builds; refused (the read exemption covers only `move`/`movea`
   into a register, so the stack is lost and the restore is untracked). Fix: widen the exempt read to any
@@ -3637,13 +3657,50 @@ compared before and after.
 
 ## STEPA-P2A-KNOWN-ESCAPES
 
-- state: open 2026-11-21 (step A piece 2a final-review fix wave, after F1c `ae04cac7`)  size: `M` overall
-  project: `STEP-A`
+- state: open 2026-11-21 (step A piece 2a final-review fix wave, after F1c `ae04cac7`; corrected and extended
+  after the re-review, re-measured on `sigil-cand-f84de117`)  size: `M` overall  project: `STEP-A`
 - blockedBy: each item names its own home.
 
 **Ways a routine that declares `preserves(sr.mask)` / `preserves(sr)` can still leave at the wrong interrupt
 level and build, after piece 2a.** Each measured on master (`sigil-base`), the reviewed branch tip
-(`sigil-cand-7d46ec3d`) and the fix-wave binary (`sigil-cand-ae04cac7`); probes under `.stepA-p2a-scratch/`.
+(`sigil-cand-7d46ec3d`), the fix-wave binary (`sigil-cand-ae04cac7`) and the re-review fix binary
+(`sigil-cand-f84de117`); probes under `.stepA-p2a-scratch/`. Every row below builds on f84de117.
+
+- **An entry the routine forms by address arithmetic ACROSS instructions** (re-review N1). The walk seeds every
+  code label in unreached code, every `targets` label, every code label whose address is taken, every code label a
+  transfer names in an operand the CFG does not follow, and (the offset-entry hazard) every instruction when one
+  operand writes an offset on a local code label or a displaced indirect jump follows a taken address. It does NOT
+  see an entry made by arithmetic in a second instruction, by the routine's own name plus an offset, by an offset on
+  a data label that lands in code, by a `dc.l .x` cell plus arithmetic, by a label on a data word the CFG runs
+  through, or behind a false `targets(...)` list. Each probe (g01 has its own body, stated on its line) lands on
+  `move.w (sp)+, sr` at depth 0 inside `.x: move.w sr, -(sp) / move.w #$2700, sr / move.w (sp)+, sr / rts`
+  (`.x+6`) and loads the high word of the return address into `sr`. All 13 (`.stepA-p2a-scratch/rereview/p/`): rc 0 on master, rc 1 on 7d46ec3d (the
+  removed `Unreached` pass), rc 0 on ae04cac7 and f84de117.
+  - `a01_reg_addq.emp`: `lea .x(pc), a0 / addq.l #6, a0 / jmp (a0)`.
+  - `a02_lea_disp_reg.emp`: `lea .x(pc), a0 / lea 6(a0), a0 / jmp (a0)`.
+  - `a03_adda_reg.emp`: `moveq #6, d1 / lea .x(pc), a0 / adda.w d1, a0 / jmp (a0)`.
+  - `a10_imm_addr_arith.emp`: `move.l #.x, d0 / addq.l #6, d0 / movea.l d0, a0 / jmp (a0)`.
+  - `a13_jsr_reg_arith.emp`: `lea .x(pc), a0 / addq.l #6, a0 / jsr (a0) / rts`.
+  - `a04_pea_adjust_rts.emp`: `pea .x(pc) / addq.l #6, (sp) / rts` (no jump at all).
+  - `a05_procname_offset_jmp.emp`: `jmp P+10(pc)` (the routine's own name is not a local label).
+  - `a05b_procname_offset_lea.emp`: `lea P+12(pc), a0 / jmp (a0)`.
+  - `a12_data_label_offset.emp`: `lea .d+8(pc), a0 / jmp (a0)` with `.d: dc.w 0` (an offset on a DATA label lands
+    in code).
+  - `a14_data_ptr_cell.emp`: `movea.l .ptr(pc), a0 / addq.l #6, a0 / jmp (a0)` with `.ptr: dc.l .x`.
+  - `a06_data_table_offset.emp`: `move.w .tbl(pc, d1.w), d1 / addq.w #6, d1 / jmp .tbl(pc, d1.w)` with
+    `.tbl: dc.w .x-.tbl`.
+  - `g01_label_on_data_nop.emp`: `lea .mid(pc), a0 / jmp (a0) / move.w sr, -(sp) / move.w #$2700, sr /
+    .mid: dc.w $4E71 / move.w (sp)+, sr / rts` (a label on data is not an entry, but the CFG itself runs through
+    the data word, which the machine executes as `nop`).
+  - `h08_disp_jump_targets_given.emp`: `lea .x(pc), a0 / jmp 6(a0) targets(.x)`: a false, non-empty `targets`
+    list switches the displaced-jump hazard off.
+  The same route into REACHED code (`b06_reg_arith_into_restore.emp`, `lea .via(pc), a0 / subq.l #4, a0 / jmp (a0)`
+  into the reached restore) builds on all four binaries.
+  **Controller's ruling (re-review round): recorded, not closed here.** This is the same class as an interior
+  address formed outside the routine (next rows): the shared CFG cannot see where such a transfer lands, every
+  CFG-based check (the level walk, the stack check, the flag check) has the same blindness, and all 13 build on
+  master too. It belongs to step A piece 4 (unresolved transfers listed and treated as worst case), not to this
+  check. Only an offset written in ONE operand is caught by piece 2a.
 
 - **A code label reached only through a DATA jump table, with no `targets` clause** (`ff-probes/z1`). Found in the
   F1c pass. The table entry `dc.w .mid-.tbl` is data, so `.mid` is neither address-taken (class (c) reads
@@ -3676,11 +3733,19 @@ level and build, after piece 2a.** Each measured on master (`sigil-base`), the r
   `m2_bt_w`, `m_bt`, `m2_bf`: rc 0 on all three binaries. Home: `CFG-BT-BF-EDGES`.
 - **Raw `dc.w` that encodes an `sr` write** (`d10_data_sr`): rc 0 on all three. Home: `STEPA-P2A-OWNER-NOTES` (2).
 - **Calls** (piece 2b): a call to a routine that masks (`a_call_to_a_masking_routine_still_builds`); a local helper
-  that rewrites its caller's saved word (`h01`, `q08`: rc 0 on all three); a mid-body tail or branch out to a
-  non-preserver (`t01`, `t02`: rc 0 on all three, `[proc.sr-undeclared]` warning only). Home: `STEPA-P2B-CALLS`.
+  that rewrites its caller's saved word (`h01`, `q08`: rc 0 on all four); a mid-body tail or branch out to a
+  non-preserver (`t01`, `t02`: rc 0 on all four, `[proc.sr-undeclared]` warning only). Home: `STEPA-P2B-CALLS`.
 - **The S and T bits under bare `preserves(sr)`** (`b01`, `b03`): rc 1 on master, rc 0 on 7d46ec3d and ae04cac7
   (advisory only). Owner decision: `STEPA-P2A-OWNER-NOTES` (1).
 
+- **A local helper that throws away its return address and the caller's save** (`rereview/p/c01`-`c03`): rc 0 on
+  all four binaries. A call route. Home: `STEPA-P2B-CALLS`.
+
 Closed by the fix wave (refused on ae04cac7): c01, c02 (pointer/`targets` block feeding the restore), s02, d12,
-d15, c03 (sp shapes), x1-x4 (pointer or `targets` into dead code or a reached restore), y1-y3 (entry by address
-arithmetic).
+d15, c03 (sp shapes), x1-x4 (pointer or `targets` into dead code or a reached restore), y1-y3 (an offset written
+in one operand: `jmp 6(a0)` after a taken address, `lea .x+6(pc)`, `jmp .x+6(pc)`; NOT the general
+address-arithmetic class, see the first row). Closed by the re-review fixes (refused on f84de117, built on master,
+7d46ec3d and ae04cac7): N2, `jmp .r(pc)` / `jsr .r(pc)` straight into a reached restore
+(`rereview/p/b01_jmp_pcrel_into_restore`, `b05_jsr_pcrel_into_restore`); N3, a push or pop on an instruction with
+no size suffix counted as 4 bytes (`u2_btst_pop_min`, `u_st__sp__`, `u_seq__sp__`, `u_tas__sp__`, `u_nbcd__sp__`,
+`u_bset__0___sp__`, `u_btst__0___sp__`, `u_btst_d0___sp__`; see `STACK-PEA-UNMODELLED`).

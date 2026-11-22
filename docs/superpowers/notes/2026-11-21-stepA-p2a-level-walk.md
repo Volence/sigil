@@ -559,3 +559,56 @@ Re-measure on `sigil-cand-ae04cac7` (committed tree, `tree: clean at capture`):
   `sigil-harness` 70 lines 532, `sigil-frontend-emp` 150 lines 3034. 569 lines, 6415 passed, 0 failed, 4 ignored.
   Expected 6302 + 113 - 0 = 6415. Difference 0.
 - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+
+## Re-review fixes (N2, N3)
+
+Re-review: `.stepA-p2a-scratch/rereview/rereview.md` (verdict "With fixes": N1 ruled recorded, N2 and N3 to fix).
+Code commit `f84de117`. Scratch for this round: `.stepA-p2a-scratch/rf2/`.
+
+- **N2.** `hidden_entries` gains class (d): every local code label a branch, jump or call names in an operand that
+  is not a plain `Sym` (`jmp .r(pc)`, `jsr .h(pc)`, an `AbsSym` form), seeded at `SrState::at_entry()` through the
+  same `code_label_index` rule (no data between), symbols listed by the existing `operand_symbols`. The CFG follows
+  only a plain `Sym`. `address_taken` is now computed once in `mask_findings` and passed to `hidden_entries` and
+  `offset_entry_hazard`. The `at_entry` soundness sentence now says a call that enters is not judged (the c01-c03
+  helpers, `STEPA-P2B-CALLS`).
+- **N3.** `sp_effect` returns `Lost` for a push or pop on an instruction with no size (`instr_size` is `None`):
+  `st`/`Scc`, `tas`, `nbcd`, `btst`/`bset`/`bclr`/`bchg` on memory. `pea`, `rtr`, calls and the immediate cleanup
+  are read before the guard. `movem` always carries a size: `movem d0-d1, -(sp)` is refused by the parser
+  ("movem needs an explicit size suffix (.w or .l)", `rf2/movem_nosize.emp`). `transfer` and `slot_bytes` are
+  untouched; eight stated differences now (doc comment on `sp_effect`, `STACK-PEA-UNMODELLED`).
+
+TDD (`rf2/red.log`, on `ef3195bc` + the new tests): RED `a_pc_relative_jump_into_a_reached_restore_is_found`
+(`left: []` / `right: [(6, Untracked)]`), whole-source `a_pc_relative_jump_into_a_reached_restore_is_refused`,
+`a_pc_relative_call_into_a_reached_restore_is_refused`, `a_pop_on_a_sizeless_instruction_is_refused` (each
+`left: []`), `sp_effect_reads_each_form` (`st -(sp)`: `left: Push(4)` / `right: Lost`). The two "balanced helper
+`jsr .h(pc)`" pins were green already (and stay green). GREEN (`rf2/green.log`): front-end 150 `test result:`
+lines, 3040 passed, 0 failed. Tests added this round: 2 unit, 4 whole-source; table rows `st -(sp)`, `tas (sp)+`,
+`btst #0,(sp)+`, `nbcd -(sp)`, unsized `pea (a0)` (stated differences), `st.b -(sp)`, `btst.b #0,(sp)+` (same).
+`git diff 5a6c2dd8..HEAD -- crates`: 119 `+#[test]`, 0 `-#[test]`. Clippy `--workspace --all-targets -D warnings`:
+exit 0.
+
+RF on `f84de117` (`rf2/rf-n2.txt`, `rf2/rf-n3.txt`; restored with `git checkout f84de117 -- <path>`, status empty):
+- N2: `508:                if false && is_transfer(mnemonic) {` (`sr_level.rs | 2 +-`) ->
+  `a_pc_relative_jump_into_a_reached_restore_is_found` FAILED, `left: []` / `right: [(6, Untracked)]`.
+- N3: `995:    if false && (is_push(ops) || is_pop(ops)) && instr_size(items, idx).is_none() {`
+  (`preserves.rs | 2 +-`) -> `sp_effect_reads_each_form` FAILED, `st -(sp)`: `left: Push(4)` / `right: Lost`.
+
+Re-measure on `sigil-cand-f84de117` (committed tree, `tree: clean at capture`):
+- Probes: 167 (`final-review/p` 72, `ff-probes` 19, `rereview/p` 76), table `rf2/probe-table-f84de117.txt`
+  (ae04cac7 | f84de117). Refused on ae04cac7 and building now: none. Newly refused: N2 `b01`, `b05`; N3 `u2`,
+  `u_st`, `u_seq`, `u_tas`, `u_nbcd`, `u_bset #0`, `u_btst #0`, `u_btst d0` (all wrong routines). The 13 N1 probes
+  (`a01`-`a06`, `a10`, `a12`-`a14`, `a05b`, `g01`, `h08`) and `b06` STILL BUILD: recorded, not fixed (ruling,
+  `STEPA-P2A-KNOWN-ESCAPES`). Other changes: six sources already refused with a hard "needs an explicit size
+  suffix" error (`final-review/p/s05_unsized_push_long_pop`, `rereview/p/u_chk`, `u_cmpa`, `u_move_ccr`, `u_mulu`,
+  `u_tst`) now also get `[proc.preserves-sr-unbalanced]`: the unsized line reaches the walk with no size and is
+  read as `Lost` (rc 1 before and after). `u5_st_roundtrip_correct` (a correct routine) stays refused, now for the
+  N3 reason.
+- BN (`env -u AEON_DIR scripts/step0_shapes_cmp.sh --base sigil-base --cand sigil-cand-f84de117 --aeon-ref
+  <aeon ref>`, rc 0): `SHAPES 7/7 IDENTICAL`, the same seven CRCs as the baseline.
+- RN (`build --project <p> --shape release --report contracts`, all rc 0): sonic4 154 / demo 127 / Cherub 127, all
+  SAME as the Task 0 files. Cherub builds (`-o`, rc 0, 104533 bytes). No `preserves-sr` line in any stderr. No
+  aeon or Cherub shape is refused.
+- W2 plant (`aeon-plant` at `9b80db1d`, line 183 `move.w (sp)+, sr` -> `addq.l #2, sp`): rc 1 at
+  `dma_queue.emp:185:9` (`QueueDMA_Deferrable`, level 7); restored with `git checkout 9b80db1d --
+  engine/system/dma_queue.emp`, status empty, rebuild rc 0, 850262 bytes, CRC `142a39b9`.
+- Whole workspace suite: not run here (the controller runs the strict landing run on the final commit).
