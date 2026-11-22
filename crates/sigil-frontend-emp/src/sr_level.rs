@@ -345,16 +345,21 @@ pub(crate) struct MaskFinding {
 /// The stack is not judged here (the stack-balance check owns that); a lost
 /// stack matters only when it makes a restore unknown.
 ///
-/// Every instruction is walked. While some instruction is not reached, the
-/// lowest-index one becomes one more entry at [`SrState::at_entry`] and the walk
-/// runs again with all entries. Such a block is entered through a pointer or a
-/// `targets(...)` jump, and either jump is itself a way out judged here, so it
-/// can only be taken cleanly at the caller's level. Depth 0 with no saves means
-/// a restore of a word the block did not save is `Unknown` (a finding), and a
-/// meet with a path at another depth or with other saves loses the stack.
+/// Entries the walk cannot see (a pointer, a `targets(...)` jump) can only land
+/// on a label, so after a first walk from the ordinary entries, these labels are
+/// entries too, each at [`SrState::at_entry`] ([`hidden_entries`]): every code
+/// label in code that walk did not reach, every label a `targets(...)` list
+/// names, and every code label whose address the routine takes. Then, while
+/// some instruction is still not reached, the lowest-index one becomes one more
+/// entry and the walk runs again, so every instruction is judged.
+///
+/// Why `at_entry` is sound there: the jump that enters is itself a way out
+/// judged here, so it can only be taken cleanly at the caller's level; at the
+/// label the entry state meets whatever else arrives, and a differing depth or
+/// save list loses the stack, so a restore after it is `Unknown` (a finding).
+/// A data label is not an entry ([`code_label_index`]).
 pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Vec<MaskFinding> {
     let cfg = Cfg::build(items);
-    let mut seeds = entry_seeds(items, &cfg);
     let walk = |seeds: &[(usize, SrState)]| {
         forward_in_states(
             &cfg,
@@ -364,6 +369,10 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
             &|_| true,
         )
     };
+    let mut at = entry_seeds(items, &cfg);
+    let first = walk(&at_entry_states(&at));
+    at.extend(hidden_entries(items, &cfg, &first));
+    let mut seeds = at_entry_states(&at);
     let mut states = walk(&seeds);
     while let Some(idx) = first_unreached(items, &states) {
         seeds.push((idx, SrState::at_entry()));
@@ -421,7 +430,7 @@ fn first_unreached(items: &[CodeItem], states: &BTreeMap<usize, SrState>) -> Opt
 /// at or after the label, so a label followed by another label resolves to the
 /// instruction after both, and a body-closing label is `None` and seeds nothing.
 /// De-duplicated: one seed per instruction.
-fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> Vec<(usize, SrState)> {
+fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
     let mut at: BTreeSet<usize> = BTreeSet::new();
     if let Some(first) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) {
         at.insert(first);
@@ -439,7 +448,100 @@ fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> Vec<(usize, SrState)> {
             _ => {}
         }
     }
-    at.into_iter().map(|idx| (idx, SrState::at_entry())).collect()
+    at
+}
+
+fn at_entry_states(at: &BTreeSet<usize>) -> Vec<(usize, SrState)> {
+    at.iter().map(|&idx| (idx, SrState::at_entry())).collect()
+}
+
+/// The labels an entry the CFG cannot see may land on, as instruction indices:
+/// (a) every code label whose instruction `first` (the walk from the ordinary
+/// entries) did not reach; (b) every label named in an instruction's `targets`
+/// list; (c) every code label whose address the routine takes, that is, a name
+/// in an operand of an instruction that is not a branch, a call or a return.
+fn hidden_entries(items: &[CodeItem], cfg: &Cfg, first: &BTreeMap<usize, SrState>) -> BTreeSet<usize> {
+    let mut at = BTreeSet::new();
+    for item in items {
+        match item {
+            CodeItem::Label { name, .. } => {
+                if let Some(idx) = code_label_index(items, cfg, name) {
+                    if !first.contains_key(&idx) {
+                        at.insert(idx);
+                    }
+                }
+            }
+            CodeItem::Instr { mnemonic, ops, targets, .. } => {
+                for t in targets {
+                    at.extend(code_label_index(items, cfg, t));
+                }
+                if !is_transfer(mnemonic) {
+                    for op in ops {
+                        for name in operand_symbols(op) {
+                            at.extend(code_label_index(items, cfg, &name));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    at
+}
+
+/// The instruction a local label leads to, when only labels and context marks
+/// sit between them. [`Cfg::label_index`] skips data too (the first instruction
+/// at or after the label); a label on data is not a code entry, so `None`.
+fn code_label_index(items: &[CodeItem], cfg: &Cfg, name: &str) -> Option<usize> {
+    let target = cfg.label_index(name)?;
+    let pos = items.iter().position(|it| matches!(it, CodeItem::Label { name: n, .. } if n == name))?;
+    let between_is_code = items[pos..target]
+        .iter()
+        .all(|it| matches!(it, CodeItem::Label { .. } | CodeItem::ContextMark { .. }));
+    between_is_code.then_some(target)
+}
+
+/// A branch, a call or a return: a mnemonic whose symbol operand is where
+/// control goes, not an address the routine takes. `bt`/`bf` are counted here
+/// too (they encode as `bra`/`bsr`).
+fn is_transfer(mnem: &str) -> bool {
+    matches!(mnem, "jmp" | "jsr" | "jbsr" | "jbra" | "jra" | "rts" | "rte" | "rtr" | "rtd")
+        || (mnem.starts_with('b') && (mnem.len() == 2 || mnem.len() == 3))
+        || mnem.starts_with("db")
+        || mnem.starts_with("jb")
+}
+
+/// Every symbol name an operand mentions. Covered: `Sym`, `SymOff`, `PcRel`,
+/// `PcRelIdx`, `AbsSym`, `DispSymInd`, and the `Expr::Sym` leaves of `ImmLink`
+/// and `Z80MemSym`. Every other variant names no symbol.
+fn operand_symbols(op: &CodeOperand) -> Vec<String> {
+    use CodeOperand as O;
+    match op {
+        O::Sym(n) | O::SymOff { sym: n, .. } => vec![n.clone()],
+        O::PcRel { target, .. }
+        | O::PcRelIdx { target, .. }
+        | O::AbsSym { target, .. }
+        | O::DispSymInd { target, .. } => vec![target.clone()],
+        O::ImmLink { target } | O::Z80MemSym { target } => {
+            let mut out = Vec::new();
+            expr_symbols(target, &mut out);
+            out
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn expr_symbols(e: &sigil_ir::expr::Expr, out: &mut Vec<String>) {
+    use sigil_ir::expr::Expr as E;
+    match e {
+        E::Sym(n) => out.push(n.clone()),
+        E::Binary { lhs, rhs, .. } => {
+            expr_symbols(lhs, out);
+            expr_symbols(rhs, out);
+        }
+        E::Unary { operand, .. } => expr_symbols(operand, out),
+        E::Int(_) => {}
+    }
 }
 
 /// The verdict on the level a way out leaves at.
@@ -1219,6 +1321,190 @@ mod tests {
             op("rts", vec![]),                                      // 7
         ];
         assert_eq!(found(items), vec![(7, MaskFindingKind::Untracked)]);
+    }
+
+    // ---- F1b: which labels are extra entries ----
+
+    fn data() -> CodeItem {
+        CodeItem::Inline(crate::value::DataBuf { cells: Vec::new(), size: 0 }, Span { source: SourceId(0), start: 0, end: 0 })
+    }
+    fn jmp_targets(table: &str, targets: &[&str]) -> CodeItem {
+        let mut it = op("jmp", vec![O::PcRelIdx { target: table.to_string(), addend: 0, xn: Reg::D1, xlong: false }]);
+        if let CodeItem::Instr { targets: t, .. } = &mut it {
+            t.extend(targets.iter().map(|s| s.to_string()));
+        }
+        it
+    }
+
+    /// Probe x1: a pointer lands at `.mid`, after a dead save and mask. Entered
+    /// there, the restore pops a word nobody saved.
+    #[test]
+    fn a_pointer_into_the_middle_of_dead_code_is_found() {
+        let items = vec![
+            lea_pc(".mid"),                   // 0
+            op("jmp", vec![O::Ind(Reg::A0)]), // 1
+            label(".top"),                    // 2
+            save(),                           // 3
+            set_sr(0x2700),                   // 4
+            label(".mid"),                    // 5
+            restore(),                        // 6
+            op("rts", vec![]),                // 7
+        ];
+        assert_eq!(found(items), vec![(7, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe x2: the dead code before `.mid` only saves.
+    #[test]
+    fn a_pointer_past_a_dead_save_is_found() {
+        let items = vec![
+            lea_pc(".mid"),                   // 0
+            op("jmp", vec![O::Ind(Reg::A0)]), // 1
+            label(".top"),                    // 2
+            save(),                           // 3
+            label(".mid"),                    // 4
+            restore(),                        // 5
+            op("rts", vec![]),                // 6
+        ];
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe x3: the same landing through `targets(.mid)`.
+    #[test]
+    fn a_targets_jump_into_the_middle_of_dead_code_is_found() {
+        let items = vec![
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D1)]), // 0
+            jmp_targets(".tbl", &[".mid"]),                          // 1
+            label(".tbl"),                                           // 2
+            data(),                                                  // 3
+            label(".top"),                                           // 4
+            save(),                                                  // 5
+            set_sr(0x2700),                                          // 6
+            label(".mid"),                                           // 7
+            restore(),                                               // 8
+            op("rts", vec![]),                                       // 9
+        ];
+        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe x4: a pointer into a REACHED restore. The ordinary path arrives
+    /// with the save on top, the pointer path with nothing: the stack is lost.
+    #[test]
+    fn a_pointer_into_a_reached_restore_is_found() {
+        let items = vec![
+            tst_d0(),                         // 0
+            op("beq", vec![sym(".x")]),       // 1
+            save(),                           // 2
+            set_sr(0x2700),                   // 3
+            label(".mid"),                    // 4
+            restore(),                        // 5
+            op("rts", vec![]),                // 6
+            label(".x"),                      // 7
+            lea_pc(".mid"),                   // 8
+            op("jmp", vec![O::Ind(Reg::A0)]), // 9
+        ];
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// A block entered by a pointer in the middle of an unreached region, with its
+    /// own save and restore after the label, and a dead prefix that touches
+    /// neither the level nor the stack.
+    #[test]
+    fn a_balanced_block_entered_in_the_middle_of_dead_code_is_clean() {
+        let items = vec![
+            lea_pc(".mid"),                                          // 0
+            op("jmp", vec![O::Ind(Reg::A0)]),                        // 1
+            label(".top"),                                           // 2
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D0)]), // 3
+            label(".mid"),                                           // 4
+            save(),                                                  // 5
+            set_sr(0x2700),                                          // 6
+            restore(),                                               // 7
+            op("rts", vec![]),                                       // 8
+        ];
+        assert_eq!(found(items), vec![]);
+    }
+
+    /// `.tbl` names data. `label_index` would resolve it to the instruction after
+    /// the data (the restore at `.r`); seeded there at the caller's level it
+    /// would meet the masked path's save and lose the stack. Not an entry.
+    #[test]
+    fn a_data_label_whose_address_is_taken_is_not_an_entry() {
+        let items = vec![
+            save(),                     // 0
+            set_sr(0x2700),             // 1
+            lea_pc(".tbl"),             // 2
+            op("bra", vec![sym(".r")]), // 3
+            label(".tbl"),              // 4
+            data(),                     // 5
+            label(".r"),                // 6
+            restore(),                  // 7
+            op("rts", vec![]),          // 8
+        ];
+        assert_eq!(found(items), vec![]);
+    }
+
+    /// A masked `targets(...)` dispatch whose arms each restore, one arm also
+    /// reached by an ordinary branch. Pinned as it is: the `jmp` leaves at 7 (the
+    /// walk does not follow `targets`), and each arm, entered at the caller's
+    /// level with nothing saved, pops a word it did not save. Recorded in
+    /// `docs/QUEUE.md` STEPA-P2A-FALSE-REFUSALS.
+    #[test]
+    fn a_masked_targets_dispatch_whose_arms_restore_is_refused() {
+        let items = vec![
+            save(),                                                  // 0
+            set_sr(0x2700),                                          // 1
+            tst_d0(),                                                // 2
+            op("beq", vec![sym(".b")]),                              // 3
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D1)]), // 4
+            jmp_targets(".tbl", &[".a", ".b"]),                      // 5
+            label(".tbl"),                                           // 6
+            data(),                                                  // 7
+            label(".a"),                                             // 8
+            restore(),                                               // 9
+            op("rts", vec![]),                                       // 10
+            label(".b"),                                             // 11
+            restore(),                                               // 12
+            op("rts", vec![]),                                       // 13
+        ];
+        assert_eq!(
+            found(items),
+            vec![(5, not_callers(&[7])), (10, MaskFindingKind::Untracked), (13, MaskFindingKind::Untracked)]
+        );
+    }
+
+    /// Seed class (b) on its own: `.b` is reached by an ordinary branch with the
+    /// save on top and is also a `targets` landing. Without the seed the
+    /// restore at `.b` would be trusted.
+    #[test]
+    fn a_reached_targets_label_is_an_entry() {
+        let items = vec![
+            save(),                                                  // 0
+            tst_d0(),                                                // 1
+            op("beq", vec![sym(".b")]),                              // 2
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D1)]), // 3
+            jmp_targets(".tbl", &[".b"]),                            // 4
+            label(".tbl"),                                           // 5
+            data(),                                                  // 6
+            label(".b"),                                             // 7
+            restore(),                                               // 8
+            op("rts", vec![]),                                       // 9
+        ];
+        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+    }
+
+    /// Seed class (a) on its own: `a0` comes from the caller, so nothing names
+    /// `.mid`, but a label in code the first walk did not reach is an entry.
+    #[test]
+    fn a_label_in_unreached_code_is_an_entry() {
+        let items = vec![
+            op("jmp", vec![O::Ind(Reg::A0)]), // 0
+            label(".top"),                    // 1
+            save(),                           // 2
+            label(".mid"),                    // 3
+            restore(),                        // 4
+            op("rts", vec![]),                // 5
+        ];
+        assert_eq!(found(items), vec![(5, MaskFindingKind::Untracked)]);
     }
 
     #[test]
