@@ -612,3 +612,13 @@ Re-measure on `sigil-cand-f84de117` (committed tree, `tree: clean at capture`):
   `dma_queue.emp:185:9` (`QueueDMA_Deferrable`, level 7); restored with `git checkout 9b80db1d --
   engine/system/dma_queue.emp`, status empty, rebuild rc 0, 850262 bytes, CRC `142a39b9`.
 - Whole workspace suite: not run here (the controller runs the strict landing run on the final commit).
+
+## Strict landing run (controller, 2026-11-21)
+
+`scripts/landing-run.sh --baseline 6302 --aeon <copy of the reference aeon at 9b80db1d>` on `b8d8f7a8`,
+`ORACLE_DIR=/home/volence/sonic_hacks/oracle-old`. RESULT GREEN: 569 suites, 6421 passed, 0 failed, 4 ignored,
+0 skip lines, 569 binaries launched and reported, `6302 baseline + 119 new = 6421 observed`, oracle exports OK,
+ledger gate ok, exit 0. Log: `/home/volence/sonic_hacks/.stepA-p2a-scratch/landing-final-b8d8f7a8.log` (scratch).
+
+An earlier landing run on `ef3195bc` was stopped by the controller before it finished, because the re-review's
+N2 and N3 fixes changed the code again; it produced no verdict and is not evidence of anything.
