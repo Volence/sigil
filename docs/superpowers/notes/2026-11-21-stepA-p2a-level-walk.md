@@ -67,3 +67,23 @@ agreement test stays green by design (that row is a stated difference, skipped).
 RF B (a `.l` single push returns `Push(2)`, line 961): both tests RED. The agreement
 test failed at `assert_eq!(moved, n as i64, "{name}")` (the `transfer`-side depth
 comparison): `move.l d0,-(sp)  left: 4 right: 2`. Restored from 62dc8795, green.
+
+## Task 2: sr_level state, meet, step (red-first)
+
+Green committed first: 9866c3d5. Front-end 2951 passed, 0 failed (149 result lines; 2923 + 28).
+
+RF A (restore arm returns the current level). Mutated line from disk:
+`281:                                level,` (was `level: top.level,`); `git diff --stat`:
+`sr_level.rs | 2 +-`. `save_then_restore_returns_the_saved_level` RED:
+`left: SrState { level: Known(LevelSet(128)), .. depth: 0, saves: [] }`
+`right: SrState { level: Known(LevelSet(256)), .. }` (level 7 instead of ENTRY).
+Restored with `git checkout 9866c3d5 -- crates/sigil-frontend-emp/src/sr_level.rs`;
+`git status --short` empty; green.
+
+RF B (meet on different depths returns `self.clone()`). Inserted line from disk:
+`141: (Stack::Known { depth: da, .. }, Stack::Known { depth: db, .. }) if da != db => return self.clone(),`;
+`git diff --stat`: `sr_level.rs | 1 +`. `meet_of_different_depths_loses_the_stack` RED
+(`left: .. stack: Known { depth: 0, saves: [] }` / `right: .. stack: Lost`).
+`a_push_in_a_loop_settles` TERMINATED (finished in 0.00s) and was RED: the loop head kept
+`Known { depth: 0 }` instead of `Lost`. Restored from 9866c3d5; `git status --short` empty;
+all 28 sr_level tests green.
