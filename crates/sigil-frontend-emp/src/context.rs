@@ -175,7 +175,7 @@ pub(crate) fn forward_in_states<S: Lattice>(
 
 /// The CFG's successor edges for `idx` under `cpu` — the one place the
 /// 68k/Z80 successor models are selected, so no consumer has to remember.
-fn edges_for(cfg: &Cfg, cpu: Cpu, idx: usize) -> Vec<Edge> {
+pub(crate) fn edges_for(cfg: &Cfg, cpu: Cpu, idx: usize) -> Vec<Edge> {
     match cpu {
         Cpu::Z80 => cfg.z80_edges(idx),
         _ => cfg.edges(idx),
