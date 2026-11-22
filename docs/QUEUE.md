@@ -3473,3 +3473,53 @@ of the returned map, since `step` may run on intermediate states.
 Method for each fixpoint walk, one at a time: write the walker's step as a `forward_in_states` closure, prove byte-neutral
 (protocol BN, 7/7 shapes) and report-neutral (RN, three contract reports), and red-first a test that fails when
 the edge model or the meet is broken. Do not batch them: a moved diagnostic is a stop, not an adjustment.
+
+## STACK-PEA-UNMODELLED
+
+- state: open 2026-11-21 (found by step A piece 2a, Task 1 review; measured by the plan's reviewer)  size: `S`  project: `STEP-A`
+- blockedBy: nothing.
+
+**The stack-balance check's `transfer` (`crates/sigil-frontend-emp/src/preserves.rs`) does not model `pea`.**
+`pea (a0)` followed by `rts` builds with no stack finding, although the routine returns with four bytes still
+pushed. Piece 2a's `sp_effect` (same file) counts `pea` as a 4-byte push; `transfer` should too, and then the two
+agree on that row. `sp_effect` and `transfer` now differ in three stated ways, each pinned by a row the
+agreement test skips:
+
+- `pea <ea>`: `sp_effect` says `Push(4)`, `transfer` does not model it (this entry).
+- `lea` / `pea` with an sp-based source: `sp_effect` says `Lost`, `transfer` exempts `lea (sp), aN`.
+- A line that both pushes and pops (`move.w (sp)+, -(sp)`): `sp_effect` says `Lost` (the slot is rewritten),
+  `transfer` takes it as a push (the real net is zero).
+
+Fix: teach `transfer` the `pea` push, then decide for the other two whether `transfer` or `sp_effect` is the one
+to move (the answer must change nothing in the 7 shapes: BN and RN as always).
+
+## STEPA-P2B-CALLS
+
+- state: open 2026-11-21 (booked by step A piece 2a, branch `parcel/stepA-p2a-level-walk`)  size: `M`  project: `STEP-A`
+- blockedBy: piece 2a landing. The second deferred rule below also needs the hardware table (piece 3).
+
+**Piece 2b: calls still do not change the interrupt level.** The 2a walk judges each way out of one routine; a
+`bsr` / `jsr` to a routine that masks and does not restore still builds. Pinned by
+`a_call_to_a_masking_routine_still_builds` in `crates/sigil-frontend-emp/tests/sr_level.rs`, which must change
+when 2b lands.
+
+- The 32 routines in aeon that declare `preserves(sr)` / `preserves(sr.mask)` call 22 routines that declare
+  nothing about the level, so 2b has to decide what an undeclared callee means before it can follow calls.
+- Two deferred rules: (1) the level a `with ints_off { }` acquire set holds until its release; (2) handlers
+  entered at a known level (needs the hardware table, piece 3).
+- `sr_writes_round_trip` (`lower/proc.rs`) survives in 2a only for the context-definition check in `eval/asm.rs`.
+  When that check moves onto the walk it can go.
+
+## STEPA-P2A-FALSE-REFUSALS
+
+- state: open 2026-11-21 (booked by step A piece 2a)  size: `S` each  project: `STEP-A`
+- blockedBy: nothing. None occurs in aeon today (0 firings across the 7 shapes and Cherub).
+
+**Two correct shapes the level walk refuses.**
+
+- A `jmp ... targets(...)` dispatch inside a masked section. The walk does not follow `targets`, so the jump is
+  judged as a way out at the masked level, and the arms are never reached (an arm that sets the level is then
+  `Unreached`). Fix: follow the declared targets as successors.
+- A local helper called pc-relative (`jsr .h(pc)`). Helpers are seeded only from `Sym` call operands
+  (`flag_check::transfer_target_sym` reads `Sym`, `SymOff`, `AbsSym`, not `PcRel`), so a helper reached this way
+  is not walked and its level writes are `Unreached`. Fix: resolve the `PcRel` operand when seeding.

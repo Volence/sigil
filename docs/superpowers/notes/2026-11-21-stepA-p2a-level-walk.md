@@ -282,3 +282,75 @@ empty; sr_level 18 passed. Transcript `.stepA-p2a-scratch/t4-rf.txt`.
 `.stepA-p2a-scratch/t4-sanity/`): sonic4 release rc 0, 142a39b9/850262; sonic4 debug rc 0,
 20acdb67/870606 (both = baseline); 0 `preserves-sr-unbalanced` lines. Aeon ref
 `git status --short` empty.
+
+## Where the answer changes from today
+
+Copied from the plan, plus one row the Task 4 reviewer found (the last row).
+
+| Shape | Today | After 2a |
+|---|---|---|
+| A path that masks and leaves without restoring (W2; also through `move.w (sp)+, d0`, under bare `sr`, or by `bra` to the closing label) | builds | refused |
+| A write to `sr` before the save or after the last restore, when every path is still in order | refused | builds (correct) |
+| A tail or conditional branch out of the routine while masked | builds unless it is the last instruction | refused |
+| An `export` label after the save | builds for the routine itself (only entrants are refused) | refused |
+| A restore after the stack stopped being followable earlier in the routine (`subq #n, sp`, `link`, a `d(sp)` store) | builds | refused. No aeon routine that makes the promise does this today (0 of 32) |
+| A `targets(...)` dispatch inside a masked section, every arm restoring | builds | refused if an arm sets the level (the arms are unreached). A known limit; none in aeon |
+| A call to a routine that masks and does not restore | builds | builds (piece 2b) |
+| Several findings in one routine | one diagnostic, on the `proc` line | one per way out, on that instruction |
+| An `sr` write that leaves the mask bits alone with no save at all (`andi.w #$fffe, sr`; `ori.w #$0001, sr`) | refused | builds (correct: the mask is unchanged) |
+
+## Task 5: whole-tree proof
+
+Candidate: committed tree `7d46ec3d`, `git status --short` empty before the build,
+`CARGO_TARGET_DIR=.stepA-p2a-scratch/target-cand cargo build --release -p sigil-cli`, copied to
+`.stepA-p2a-scratch/sigil-cand-7d46ec3d`; `--version`: `sigil 0.1.0 (7d46ec3d)`, `tree: clean at
+capture, no uncommitted changes` (no `-dirty`).
+
+**BN** (`scripts/step0_shapes_cmp.sh --base sigil-base --cand sigil-cand-7d46ec3d --aeon-ref <aeon ref>`, rc 0):
+```
+SHAPE plain 142a39b9/850262 142a39b9/850262 SAME
+SHAPE debug 20acdb67/870606 20acdb67/870606 SAME
+SHAPE demo 4587df52/99980 4587df52/99980 SAME
+SHAPE demo_debug 37d66535/106981 37d66535/106981 SAME
+SHAPE config_a 2ce7438f/870972 2ce7438f/870972 SAME
+SHAPE config_b 128361b3/617715 128361b3/617715 SAME
+SHAPE lean f6b07847/798198 f6b07847/798198 SAME
+SHAPES 7/7 IDENTICAL
+STEP0_CMP_END rc=0
+```
+
+**RN** (`build --project <p> --shape release --report contracts`, candidate, all rc 0; `diff` against the Task 0
+files): sonic4 diff=0, 154 lines; demo diff=0, 127 lines; Cherub diff=0, 127 lines. Three SAME. Files
+`rn-cand-*.txt` in scratch.
+
+**W2 whole-build plant** (fresh clone `aeon-plant` at `9b80db1d`, clean):
+- Before, `sed -n 183p engine/system/dma_queue.emp`: `        move.w  (sp)+, sr`
+- After the plant: `        addq.l  #2, sp`
+- Candidate, `build --project games/sonic4 --shape release`: rc 1:
+  `.../aeon-plant/engine/system/dma_queue.emp:185:9: [Error] [proc.preserves-sr-unbalanced] \`QueueDMA_Deferrable\` declares \`preserves(sr.mask)\` but this way out can be reached with the interrupt level at 7, not the caller's (a path masks interrupts and does not restore the saved level)`
+  (line 185 is the `rts` after the planted line 183; line 184 is the `ori.b #1, ccr`).
+- BASE binary, same planted tree: rc 0, 850262 bytes (the before/after).
+- `git checkout 9b80db1d -- engine/system/dma_queue.emp`; `git status --short` empty; line 183 restored.
+  Candidate rebuild: rc 0, 850262 bytes, CRC `142a39b9`.
+
+**Aeon's own `build.sh`, four shapes: BLOCKED.** `SIGIL_BUILD` = candidate `sigil`, `SIGIL_EMIT` =
+`emit_sound_blob` from `cargo build --release --locked -p sigil-cli -p sigil-harness --bins` (same target dir),
+run in `aeon-plant` (restored, clean). `build.sh` printed `Assembler: sigil 7d46ec3dafbe (clean at capture ...)`
+and then every one of the four (`./build.sh`, `DEBUG=1 ./build.sh`, `./build.sh demo`, `DEBUG=1 ./build.sh demo`)
+exit 1 in its pre-build pytest lane, before any sigil build: `1 failed, 4262 passed, 3 skipped, 43 deselected`
+(263 s, 251 s, 338 s, 244 s). The one failure each time, unrelated to Sigil:
+`FAILED tools/test_suite_paths.py::test_the_walk_records_its_step_in_the_layout_this_run_actually_has`:
+`AssertionError: UNMEASURABLE: the walk answered /home/volence/sonic_hacks, putting this resolver at
+.stepA-p2a-scratch/aeon-plant/tools/suite_paths.py, which matches none of the layouts this repo has
+({'main-checkout': ..., 'nested-worktree': ('<repo>', '.claude', 'worktrees', '<wt>', 'tools', 'suite_paths.py')})`.
+The test refuses a checkout at a path of that shape. No workaround attempted (brief). The debug shapes are
+covered at the sigil level by BN (debug 20acdb67/870606, demo_debug 37d66535/106981 identical to base), and
+no `preserves-sr-unbalanced` appeared in any of the four logs. Logs `b-*.log` in scratch.
+
+**TC** (`AEON_DIR=<aeon ref> ORACLE_DIR=/home/volence/sonic_hacks/oracle-old`, `cargo test --release
+--workspace --no-fail-fast`, rc 0, log `tc5.log`): 569 `test result:` lines, 6378 passed, 0 failed, 4 ignored.
+Expected: 6302 + 76 (`git diff 5a6c2dd8..HEAD -- crates | grep -cE '^\+[[:space:]]*#\[test\]'` = 76, `^-` = 0)
+= 6378. Observed 6378, difference 0. `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+(Not the strict landing run.)
+
+`docs/QUEUE.md`: added `STACK-PEA-UNMODELLED`, `STEPA-P2B-CALLS`, `STEPA-P2A-FALSE-REFUSALS`.
