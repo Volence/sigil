@@ -51,3 +51,19 @@ Mutated line from disk (`grep -n`):
 
 Restored with `git checkout c7cd74de -- crates/sigil-frontend-emp/src/preserves.rs`;
 `git status --short` clean for that path; re-run: 2 passed, 0 failed.
+
+### Task 1 fix round (review: push-and-pop line)
+
+Stated differences of `sp_effect` from `transfer`, now three: `pea <ea>` is `Push(4)`
+(`transfer` does not model it); a `lea`/`pea` with an sp-based source is `Lost`
+(`transfer` exempts `lea (sp), aN`); an instruction that is both push and pop
+(`move.w (sp)+, -(sp)`) is `Lost` (`transfer` takes it as a push; real net is zero but
+the slot is rewritten). Committed as 62dc8795.
+
+RF A (mutate the guard to `if false && is_push(ops) && is_pop(ops) {`, line 956):
+`sp_effect_reads_each_form` RED, `move.w (sp)+,-(sp)  left: Push(2) right: Lost`. The
+agreement test stays green by design (that row is a stated difference, skipped).
+
+RF B (a `.l` single push returns `Push(2)`, line 961): both tests RED. The agreement
+test failed at `assert_eq!(moved, n as i64, "{name}")` (the `transfer`-side depth
+comparison): `move.l d0,-(sp)  left: 4 right: 2`. Restored from 62dc8795, green.
