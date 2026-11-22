@@ -896,7 +896,6 @@ fn immediate_sp_cleanup_bytes(mnem: &str, ops: &[CodeOperand]) -> Option<i64> {
 /// How one 68000 instruction moves sp, as far as the stack check's own
 /// helpers can say. Built from them so the two readings cannot drift.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))] // Task 2 of step A piece 2a uses it; remove then.
 pub(crate) enum SpEffect {
     /// sp does not move.
     None,
@@ -919,7 +918,6 @@ pub(crate) enum SpEffect {
 /// `Push(4)` (`transfer` does not model it), a `lea`/`pea` whose source is
 /// sp-based is `Lost` (`transfer` exempts `lea (sp), aN` as a read), and an
 /// instruction that is both push and pop is `Lost` (`transfer` takes it as a push).
-#[cfg_attr(not(test), allow(dead_code))] // Task 2 of step A piece 2a uses it; remove then.
 pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     let Some(CodeItem::Instr { mnemonic, ops, .. }) = items.get(idx) else {
         return SpEffect::None;
