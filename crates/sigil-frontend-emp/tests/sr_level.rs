@@ -455,6 +455,50 @@ fn a_data_label_whose_address_is_taken_builds() {
     assert_eq!(lower(&src), vec![]);
 }
 
+const AT_X: &str = "
+.x:
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr
+    rts";
+
+/// Probe y1 (fix wave, F1c): `jmp 6(a0)` lands on the restore at `.x+6`.
+#[test]
+fn a_displaced_jump_after_taking_an_address_is_refused() {
+    let src = routine("clobbers(d0, d1, a0) preserves(sr.mask)", &format!("    lea .x(pc), a0\n    jmp 6(a0){AT_X}"));
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
+/// Probe y3: `jmp .x+6(pc)` on one path.
+#[test]
+fn a_pc_relative_jump_with_an_offset_is_refused() {
+    let src = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        &format!("    tst.w d0\n    beq .y\n    jmp .x+6(pc)\n.y:\n    rts{AT_X}"),
+    );
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 1))], "{d:#?}");
+}
+
+/// The offset hidden in an immediate expression (`ImmLink`).
+#[test]
+fn an_immediate_address_with_an_offset_is_refused() {
+    let src = routine("clobbers(d0, d1, a0) preserves(sr.mask)", &format!("    movea.l #.x+6, a0\n    jmp (a0){AT_X}"));
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
+/// The object-dispatch shape must not be refused.
+#[test]
+fn a_masked_displaced_call_builds() {
+    let src = routine(
+        "clobbers(d0, d1, a0, a1) preserves(sr.mask)",
+        "    move.w sr, -(sp)\n    move.w #$2700, sr\n    jsr 4(a1)\n    move.w (sp)+, sr\n    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
 /// The DEBUG assert rail (`subq #2, sp`, a `d(sp)` store, a jump that never
 /// returns) inside a masked section is not a way out.
 #[test]

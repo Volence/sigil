@@ -14,6 +14,11 @@
 //! Termination: level sets are finite; a stack's depth can grow without bound
 //! along one path, but a `meet` of two different depths is `Lost`, so a loop
 //! that pushes settles at `Lost` after one extra pass.
+//!
+//! Entries: the walk starts at the routine's entries and at every place an
+//! entry it cannot see could land (see [`mask_findings`]). Out of the model, on
+//! purpose: an interior address formed OUTSIDE the routine without an `export`
+//! label (another routine computing `P` plus an offset).
 
 use crate::context::{edges_for, forward_in_states, Lattice};
 use crate::flag_check::{Cfg, Edge};
@@ -358,6 +363,11 @@ pub(crate) struct MaskFinding {
 /// label the entry state meets whatever else arrives, and a differing depth or
 /// save list loses the stack, so a restore after it is `Unknown` (a finding).
 /// A data label is not an entry ([`code_label_index`]).
+///
+/// An entry reached by address arithmetic lands on no label. When a routine has
+/// that hazard ([`offset_entry_hazard`]), EVERY instruction is an entry at
+/// [`SrState::at_entry`] as well. Out of the model, on purpose: an interior
+/// address formed OUTSIDE the routine without an `export` label.
 pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Vec<MaskFinding> {
     let cfg = Cfg::build(items);
     let walk = |seeds: &[(usize, SrState)]| {
@@ -372,6 +382,11 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
     let mut at = entry_seeds(items, &cfg);
     let first = walk(&at_entry_states(&at));
     at.extend(hidden_entries(items, &cfg, &first));
+    if offset_entry_hazard(items, &cfg) {
+        at.extend(
+            items.iter().enumerate().filter(|(_, it)| matches!(it, CodeItem::Instr { .. })).map(|(idx, _)| idx),
+        );
+    }
     let mut seeds = at_entry_states(&at);
     let mut states = walk(&seeds);
     while let Some(idx) = first_unreached(items, &states) {
@@ -471,22 +486,77 @@ fn hidden_entries(items: &[CodeItem], cfg: &Cfg, first: &BTreeMap<usize, SrState
                     }
                 }
             }
-            CodeItem::Instr { mnemonic, ops, targets, .. } => {
+            CodeItem::Instr { targets, .. } => {
                 for t in targets {
                     at.extend(code_label_index(items, cfg, t));
-                }
-                if !is_transfer(mnemonic) {
-                    for op in ops {
-                        for name in operand_symbols(op) {
-                            at.extend(code_label_index(items, cfg, &name));
-                        }
-                    }
                 }
             }
             _ => {}
         }
     }
+    at.extend(address_taken(items, cfg));
     at
+}
+
+/// Class (c) of [`hidden_entries`]: the code labels whose address the routine
+/// takes, a name in an operand of an instruction that is not a branch, a call
+/// or a return.
+fn address_taken(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
+    let mut at = BTreeSet::new();
+    for item in items {
+        if let CodeItem::Instr { mnemonic, ops, .. } = item {
+            if !is_transfer(mnemonic) {
+                for op in ops {
+                    for name in operand_symbols(op) {
+                        at.extend(code_label_index(items, cfg, &name));
+                    }
+                }
+            }
+        }
+    }
+    at
+}
+
+/// Can an entry land on an instruction that has no label? (1) An operand names
+/// a local code label with an offset that is not provably zero: `.x+6(pc)`
+/// (`PcRel` addend), `.x(pc, d0.w)` (`PcRelIdx`: the index is an offset),
+/// `.x+6` absolute (`SymOff`), `.x(a1)` (`DispSymInd`: the register is an
+/// offset), or an immediate (`ImmLink`/`Z80MemSym`) expression that is not just
+/// the bare symbol. `Sym` and `AbsSym` carry no offset. (2) The routine takes
+/// a local code label's address and has an indirect `jmp`/`jsr`/`jbsr` with a
+/// displacement or an index (`d(aN)` with d not 0, `d(aN, Xn)`, `d(pc, Xn)`,
+/// `sym(aN)`) and no `targets` list.
+fn offset_entry_hazard(items: &[CodeItem], cfg: &Cfg) -> bool {
+    use CodeOperand as O;
+    let is_code = |name: &str| code_label_index(items, cfg, name).is_some();
+    let names_code_with_offset = |op: &CodeOperand| match op {
+        O::PcRel { target, addend } => *addend != 0 && is_code(target),
+        O::SymOff { sym, off } => *off != 0 && is_code(sym),
+        O::PcRelIdx { target, .. } | O::DispSymInd { target, .. } => is_code(target),
+        O::ImmLink { target } | O::Z80MemSym { target } => {
+            !matches!(target, sigil_ir::expr::Expr::Sym(_)) && operand_symbols(op).iter().any(|n| is_code(n))
+        }
+        _ => false,
+    };
+    let offset_named = items.iter().any(|it| match it {
+        CodeItem::Instr { ops, .. } => ops.iter().any(names_code_with_offset),
+        _ => false,
+    });
+    if offset_named {
+        return true;
+    }
+    let displaced = |op: &CodeOperand| match op {
+        O::DispInd { disp, .. } => *disp != 0,
+        O::IndIdx { .. } | O::PcRelIdx { .. } | O::DispSymInd { .. } => true,
+        _ => false,
+    };
+    let displaced_jump = items.iter().any(|it| match it {
+        CodeItem::Instr { mnemonic, ops, targets, .. } => {
+            matches!(mnemonic.as_str(), "jmp" | "jsr" | "jbsr") && targets.is_empty() && ops.iter().any(displaced)
+        }
+        _ => false,
+    });
+    displaced_jump && !address_taken(items, cfg).is_empty()
 }
 
 /// The instruction a local label leads to, when only labels and context marks
@@ -1505,6 +1575,85 @@ mod tests {
             op("rts", vec![]),                // 5
         ];
         assert_eq!(found(items), vec![(5, MaskFindingKind::Untracked)]);
+    }
+
+    // ---- F1c: the offset-entry hazard seeds every instruction ----
+
+    fn jmp_disp(mnem: &str, disp: i128, reg: Reg) -> CodeItem {
+        op(mnem, vec![O::DispInd { disp, reg }])
+    }
+    fn lea_pc_plus(target: &str, addend: i64) -> CodeItem {
+        ins(0, "lea", L, vec![O::PcRel { target: target.to_string(), addend }, O::Reg(Reg::A0)])
+    }
+    /// `.x: save; mask; restore; rts`, the body the y probes land inside.
+    fn bracket_at_x() -> Vec<CodeItem> {
+        vec![label(".x"), save(), set_sr(0x2700), restore(), op("rts", vec![])]
+    }
+
+    /// Probe y1: `jmp 6(a0)` after taking `.x`'s address lands on the restore.
+    #[test]
+    fn a_displaced_jump_after_taking_an_address_is_found() {
+        let mut items = vec![lea_pc(".x"), jmp_disp("jmp", 6, Reg::A0)]; // 0, 1
+        items.extend(bracket_at_x()); // 2 label, 3 save, 4 mask, 5 restore, 6 rts
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe y2: the offset is in the taken address, `lea .x+6(pc), a0`.
+    #[test]
+    fn an_address_with_an_offset_is_found() {
+        let mut items = vec![lea_pc_plus(".x", 6), op("jmp", vec![O::Ind(Reg::A0)])]; // 0, 1
+        items.extend(bracket_at_x()); // 2..6
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe y3: `jmp .x+6(pc)` on one path.
+    #[test]
+    fn a_pc_relative_jump_with_an_offset_is_found() {
+        let mut items = vec![
+            tst_d0(),                                                         // 0
+            op("beq", vec![sym(".y")]),                                       // 1
+            op("jmp", vec![O::PcRel { target: ".x".to_string(), addend: 6 }]), // 2
+            label(".y"),                                                      // 3
+            op("rts", vec![]),                                                // 4
+        ];
+        items.extend(bracket_at_x()); // 5 label, 6 save, 7 mask, 8 restore, 9 rts
+        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+    }
+
+    #[test]
+    fn a_hazard_routine_that_never_touches_the_level_or_the_stack_is_clean() {
+        let items = vec![
+            lea_pc(".x"),                                            // 0
+            jmp_disp("jmp", 2, Reg::A0),                             // 1
+            label(".x"),                                             // 2
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D0)]), // 3
+            op("nop", vec![]),                                       // 4
+            op("rts", vec![]),                                       // 5
+        ];
+        assert_eq!(found(items), vec![]);
+    }
+
+    /// A taken address and a plain `jmp (a0)`: no hazard (F1b's label seed covers
+    /// the landing), so a balanced block at the label stays clean.
+    #[test]
+    fn a_plain_indirect_jump_to_a_taken_label_has_no_hazard() {
+        let mut items = vec![lea_pc(".x"), op("jmp", vec![O::Ind(Reg::A0)])];
+        items.extend(bracket_at_x());
+        assert_eq!(found(items), vec![]);
+    }
+
+    /// The object-dispatch shape: `jsr 4(a1)` in a masked, balanced routine that
+    /// takes no local label's address. No hazard; clean.
+    #[test]
+    fn a_displaced_call_with_no_taken_address_has_no_hazard() {
+        let items = vec![
+            save(),                      // 0
+            set_sr(0x2700),              // 1
+            jmp_disp("jsr", 4, Reg::A1), // 2
+            restore(),                   // 3
+            op("rts", vec![]),           // 4
+        ];
+        assert_eq!(found(items), vec![]);
     }
 
     #[test]
