@@ -72,22 +72,16 @@ fn not_the_callers(token: &str, levels: &str) -> String {
     )
 }
 
-fn untracked_at(mnemonic: &str) -> String {
+fn untracked() -> String {
     format!(
-        "{PREFIX}the interrupt level cannot be followed to this way out: it stops being known at \
-         an earlier `{mnemonic}` (restore it with `move.w (sp)+, sr` from the matching \
-         `move.w sr, -(sp)`, with the stack as it was at the save)"
+        "{PREFIX}the interrupt level cannot be followed to this way out (restore it with \
+         `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it was at \
+         the save)"
     )
 }
 
-const NOTE: &str = "the interrupt level stops being known here";
-
 fn err(message: String, line: usize) -> D {
     D { level: Level::Error, message, line }
-}
-
-fn note(line: usize) -> D {
-    D { level: Level::Note, message: NOTE.to_string(), line }
 }
 
 #[test]
@@ -159,7 +153,7 @@ fn ori_with_no_save_is_refused() {
 }
 
 /// Survey variant `h`: the level is saved in a register, which the walk does
-/// not follow; the error names the restore and a note points at it.
+/// not follow; the error is on the way out.
 #[test]
 fn a_register_save_is_refused() {
     let src = routine(
@@ -169,7 +163,7 @@ fn a_register_save_is_refused() {
     let d = lower(&src);
     assert_eq!(
         d,
-        vec![err(untracked_at("move"), line_named(&src, "rts", 0)), note(line_named(&src, "move.w d1, sr", 0))],
+        vec![err(untracked(), line_named(&src, "rts", 0))],
         "{d:#?}"
     );
 }
@@ -270,7 +264,7 @@ fn an_export_label_after_the_save_is_refused_on_its_own() {
     let d = lower(&src);
     assert_eq!(
         d,
-        vec![err(untracked_at("move"), line_named(&src, "rts", 0)), note(line_named(&src, "move.w (sp)+, sr", 0))],
+        vec![err(untracked(), line_named(&src, "rts", 0))],
         "{d:#?}"
     );
 }

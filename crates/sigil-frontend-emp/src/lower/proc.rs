@@ -2634,15 +2634,11 @@ fn check_preserves_sr(
                      (a path masks interrupts and does not restore the saved level)"
                 )
             }
-            MaskFindingKind::Untracked { lost_at: Some((_, mnemonic, _)) } => format!(
+            MaskFindingKind::Untracked => format!(
                 "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
-                 interrupt level cannot be followed to this way out: it stops being known at an \
-                 earlier `{mnemonic}` (restore it with `move.w (sp)+, sr` from the matching \
-                 `move.w sr, -(sp)`, with the stack as it was at the save)"
-            ),
-            MaskFindingKind::Untracked { lost_at: None } => format!(
-                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
-                 interrupt level cannot be followed to this way out"
+                 interrupt level cannot be followed to this way out (restore it with \
+                 `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it \
+                 was at the save)"
             ),
             MaskFindingKind::Unreached => format!(
                 "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
@@ -2656,9 +2652,6 @@ fn check_preserves_sr(
             ),
         };
         push(diags, Level::Error, finding.span, message);
-        if let MaskFindingKind::Untracked { lost_at: Some((_, _, at)) } = &finding.kind {
-            push(diags, Level::Note, *at, "the interrupt level stops being known here".to_string());
-        }
     }
 }
 

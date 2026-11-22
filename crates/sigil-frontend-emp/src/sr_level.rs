@@ -18,7 +18,7 @@
 use crate::context::{edges_for, forward_in_states, Lattice};
 use crate::flag_check::{Cfg, Edge};
 use crate::preserves::{exit_diverges, sp_effect, SpEffect};
-use crate::value::{CodeItem, CodeOperand, ItemAuthor, Reg};
+use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -322,11 +322,8 @@ fn step_inner(items: &[CodeItem], st: &SrState, idx: usize, mnem: &str, ops: &[C
 pub(crate) enum MaskFindingKind {
     /// This way out can be taken at these fixed levels (and perhaps the caller's too).
     NotTheCallers { levels: Vec<u8> },
-    /// The level cannot be followed to this way out. `lost_at`: the lowest-index
-    /// reached instruction, not authored `AssertDesugar`, whose arriving level is
-    /// known and leaving level unknown, or whose arriving stack is known and
-    /// leaving stack lost. Its index, mnemonic and span.
-    Untracked { lost_at: Option<(usize, String, Span)> },
+    /// The level cannot be followed to this way out.
+    Untracked,
     /// The routine leaves by `rte`, which loads the level from the stack.
     Rte,
     /// An instruction that sets the level (`sr` as last operand of a writing
@@ -361,7 +358,6 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
         &|st: &SrState, idx, mnem, ops| step(items, st, idx, mnem, ops),
         &|_| true,
     );
-    let lost_at = loss_point(items, &states);
 
     let mut found: BTreeMap<usize, MaskFinding> = BTreeMap::new();
     for (&idx, st_in) in &states {
@@ -371,21 +367,21 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
             let kind = match edge {
                 Edge::Follow(_) => None,
                 Edge::Return if mnemonic == "rte" => Some(MaskFindingKind::Rte),
-                Edge::Return => judge_level(out.level, &lost_at),
+                Edge::Return => judge_level(out.level),
                 // A transfer out: skipped when it diverges (an assert rail, a
                 // noreturn target), as the stack check's `ExitKind::Defer` does.
                 Edge::TailOut | Edge::BranchOut => {
                     if exit_diverges(&items[idx], noreturn) {
                         None
                     } else {
-                        judge_level(out.level, &lost_at)
+                        judge_level(out.level)
                     }
                 }
                 // Running off the end is an ordinary way out and never diverges.
                 // `exit_diverges` judges the whole instruction, not the edge: it
                 // would drop a passing assert's `bcc` to the closing label, or the
                 // fall-through of a last `beq Fatal`.
-                Edge::FallOff => judge_level(out.level, &lost_at),
+                Edge::FallOff => judge_level(out.level),
             };
             // Several leaving edges of one instruction are judged on the one OUT
             // state, so their findings are equal: keep the first.
@@ -434,35 +430,19 @@ fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> Vec<(usize, SrState)> {
     at.into_iter().map(|idx| (idx, SrState::at_entry())).collect()
 }
 
-/// The lowest-index reached instruction, not authored `AssertDesugar`, whose
-/// arriving level is known and leaving level unknown, or whose arriving stack
-/// is known and leaving stack lost. `None` when there is none.
-fn loss_point(items: &[CodeItem], states: &BTreeMap<usize, SrState>) -> Option<(usize, String, Span)> {
-    states.iter().find_map(|(&idx, st_in)| {
-        let CodeItem::Instr { mnemonic, ops, span, author, .. } = &items[idx] else { return None };
-        if matches!(author, ItemAuthor::AssertDesugar) {
-            return None;
-        }
-        let out = step(items, st_in, idx, mnemonic, ops);
-        let level_lost = matches!(st_in.level, Level::Known(_)) && out.level == Level::Unknown;
-        let stack_lost = matches!(st_in.stack, Stack::Known { .. }) && out.stack == Stack::Lost;
-        (level_lost || stack_lost).then(|| (idx, mnemonic.clone(), *span))
-    })
-}
-
 /// The verdict on the level a way out leaves at.
-fn judge_level(level: Level, lost_at: &Option<(usize, String, Span)>) -> Option<MaskFindingKind> {
+fn judge_level(level: Level) -> Option<MaskFindingKind> {
     match level {
         Level::Known(s) if s.is_entry_only() => None,
         Level::Known(s) => Some(MaskFindingKind::NotTheCallers { levels: s.fixed_levels() }),
-        Level::Unknown => Some(MaskFindingKind::Untracked { lost_at: lost_at.clone() }),
+        Level::Unknown => Some(MaskFindingKind::Untracked),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Width;
+    use crate::value::{ItemAuthor, Width};
     use sigil_span::SourceId;
     use CodeOperand as O;
 
@@ -1011,11 +991,8 @@ mod tests {
             op("rts", vec![]),          // 4
         ];
         // An entrant at `Owner.mid` pops a word it never pushed: the restore's
-        // level is unknown, and it is the place the level was lost.
-        assert_eq!(
-            found(items),
-            vec![(4, MaskFindingKind::Untracked { lost_at: Some((3, "move".to_string(), span_of(3))) })]
-        );
+        // level is unknown.
+        assert_eq!(found(items), vec![(4, MaskFindingKind::Untracked)]);
     }
 
     #[test]
@@ -1031,17 +1008,14 @@ mod tests {
     }
 
     #[test]
-    fn a_register_restore_is_untracked_and_names_where_it_was_lost() {
+    fn a_register_restore_is_untracked() {
         let items = vec![
             ins(0, "move", W, vec![O::Sr, O::Reg(Reg::D1)]), // 0
             set_sr(0x2700),                                   // 1
             ins(0, "move", W, vec![O::Reg(Reg::D1), O::Sr]),  // 2
             op("rts", vec![]),                                // 3
         ];
-        assert_eq!(
-            found(items),
-            vec![(3, MaskFindingKind::Untracked { lost_at: Some((2, "move".to_string(), span_of(2))) })]
-        );
+        assert_eq!(found(items), vec![(3, MaskFindingKind::Untracked)]);
     }
 
     #[test]
@@ -1153,31 +1127,6 @@ mod tests {
     }
 
     #[test]
-    fn the_loss_point_skips_assert_lines() {
-        let items = vec![
-            save(),                                                        // 0
-            set_sr(0x2700),                                                // 1
-            save(),                                                        // 2
-            ins(0, "cmp", W, vec![O::Reg(Reg::D0), O::Reg(Reg::D1)]),      // 3
-            op("beq", vec![sym(".ok")]),                                   // 4
-            by_assert(ins(0, "subq", L, vec![O::Imm(2), O::Reg(SP)])),     // 5: stack known → lost
-            by_assert(op("jmp", vec![sym("AssertFail")])),                 // 6
-            label(".ok"),                                                  // 7
-            restore(),                                                     // 8
-            restore(),                                                     // 9
-            ins(0, "move", W, vec![O::Reg(Reg::D1), O::Sr]),               // 10
-            op("rts", vec![]),                                             // 11
-        ];
-        assert_eq!(
-            found(items),
-            vec![(11, MaskFindingKind::Untracked { lost_at: Some((10, "move".to_string(), span_of(10))) })]
-        );
-        // When the only loss is on an assert line, there is no place to name.
-        let items = vec![by_assert(ins(0, "move", W, vec![O::Reg(Reg::D1), O::Sr])), op("rts", vec![])];
-        assert_eq!(found(items), vec![(1, MaskFindingKind::Untracked { lost_at: None })]);
-    }
-
-    #[test]
     fn a_tail_out_while_masked_is_found() {
         let items = vec![save(), set_sr(0x2700), op("jmp", vec![sym("Other")])];
         assert_eq!(found(items), vec![(2, not_callers(&[7]))]);
@@ -1264,10 +1213,10 @@ mod tests {
     fn a_known_set_of_all_nine_bits_is_not_untracked() {
         let all = (0u8..8).fold(LevelSet::ENTRY, |acc, l| acc.union(LevelSet::only(l)));
         assert_eq!(
-            judge_level(Level::Known(all), &None),
+            judge_level(Level::Known(all)),
             Some(MaskFindingKind::NotTheCallers { levels: vec![0, 1, 2, 3, 4, 5, 6, 7] })
         );
-        assert_eq!(judge_level(Level::Unknown, &None), Some(MaskFindingKind::Untracked { lost_at: None }));
+        assert_eq!(judge_level(Level::Unknown), Some(MaskFindingKind::Untracked));
     }
 
     /// save; level 7 (or not); an assert expansion that is the body's last
