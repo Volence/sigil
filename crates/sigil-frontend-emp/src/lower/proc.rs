@@ -1828,13 +1828,13 @@ fn check_preserves(
     }
 
     // Verification dispatches on the declared SPELLING. A mask claim (bare `sr`
-    // or `sr.mask`) runs the whole-SR round-trip slice — the save/restore pair
-    // restores both halves, so the proof covers the mask wherever it covered
-    // bare `sr`. An EXPLICIT `sr.ccr` additionally runs the CCR slice, which
-    // demands every flag effect sit inside the bracket; bare `sr` runs only
-    // the round-trip slice — its CCR half is UNCHECKED beyond the restore's
-    // presence (a flag write after the restore is invisible here; the gap is
-    // ledgered against S2-D7's dataflow half).
+    // or `sr.mask`) runs `check_preserves_sr`, whose mask half is judged by the
+    // level walk (`sr_level::mask_findings`): every way out must be at the
+    // caller's interrupt level. An EXPLICIT `sr.ccr` additionally runs the CCR
+    // slice, which demands every flag effect sit inside the bracket; bare `sr`
+    // gets no CCR proof here — its CCR half is UNCHECKED beyond the advisory
+    // below (a flag write after the restore is invisible; the gap is ledgered
+    // against S2-D7's dataflow half).
     if pres_sr.mask {
         let before = diags.len();
         check_preserves_sr(
@@ -1846,11 +1846,11 @@ fn check_preserves(
             diags,
         );
         // Advisory (noreturn-tail model, warn tier): bare `preserves(sr)` claims
-        // BOTH halves, but only the mask round-trips through `check_preserves_sr`
+        // BOTH halves, but only the mask is proven by `check_preserves_sr`
         // — its CCR half is otherwise unverified (ledgered against S2-D7). The
         // CCR-bracket walk names a bare-`sr` proc whose condition codes are not
         // provably the caller's at return. Gated on the mask proof PASSING, so it
-        // stays CCR-SPECIFIC: a proc that already failed the round-trip is not
+        // stays CCR-SPECIFIC: a proc that already failed the mask proof is not
         // also nagged about the half it never reached.
         if explicit_bare_sr && diags.len() == before {
             check_ccr_advisory(proc, buf, noreturn, diags);
@@ -2576,9 +2576,10 @@ fn check_preserves_sr(
     // caller the successor's SR — which this slice cannot see. Applied to the
     // EXPLICIT `sr.mask` claim, whose mask round-trip nothing else guards, closing
     // the vacuity that let a fall-through / run-off body pass without proving the
-    // mask survives the leave. A BARE `sr` proc leaves these two shapes to the CCR
-    // advisory (WARN), which keeps its current tail behavior (§2.4) — its mask half
-    // stays the S2-D7 deferral, unchanged.
+    // mask survives the leave. A BARE `sr` proc skips these two refusals: its
+    // fall-off is judged by the level walk below (`sr_level::mask_findings`), on
+    // the level at the fall-off point only (the successor's SR is not seen), and
+    // its CCR half by the advisory (WARN), which keeps its tail behavior (§2.4).
     if token == "sr.mask" {
         if let Some(why) = sr_tail_refusal(proc, buf, Cpu::M68000) {
             push(
@@ -2597,11 +2598,11 @@ fn check_preserves_sr(
     // An UNCONDITIONAL EXTERNAL tail (the QueueDMA_Critical → *.transfer shape):
     // the SR the caller finally sees is the tail-callee's, so the mask claim holds
     // only if that callee ITSELF preserves the mask. A tail to a provable
-    // preserver is CREDITED (the tail edge discharged; the body's own SR writes
-    // must still round-trip below); a tail to anything else is REFUSED, closing
-    // the vacuity hole a mask-claiming tail-only body would pass through. A
-    // transfer INTO a local label (the builder classifies it `Follow`/`FallOff`)
-    // is not an external tail and stays with the round-trip slice.
+    // preserver is CREDITED (the tail edge discharged; the body's own ways out
+    // are still judged by the level walk below); a tail to anything else is
+    // REFUSED, closing the vacuity hole a mask-claiming tail-only body would pass
+    // through. A transfer INTO a local label (the builder classifies it
+    // `Follow`/`FallOff`) is not an external tail and is left to the level walk.
     if let Some(target) = terminal_external_tail(buf, noreturn) {
         if !sr_mask_preservers_credit(sr_mask_preservers, &target) {
             push(
@@ -2729,7 +2730,8 @@ fn sr_mask_preservers_credit(map: &BTreeMap<String, BTreeSet<String>>, target: &
 /// legal — between them only transparent instructions can run, so each save
 /// recaptures the entry CCR.
 ///
-/// Static order only, like [`check_preserves_sr`], and with the same known
+/// Static order only (the mask half of [`check_preserves_sr`] is judged by the
+/// level walk, `sr_level::mask_findings`; this CCR slice is not), with a known
 /// blindness: a conditional branch AROUND the restore is invisible (S2-D7's
 /// dataflow half is the real answer), and the round trip assumes a balanced
 /// stack at the restore (S2-D7(b), the same deferral the context
@@ -2972,13 +2974,12 @@ fn ccr_effect(mnemonic: &str, ops: &[crate::value::CodeOperand]) -> CcrEffect {
 /// outright. (`rtr` pops only CCR; the mask survives it, so the MASK reading
 /// this recognizer serves is unaffected.)
 ///
-/// Two callers share this one recognizer so the two readings of the same idiom
-/// cannot drift: [`check_preserves_sr`] reads a whole proc body against a declared
-/// contract, and the context DEFINITION check
+/// One caller remains: the context DEFINITION check
 /// ([`Evaluator::lower_with`](crate::eval::Evaluator)) reads a `with` bracket's
 /// spliced acquire and release together — the proof that grounds the
 /// [`ItemAuthor::Context`](crate::value::ItemAuthor) exemption in
-/// [`check_clobbers`].
+/// [`check_clobbers`]. [`check_preserves_sr`] no longer calls it: its mask half
+/// is judged by the level walk (`sr_level::mask_findings`, step A piece 2a).
 pub(crate) fn sr_writes_round_trip<'a>(items: impl Iterator<Item = &'a CodeItem>) -> bool {
     use crate::value::{CodeOperand, Reg};
     let mut saved = false;
