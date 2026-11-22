@@ -389,3 +389,56 @@ fn the_same_text_for_sr_and_sr_mask() {
     assert_eq!(bare[0].message.replace("`preserves(sr)`", "`preserves(sr.mask)`"), mask[0].message);
     assert_eq!(bare[0].line, mask[0].line);
 }
+
+// ---- Final review M10 / F5: rows of the notes' table that now build ----
+
+/// A write to `sr` before the save that leaves the level alone, every path in
+/// order: refused by the line-order test (the save is not before the first
+/// write), builds under the walk.
+#[test]
+fn an_sr_write_before_the_save_with_every_path_in_order_builds() {
+    let src = routine(
+        MASK,
+        "    andi.w #$fffe, sr\n    move.w sr, -(sp)\n    move.w #$2700, sr\n    move.w (sp)+, sr\n    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
+/// A write after the last restore that leaves the level alone (probe
+/// `q06_mask_neutral_after`).
+#[test]
+fn a_write_after_the_last_restore_that_leaves_the_level_alone_builds() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)\n    move.w #$2700, sr\n    move.w (sp)+, sr\n    andi.w #$fffe, sr\n    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
+#[test]
+fn a_mask_neutral_write_with_no_save_builds() {
+    let src = routine(MASK, "    andi.w #$fffe, sr\n    rts");
+    assert_eq!(lower(&src), vec![]);
+}
+
+/// Pinned as it is today (probe `b01_bare_eori_s`): only the CCR advisory fires.
+#[test]
+fn an_s_bit_write_under_bare_sr_gets_only_the_ccr_advisory() {
+    // bare `sr` is mask + ccr; the S and T bits are in neither. Recorded for the
+    // owner in docs/QUEUE.md STEPA-P2A-OWNER-NOTES.
+    let src = routine("clobbers(d0) preserves(sr)", "    eori.w #$2000, sr\n    rts");
+    let d = lower(&src);
+    assert_eq!(
+        d,
+        vec![D {
+            level: Level::Warning,
+            message: "[proc.ccr-advisory] `P` declares bare `preserves(sr)` (both halves), but its condition \
+                      codes are not provably the caller's at return: `eori` affects the condition codes \
+                      outside the bracket, declare `preserves(sr.mask)` if only the interrupt mask \
+                      round-trips (path-sensitive flag liveness is S2-D7)"
+                .to_string(),
+            line: line_named(&src, "proc P () clobbers(d0) preserves(sr) {", 0),
+        }],
+        "{d:#?}"
+    );
+}
