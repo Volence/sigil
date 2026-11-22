@@ -3493,6 +3493,23 @@ agreement test skips:
 Fix: teach `transfer` the `pea` push, then decide for the other two whether `transfer` or `sp_effect` is the one
 to move (the answer must change nothing in the 7 shapes: BN and RN as always).
 
+**Extended by the piece 2a final review (I3), fixed in `sp_effect` only.** Four more shapes `sp_effect` now
+reads as `Lost`; `transfer` has the same holes in all but one sub-case (rows marked stated differences in
+`sp_effect_rows`, seven stated differences in all, listed on `sp_effect`):
+
+- A read exemption with a second sp operand: `move.w (sp), 2(sp)` and `move.w (sp), -(sp)`. `transfer` exempts
+  the `(sp)` read and so does not see the store: `move.l (sp), 4(sp)` rewrites a saved register slot unseen by
+  `preserves(dN)`.
+- A bare `a7` destination other than the immediate cleanup: `movea.l (sp), sp` (`transfer` exempts it as a
+  read). `movea.l d0, sp`, `movea.l (sp)+, sp`, `lea 4(sp), sp`, `exg d0, sp` already bail in both.
+- A `movem` whose list holds a7: `movem.l (sp)+, a7` (it loads sp), `movem.l a7, -(sp)`. `transfer` counts a7 as
+  an ordinary member.
+- Two or more `-(sp)` / `(sp)+` operands on one line: `cmpm.w (sp)+, (sp)+` (pops four bytes, `transfer` counts
+  two), `move.w (sp)+, (sp)+`, `addx.w -(sp), -(sp)` (and `subx`/`abcd`/`sbcd`). Measured escape before the fix
+  (`c03_cmpm_double_pop`, with a `pea` + `cmpm` pair hiding the imbalance from `transfer`).
+
+The same fix question applies: move `transfer` to `Lost`/bail on these, and prove it neutral.
+
 ## STEPA-P2B-CALLS
 
 - state: open 2026-11-21 (booked by step A piece 2a, branch `parcel/stepA-p2a-level-walk`)  size: `M`  project: `STEP-A`
@@ -3509,17 +3526,95 @@ when 2b lands.
   entered at a known level (needs the hardware table, piece 3).
 - `sr_writes_round_trip` (`lower/proc.rs`) survives in 2a only for the context-definition check in `eval/asm.rs`.
   When that check moves onto the walk it can go.
+- (Piece 2a final review, M5.) A local helper can rewrite its caller's saved word: `bsr .h` (or `jsr .h(pc)`)
+  with `.h: move.w #$2700, 4(sp) / rts`, between the caller's save and restore, builds clean
+  (`h01_helper_rewrites_save`, `q08_pcrel_helper_stack`; measured on master and on the 2a fix-wave binary). The
+  helper's own walk loses its stack but leaves at its caller's level, so nothing is judged; the caller treats the
+  call as changing nothing.
+- (Piece 2a final review, M4.) A mid-body tail or a conditional branch out, at the caller's level, to a routine
+  that does not preserve the level still builds, as on master: `t01` (`beq .x / jmp Other / .x: rts`) and `t02`
+  (`beq Other`), where `Other` masks and returns. Only a LAST unconditional tail is checked against the
+  callee (`terminal_external_tail` in `check_preserves_sr`). 2b must judge every tail and branch out, not only
+  `bsr`/`jsr`.
 
 ## STEPA-P2A-FALSE-REFUSALS
 
-- state: open 2026-11-21 (booked by step A piece 2a)  size: `S` each  project: `STEP-A`
+- state: open 2026-11-21 (booked by step A piece 2a; re-measured by its final-review fix wave on
+  `sigil-cand-5c01239d`)  size: `S` each  project: `STEP-A`
 - blockedBy: nothing. None occurs in aeon today (0 firings across the 7 shapes and Cherub).
 
-**Two correct shapes the level walk refuses.**
+**Correct shapes the level walk refuses.** Each row measured on master (`sigil-base`) and on the fix-wave
+binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-review/p/`.
 
-- A `jmp ... targets(...)` dispatch inside a masked section. The walk does not follow `targets`, so the jump is
-  judged as a way out at the masked level, and the arms are never reached (an arm that sets the level is then
-  `Unreached`). Fix: follow the declared targets as successors.
-- A local helper called pc-relative (`jsr .h(pc)`). Helpers are seeded only from `Sym` call operands
-  (`flag_check::transfer_target_sym` reads `Sym`, `SymOff`, `AbsSym`, not `PcRel`), so a helper reached this way
-  is not walked and its level writes are `Unreached`. Fix: resolve the `PcRel` operand when seeding.
+- A `jmp ... targets(...)` dispatch inside a masked section whose arms all restore (`r1_masked_targets_all_restore`):
+  master builds; STILL REFUSED, three errors: the `jmp` (judged as a way out at level 7, since the walk does not
+  follow `targets`) and each arm's `rts` (each arm is now walked as an extra entry at the caller's level with
+  nothing pushed, so its `move.w (sp)+, sr` pops a word it did not save: untracked). Fix: follow the declared
+  targets as successors.
+- A balanced local helper reached only pc-relative (`jsr .h(pc)`, `r2_pcrel_helper_balanced`) or through a pointer
+  (`lea .h(pc), a0 / jsr (a0)`, `r3_ptr_helper_balanced`): NOW CLEAN (the fix wave walks every unreached
+  instruction as an extra entry). A masking helper reached that way is refused on its own `rts`
+  (`r4_pcrel_helper_masking`, as on master). Remaining nuance: such a helper is walked from its first unreached
+  instruction, not from the label the call names.
+- (Final review M1.) A `d(sp)` read by anything other than `move`/`movea` between save and restore:
+  `cmp.w 2(sp), d0` (`f01_disp_read_cmp`): master builds; refused (the read exemption covers only `move`/`movea`
+  into a register, so the stack is lost and the restore is untracked). Fix: widen the exempt read to any
+  mnemonic whose `d(sp)` operand is a source only, with one sp operand.
+- (Final review M2.) Taking the address of a stack local between save and restore: `lea (sp), a0`
+  (`f03_lea_local`): master builds; refused (`sp_effect` reads an sp-based `lea`/`pea` source as `Lost`, a
+  deliberate choice: the stack can then be rewritten through `a0`). Fix would need alias tracking of `a0`.
+
+## CFG-BT-BF-EDGES
+
+- state: open 2026-11-21 (found by the step A piece 2a final review, I2; recorded, not fixed on that branch)
+  size: `S`  project: `STEP-A`
+- blockedBy: nothing.
+
+**`bt` and `bf` assemble, but the shared edge model does not know them.** `bt` encodes as `bra` (`$60`) and `bf`
+as `bsr` (`$61`), but `crates/sigil-frontend-emp/src/flag_check.rs`'s edge model lists neither
+(`UNCOND_MNEMONICS`; the call lists, `is_call` in `preserves.rs` and `sr_level.rs`; the conditional test is "three
+letters starting with b"), so every CFG-based check (the level walk, the stack check, the flag check) treats both as
+plain instructions that fall through. Measured: W2 with `beq .leak` written as `bt .leak` builds clean on master
+(`sigil-base`) and on the piece 2a fix-wave binary (`sigil-cand-5c01239d`); the machine always takes the branch and
+returns at level 7. `bt.s`, `bt.w` the same; `bf .h` with `.h: addq.l #6, sp / rts` also builds clean
+(`q03_bf_call`). Neither mnemonic is used in aeon (grep of the aeon ref: 0 lines).
+
+Probe (`q04_bt_plain.emp`):
+
+```
+module m
+proc P () clobbers(d0, d1, a0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    bt .leak
+    move.w (sp)+, sr
+    rts
+.leak:
+    addq.l #2, sp
+    rts
+}
+```
+
+Fix belongs in the shared edge model (`bt` unconditional, `bf` a call), or refuse both mnemonics in the encoder
+(no source uses them). Either way it is its own change, with BN (7 shapes) and the three contract reports
+compared before and after.
+
+## STEPA-P2A-OWNER-NOTES
+
+- state: open 2026-11-21 (step A piece 2a final review, M3 and M8)  size: `S`  project: `STEP-A`
+- blockedBy: owner decision on (1).
+
+**Two things the owner should know about `preserves(sr)` after piece 2a.**
+
+1. Under BARE `preserves(sr)`, a write to the S or T bits that leaves the mask alone (`eori.w #$2000, sr` drops to
+   user mode, `ori.w #$8000, sr` turns trace on) used to be an error and is now only `[proc.ccr-advisory]`
+   (worded about condition codes). Measured: `b01`, `b03` (and `b02` `ori.w #$0001, sr`, `b05` `andi.w #$ff00, sr`)
+   rc 1 on master, rc 0 with the advisory on the fix-wave binary. The reason: bare `sr` is defined as mask + ccr,
+   and the S and T bits are in neither half. Pinned as it is today by
+   `an_s_bit_write_under_bare_sr_gets_only_the_ccr_advisory` (`tests/sr_level.rs`). Owner to decide whether bare
+   `sr` should also cover S/T (for example by keeping the line-order test as an extra condition when the token is
+   bare `sr`).
+2. Raw `dc.w` data inside a routine that encodes an `sr` write (`dc.w $46FC, $2700` is `move.w #$2700, sr`) is not
+   seen by the level walk, and was not seen by the old line-order check either: `d10_data_sr` builds clean on
+   master (`sigil-base`, rc 0) and on the fix-wave binary (rc 0). Data is not an instruction to any CFG check;
+   not provable, recorded so nobody assumes it is covered.

@@ -294,10 +294,10 @@ Copied from the plan, plus one row the Task 4 reviewer found (the last row).
 | A tail or conditional branch out of the routine while masked | builds unless it is the last instruction | refused |
 | An `export` label after the save | builds for the routine itself (only entrants are refused) | refused |
 | A restore after the stack stopped being followable earlier in the routine (`subq #n, sp`, `link`, a `d(sp)` store) | builds | refused. No aeon routine that makes the promise does this today (0 of 32) |
-| A `targets(...)` dispatch inside a masked section, every arm restoring | builds | refused if an arm sets the level (the arms are unreached). A known limit; none in aeon |
+| A `targets(...)` dispatch inside a masked section, every arm restoring | builds | refused: the `jmp` is judged as a way out at the masked level, and since the fix wave each arm is walked as an extra entry and its restore is untracked. A known limit; none in aeon |
 | A call to a routine that masks and does not restore | builds | builds (piece 2b) |
 | Several findings in one routine | one diagnostic, on the `proc` line | one per way out, on that instruction |
-| An `sr` write that leaves the mask bits alone with no save at all (`andi.w #$fffe, sr`; `ori.w #$0001, sr`) | refused | builds (correct: the mask is unchanged) |
+| An `sr` write that leaves the mask bits alone with no save at all (`andi.w #$fffe, sr`; `ori.w #$0001, sr`) | refused | builds (correct for `sr.mask`: the mask is unchanged). Caveat for BARE `preserves(sr)`: a write to the S or T bits (`eori.w #$2000, sr`, `ori.w #$8000, sr`) also only gets `[proc.ccr-advisory]` now, because bare `sr` is mask + ccr and S/T are in neither half (was an error on master). Owner decision: `docs/QUEUE.md` STEPA-P2A-OWNER-NOTES |
 
 ## Task 5: whole-tree proof
 
@@ -354,3 +354,104 @@ Expected: 6302 + 76 (`git diff 5a6c2dd8..HEAD -- crates | grep -cE '^\+[[:space:
 (Not the strict landing run.)
 
 `docs/QUEUE.md`: added `STACK-PEA-UNMODELLED`, `STEPA-P2B-CALLS`, `STEPA-P2A-FALSE-REFUSALS`.
+
+## Final review fix wave
+
+Review: `.stepA-p2a-scratch/final-review/review.md` (verdict "With fixes": I1, I3 to fix; I2 to queue; minors).
+Commits, each with its finding in the body:
+
+| commit | fix |
+|---|---|
+| a3904942 | F3 (M6): `Untracked` has no `lost_at`; `loss_point`, the `Level::Note` and "stops being known at an earlier `{mnemonic}`" removed. Message: "... but the interrupt level cannot be followed to this way out (restore it with `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it was at the save)". `the_loss_point_skips_assert_lines` deleted (it tested only `loss_point`). |
+| 4c5bd15b | F1 (I1): every instruction is walked. While an instruction is unreached, the lowest-index one is added as one more seed at `SrState::at_entry()` and the walk reruns with all seeds. `Unreached` kind, pass and message removed. |
+| c6a49ddc | F2 (I3): `sp_effect` (not `transfer`) returns `Lost` for (a) a read exemption with a second sp operand, (b) any bare-`a7` destination other than the immediate cleanup (own guard), (c) a `movem` list with a7, (d) two or more `-(sp)`/`(sp)+` operands (subsumes the push-and-pop rule). 14 table rows; 9 are stated differences from `transfer` (measured by a temporary print of `transfer` per row, removed before commit); the doc now lists seven stated differences. |
+| 2410158b | F4 (M7): the four stale comments in `lower/proc.rs` (dispatch ~1831, bare-`sr` tail note ~2578, `sr.ccr` slice ~2745, `sr_writes_round_trip` ~2988) now say the mask half is judged by `sr_level::mask_findings`. Comments only. |
+| 5c01239d | F5 (M10): whole-source tests for the rows that now build (write before the save, write after the last restore, `andi.w #$fffe, sr` with no save: each measured rc 1 on `sigil-base`, clean now) and `eori.w #$2000, sr` under bare `sr` pinned to only `[proc.ccr-advisory]`. |
+| (this commit) | F6: `docs/QUEUE.md` (`CFG-BT-BF-EDGES` new, `STACK-PEA-UNMODELLED` / `STEPA-P2B-CALLS` / `STEPA-P2A-FALSE-REFUSALS` extended and re-measured, `STEPA-P2A-OWNER-NOTES` new) and these notes. |
+
+**TDD.** RED before each code fix, logs in scratch:
+- F1 (`ff-f1-red.log`): 7 unit tests and 2 whole-source tests failed on 4c5bd15b's parent with the new tests in place, e.g.
+  `a_pointer_entered_block_feeding_the_restore_is_found` `left: []` / `right: [(6, Untracked)]`,
+  `a_targets_entered_block_feeding_the_restore_is_found` the same, `a_balanced_helper_entered_only_through_a_pointer_is_clean`
+  `left: [(5, Unreached), (6, Unreached)]` / `right: []`, `a_dead_block_feeding_the_restore_is_refused` `left: []`.
+  GREEN (`ff-f1-green.log`): sr_level unit 60, whole-source 19.
+- F2 (`ff-f2-red.log`): `copying_the_top_over_the_saved_word_is_found` `left: []` / `right: [(5, Untracked)]`,
+  `a_double_pop_on_one_line_is_found` `left: []` / `right: [(7, Untracked)]`, `sp_effect_reads_each_form`
+  `move.w (sp),2(sp)  left: None  right: Lost`, and both whole-source twins `left: []`. GREEN (`ff-f2-green.log`):
+  sr_level 62, sp_effect 2, whole-source 21.
+
+**RF** (after committing green; transcripts `ff-f1-rf.txt`, `ff-f2-rf.txt`):
+- F1 on 4c5bd15b. From disk: `368:    while let Some(idx) = first_unreached(items, &states).filter(|_| false) {`;
+  `git diff --stat`: `sr_level.rs | 2 +-`. `a_pointer_entered_block_feeding_the_restore_is_found ... FAILED`,
+  `left: []` / `right: [(6, Untracked)]`, `0 passed; 1 failed`. Restored with `git checkout 4c5bd15b -- <path>`;
+  `git status --short` empty; `1 passed`.
+- F2 A on c6a49ddc (movem-a7 guard off). From disk:
+  `975:    if false && reglist_mask(ops).is_some_and(|m| m & (1 << 15) != 0) {`; `preserves.rs | 2 +-`.
+  `sp_effect_reads_each_form ... FAILED`: `movem.l (sp)+,a7  left: Drop(4)  right: Lost`. Restored, status empty.
+- F2 B on c6a49ddc (double sp-auto guard off). From disk:
+  `971:    if false && ops.iter().filter(|o| is_sp_auto(o)).count() >= 2 {`; `preserves.rs | 2 +-`.
+  `a_double_pop_on_one_line_is_found` (`left: []` / `right: [(7, Untracked)]`) and `sp_effect_reads_each_form`
+  (`move.w (sp)+,-(sp)  left: Push(2)  right: Lost`, the first row the guard covers) FAILED, `0 passed; 2 failed`.
+  Restored from c6a49ddc, status empty, `3 passed`.
+
+**F1 STOP item: a case where the ruling's reasoning does not hold.** The reasoning assumes the extra seed is where
+an unreached block is entered. A pointer or `targets` jump can land in the MIDDLE of an unreached region, after
+code that never runs. The walk then reaches the real entry from the dead prefix, with the dead prefix's save on
+the stack, and never seeds it at the caller's level. Measured (`ff-probes/`):
+
+```
+module m
+proc P () clobbers(d0, d1, a0) preserves(sr.mask) {
+    lea .mid(pc), a0
+    jmp (a0)
+.top:
+    move.w sr, -(sp)
+    move.w #$2700, sr
+.mid:
+    move.w (sp)+, sr
+    rts
+}
+```
+
+| probe | sigil-base | sigil-cand-7d46ec3d (branch before the wave) | sigil-cand-5c01239d (wave) |
+|---|---|---|---|
+| x1 (above) | rc 0 | rc 1 (2 x `Unreached`) | rc 0 |
+| x2 (`.top` only saves) | rc 0 | rc 1 (`Unreached` on the restore) | rc 0 |
+| x3 (same through `jmp .tbl(pc, d1.w) targets(.mid)`) | rc 0 | rc 1 | rc 0 |
+| x4 (pointer into a REACHED restore: `beq .x` ... `.x: lea .mid(pc), a0 / jmp (a0)`) | rc 0 | rc 0 | rc 0 |
+
+On the machine, `jmp (a0)` reaches `.mid` at depth 0 and `move.w (sp)+, sr` loads the high word of the return
+address. x1 to x3 are refused before the wave and build after it: F1 as ruled closes c01/c02 and opens these.
+None is worse than master. x4 is the same root (a pointer target is an entry the walk does not seed) in
+reached code, open on all three binaries. Not adjusted, per the brief; reported for a ruling. A direction that
+covers all four: seed at `at_entry()` every label whose address the routine takes (a `lea`/`pea`/`move` pc-relative
+or absolute operand, a `targets(...)` list), in addition to the unreached loop; it needs its own aeon measurement
+(a label on a data table would seed the instruction after the table).
+
+**Probes re-run** (every file in `final-review/p/`, 72; table `ff-probe-table.txt`; before = `sigil-cand-7d46ec3d`,
+after = `sigil-cand-5c01239d`). Closed (built clean before, refused now): `c01`, `c02` (I1), `s02`, `d12`,
+`d15`, `c03` (I3). `c04`, `c05` were already refused by `[stack.unbalanced]` and now also get the level error.
+Still building clean, by design: `q04`, `m_bt`, `m2_bt_s`, `m2_bt_w` (`bt`) and `q03`, `m2_bf` (`bf`), I2, recorded
+as `CFG-BT-BF-EDGES`, not fixed; `h01`, `q08` (helper rewrites the caller's save) and `t01`, `t02` (tail or branch
+out to a non-preserver), in `STEPA-P2B-CALLS`; `d10` (raw `dc.w`), in `STEPA-P2A-OWNER-NOTES`; `b01`..`b05` (bare
+`sr` S/T/CCR bits, advisory only), owner note. Correct builds: `b04`, `d14`, `f04`, `q06`, `q07`, `m_trapv`,
+`m_chk`. Every other probe: same verdict before and after.
+
+**Whole tree** on `sigil-cand-5c01239d` (built from the committed tree, `git status --short` empty; `--version`
+`sigil 0.1.0 (5c01239d)`, `tree: clean at capture`):
+- BN (`env -u AEON_DIR scripts/step0_shapes_cmp.sh --base sigil-base --cand sigil-cand-5c01239d --aeon-ref <aeon ref>`,
+  rc 0; with `AEON_DIR` set the script stops on `[engine.conflict]`, rc 2): all seven SAME, `SHAPES 7/7 IDENTICAL`,
+  `STEP0_CMP_END rc=0`. So no aeon shape fires `[proc.preserves-sr-unbalanced]`.
+- RN (`build --project <p> --shape release --report contracts`, all rc 0): sonic4 154 lines, demo 127, Cherub 127,
+  each identical to the Task 0 `rn-base-*.txt` (`ff-rn-*.txt`). Cherub builds. Reference trees' status empty.
+- W2 plant (`aeon-plant` at `9b80db1d`, line 183 `move.w (sp)+, sr` -> `addq.l #2, sp`): candidate rc 1,
+  `dma_queue.emp:185:9: [Error] [proc.preserves-sr-unbalanced] \`QueueDMA_Deferrable\` declares
+  \`preserves(sr.mask)\` but this way out can be reached with the interrupt level at 7, ...`; base rc 0, 850262 bytes.
+  Restored with `git checkout 9b80db1d -- engine/system/dma_queue.emp`, status empty; candidate rebuild rc 0,
+  850262 bytes, CRC `142a39b9`.
+- TC (`AEON_DIR=<aeon ref> ORACLE_DIR=/home/volence/sonic_hacks/oracle-old`, split in three because one run did not fit
+  the 10-minute limit: `--workspace --exclude sigil-harness --exclude sigil-frontend-emp` 349 lines 2849 passed,
+  `-p sigil-frontend-emp` 150 lines 3010, `-p sigil-harness` 70 lines 532; all rc 0): 569 `test result:` lines,
+  6391 passed, 0 failed, 4 ignored. Expected 6302 + 89 (`^+ #[test]` in `5a6c2dd8..HEAD -- crates`) - 0 = 6391.
+  Difference 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
