@@ -295,18 +295,33 @@ fn a_helper_entered_through_a_pointer_is_refused() {
         "    lea .h(pc), a0\n    jsr (a0)\n    rts\n.h:\n    move.w #$2700, sr\n    rts",
     );
     let d = lower(&src);
-    assert_eq!(
-        d,
-        vec![err(
-            format!(
-                "{PREFIX}this instruction sets the interrupt level in code the checker cannot reach \
-                 from the routine's entries (entered through a pointer or a computed jump), so it \
-                 cannot be followed"
-            ),
-            line_named(&src, "move.w #$2700, sr", 0)
-        )],
-        "{d:#?}"
+    // The helper is walked as an extra entry and refused on its own `rts`.
+    assert_eq!(d, vec![err(not_the_callers("sr.mask", "7"), line_named(&src, "rts", 1))], "{d:#?}");
+}
+
+/// The final review's I1 probe (`c02_ptr_entry_feeds_restore`): a block reached
+/// only through `jmp (a0)` pushes `$2700` and joins the shared restore. Built
+/// clean before the extra entries; the restore now pops an unknown word.
+#[test]
+fn a_dead_block_feeding_the_restore_is_refused() {
+    let src = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        "    tst.w d0
+    beq .via
+    move.w sr, -(sp)
+    move.w #$2700, sr
+.r:
+    move.w (sp)+, sr
+    rts
+.via:
+    lea .b(pc), a0
+    jmp (a0)
+.b:
+    move.w #$2700, -(sp)
+    bra .r",
     );
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
 /// The DEBUG assert rail (`subq #2, sp`, a `d(sp)` store, a jump that never

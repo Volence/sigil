@@ -161,7 +161,7 @@ fn is_call(mnem: &str) -> bool {
 /// Does this instruction set the level? `stop #imm` loads `sr` from its
 /// immediate; every other write to `sr` has `sr` as its last operand (`sr` can
 /// only be a destination in the 68000's write forms: `move`, `ori`, `andi`,
-/// `eori`). [`step`] and the unreached pass of [`mask_findings`] both ask this.
+/// `eori`).
 fn sets_level(mnem: &str, ops: &[CodeOperand]) -> bool {
     mnem == "stop" || matches!(ops.last(), Some(CodeOperand::Sr))
 }
@@ -326,13 +326,9 @@ pub(crate) enum MaskFindingKind {
     Untracked,
     /// The routine leaves by `rte`, which loads the level from the stack.
     Rte,
-    /// An instruction that sets the level (`sr` as last operand of a writing
-    /// mnemonic, `stop`, `rte`) that the walk never reached. The walk cannot
-    /// vouch for it: it may be entered through a pointer or a `targets(...)` jump.
-    Unreached,
 }
 
-/// One way out (or one unreached level-setting instruction) and why.
+/// One way out and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MaskFinding {
     pub(crate) idx: usize,
@@ -344,20 +340,35 @@ pub(crate) struct MaskFinding {
 /// Sorted by `idx`, at most one finding per instruction.
 ///
 /// Walks from every entry ([`entry_seeds`]) with [`step`], then judges each
-/// leaving edge of each reached instruction on that instruction's OUT state.
+/// leaving edge of each instruction on that instruction's OUT state.
 /// Findings are read from the walk's result, never recorded inside `step`.
 /// The stack is not judged here (the stack-balance check owns that); a lost
 /// stack matters only when it makes a restore unknown.
+///
+/// Every instruction is walked. While some instruction is not reached, the
+/// lowest-index one becomes one more entry at [`SrState::at_entry`] and the walk
+/// runs again with all entries. Such a block is entered through a pointer or a
+/// `targets(...)` jump, and either jump is itself a way out judged here, so it
+/// can only be taken cleanly at the caller's level. Depth 0 with no saves means
+/// a restore of a word the block did not save is `Unknown` (a finding), and a
+/// meet with a path at another depth or with other saves loses the stack.
 pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Vec<MaskFinding> {
     let cfg = Cfg::build(items);
-    let seeds = entry_seeds(items, &cfg);
-    let states = forward_in_states(
-        &cfg,
-        Cpu::M68000,
-        &seeds,
-        &|st: &SrState, idx, mnem, ops| step(items, st, idx, mnem, ops),
-        &|_| true,
-    );
+    let mut seeds = entry_seeds(items, &cfg);
+    let walk = |seeds: &[(usize, SrState)]| {
+        forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            seeds,
+            &|st: &SrState, idx, mnem, ops| step(items, st, idx, mnem, ops),
+            &|_| true,
+        )
+    };
+    let mut states = walk(&seeds);
+    while let Some(idx) = first_unreached(items, &states) {
+        seeds.push((idx, SrState::at_entry()));
+        states = walk(&seeds);
+    }
 
     let mut found: BTreeMap<usize, MaskFinding> = BTreeMap::new();
     for (&idx, st_in) in &states {
@@ -390,15 +401,16 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
             }
         }
     }
-
-    // The unreached pass: a level-setting instruction the walk never reached.
-    for (idx, item) in items.iter().enumerate() {
-        let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
-        if !states.contains_key(&idx) && (sets_level(mnemonic, ops) || mnemonic == "rte") {
-            found.insert(idx, MaskFinding { idx, span: *span, kind: MaskFindingKind::Unreached });
-        }
-    }
     found.into_values().collect()
+}
+
+/// The lowest-index instruction the walk has no state for, if any.
+fn first_unreached(items: &[CodeItem], states: &BTreeMap<usize, SrState>) -> Option<usize> {
+    items
+        .iter()
+        .enumerate()
+        .find(|(idx, it)| matches!(it, CodeItem::Instr { .. }) && !states.contains_key(idx))
+        .map(|(idx, _)| idx)
 }
 
 /// Every place a routine can be entered, each at [`SrState::at_entry`]: the
@@ -1062,35 +1074,118 @@ mod tests {
         assert_eq!(found(items), vec![(5, not_callers(&[7]))]);
     }
 
+    fn lea_pc(target: &str) -> CodeItem {
+        ins(0, "lea", L, vec![O::PcRel { target: target.to_string(), addend: 0 }, O::Reg(Reg::A0)])
+    }
+
     #[test]
-    fn a_helper_entered_through_a_pointer_is_unreached() {
+    fn a_masking_helper_entered_through_a_pointer_is_found_on_its_own_return() {
         let items = vec![
-            ins(0, "lea", L, vec![O::PcRel { target: ".h".to_string(), addend: 0 }, O::Reg(Reg::A0)]), // 0
+            lea_pc(".h"),                     // 0
             op("jsr", vec![O::Ind(Reg::A0)]), // 1
             op("rts", vec![]),                // 2
             label(".h"),                      // 3
             set_sr(0x2700),                   // 4
             op("rts", vec![]),                // 5
         ];
-        assert_eq!(found(items), vec![(4, MaskFindingKind::Unreached)]);
+        assert_eq!(found(items), vec![(5, not_callers(&[7]))]);
     }
 
     #[test]
-    fn an_unreached_rte_and_stop_are_findings() {
+    fn a_balanced_helper_entered_only_through_a_pointer_is_clean() {
+        let items = vec![
+            lea_pc(".h"),                     // 0
+            op("jsr", vec![O::Ind(Reg::A0)]), // 1
+            op("rts", vec![]),                // 2
+            label(".h"),                      // 3
+            save(),                           // 4
+            set_sr(0x2700),                   // 5
+            restore(),                        // 6
+            op("rts", vec![]),                // 7
+        ];
+        assert_eq!(found(items), vec![]);
+    }
+
+    /// The review's I1 shape (probe `c02_ptr_entry_feeds_restore`): a block
+    /// reached only through `jmp (a0)` pushes `$2700` and joins the shared
+    /// restore, which then pops the pushed word, not the save.
+    #[test]
+    fn a_pointer_entered_block_feeding_the_restore_is_found() {
+        let items = vec![
+            tst_d0(),                                               // 0
+            op("beq", vec![sym(".via")]),                           // 1
+            save(),                                                 // 2
+            set_sr(0x2700),                                         // 3
+            label(".r"),                                            // 4
+            restore(),                                              // 5
+            op("rts", vec![]),                                      // 6
+            label(".via"),                                          // 7
+            lea_pc(".b"),                                           // 8
+            op("jmp", vec![O::Ind(Reg::A0)]),                       // 9
+            label(".b"),                                            // 10
+            ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]), // 11
+            op("bra", vec![sym(".r")]),                             // 12
+        ];
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// The same, entered through `jmp .tbl(pc, d1.w) targets(.b)` (probe
+    /// `c01_targets_entry_feeds_restore`; its `dc.w .b-.tbl` table is left out,
+    /// data is not an instruction).
+    #[test]
+    fn a_targets_entered_block_feeding_the_restore_is_found() {
+        let mut jmp = op("jmp", vec![O::PcRelIdx { target: ".tbl".to_string(), addend: 0, xn: Reg::D1, xlong: false }]);
+        if let CodeItem::Instr { targets, .. } = &mut jmp {
+            targets.push(".b".to_string());
+        }
+        let items = vec![
+            tst_d0(),                                                // 0
+            op("beq", vec![sym(".via")]),                            // 1
+            save(),                                                  // 2
+            set_sr(0x2700),                                          // 3
+            label(".r"),                                             // 4
+            restore(),                                               // 5
+            op("rts", vec![]),                                       // 6
+            label(".via"),                                           // 7
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D1)]), // 8
+            jmp,                                                     // 9
+            label(".tbl"),                                           // 10
+            label(".b"),                                             // 11
+            ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]),  // 12
+            op("bra", vec![sym(".r")]),                              // 13
+        ];
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// Every instruction is walked: an unreached `stop` then `rte` is judged as
+    /// an `rte`, and the unreached `ori` after it (a second extra entry) falls
+    /// off the end at level 7.
+    #[test]
+    fn unreached_rte_stop_and_ori_are_walked() {
+        let items = vec![
+            op("rts", vec![]),                // 0
+            op("stop", vec![O::Imm(0x2700)]), // 1
+            op("rte", vec![]),                // 2
+            logic_sr("ori", 0x0700),          // 3
+        ];
+        assert_eq!(found(items), vec![(2, MaskFindingKind::Rte), (3, not_callers(&[7]))]);
+    }
+
+    #[test]
+    fn an_unreached_rte_under_a_mask_is_still_an_rte() {
+        let items = vec![op("rts", vec![]), save(), set_sr(0x2700), op("rte", vec![])];
+        assert_eq!(found(items), vec![(3, MaskFindingKind::Rte)]);
+    }
+
+    #[test]
+    fn unreached_code_that_never_touches_the_level_or_the_stack_is_clean() {
         let items = vec![
             op("rts", vec![]),
-            op("stop", vec![O::Imm(0x2700)]),
-            op("rte", vec![]),
-            logic_sr("ori", 0x0700),
+            ins(0, "moveq", None, vec![O::Imm(0), O::Reg(Reg::D0)]),
+            op("nop", vec![]),
+            op("rts", vec![]),
         ];
-        assert_eq!(
-            found(items),
-            vec![
-                (1, MaskFindingKind::Unreached),
-                (2, MaskFindingKind::Unreached),
-                (3, MaskFindingKind::Unreached),
-            ]
-        );
+        assert_eq!(found(items), vec![]);
     }
 
     #[test]
@@ -1197,16 +1292,15 @@ mod tests {
     fn one_finding_per_instruction_sorted_by_index() {
         let items = vec![
             op("bra", vec![sym(".go")]),     // 0
-            set_sr(0x2700),                  // 1: unreached
+            set_sr(0x2700),                  // 1: reached only as an extra entry
             label(".go"),                    // 2
             set_sr(0x2700),                  // 3
             op("beq", vec![sym("Other")]),   // 4: BranchOut + Follow
             op("beq", vec![sym("Other2")]),  // 5: BranchOut + FallOff, one finding
         ];
-        assert_eq!(
-            found(items),
-            vec![(1, MaskFindingKind::Unreached), (4, not_callers(&[7])), (5, not_callers(&[7]))]
-        );
+        // The unreached `move` (1) is walked as an extra entry; its only edge
+        // is a Follow, so it is not a finding itself.
+        assert_eq!(found(items), vec![(4, not_callers(&[7])), (5, not_callers(&[7]))]);
     }
 
     #[test]

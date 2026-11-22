@@ -2640,12 +2640,6 @@ fn check_preserves_sr(
                  `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it \
                  was at the save)"
             ),
-            MaskFindingKind::Unreached => format!(
-                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
-                 instruction sets the interrupt level in code the checker cannot reach from the \
-                 routine's entries (entered through a pointer or a computed jump), so it cannot \
-                 be followed"
-            ),
             MaskFindingKind::Rte => format!(
                 "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but leaves \
                  by `rte`, which loads the interrupt level from the stack"
