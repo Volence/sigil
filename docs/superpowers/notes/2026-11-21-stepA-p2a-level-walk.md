@@ -146,3 +146,44 @@ All five: `test result: FAILED. 0 passed; 1 failed`, then after restore
 `.stepA-p2a-scratch/t3-rf.txt`. (The harness moved the RF run to the background after
 180 s; it completed with exit 0 and the transcript was read only after all ten result
 lines were present.)
+
+### Task 3 Step 7: ask aeon before wiring
+
+Temporary, uncommitted patch in `lower/proc.rs` `check_preserves_sr`, just before its
+`sr_writes_round_trip` test (no diagnostic, no environment variable):
+
+    for finding in crate::sr_level::mask_findings(&buf.items, noreturn) {
+        eprintln!("P2A-FINDING {} {:?}", proc.name, finding);
+    }
+
+Built `cargo build --release -p sigil-cli` (target-cand), copied to
+`.stepA-p2a-scratch/sigil-probe` (`sigil 0.1.0 (c731702c-dirty)`, 1 modified). Outputs and
+stderr under `.stepA-p2a-scratch/step7/`. Every build rc 0, every `.bin` and `.err` present.
+
+Probe is live: `sigil-probe emp step7/w2_planted.emp --hex` (rc 0) printed (twice, once
+per call of `check_preserves_sr` for the proc):
+
+    P2A-FINDING P MaskFinding { idx: 5, span: Span { source: SourceId(0), start: 145, end: 148 }, kind: NotTheCallers { levels: [7] } }
+
+Shapes (`build --project <tree>/games/<game> --shape <row> -o step7/<game>-<row>.bin`,
+`AEON_DIR=` the aeon ref; Cherub `build --project .cherub-stepA-p1-ref --shape release`):
+
+| shape | rc | bytes / CRC (same as baseline) | `P2A-FINDING` lines |
+|---|---|---|---|
+| sonic4 release | 0 | 142a39b9/850262 | 0 |
+| sonic4 debug | 0 | 20acdb67/870606 | 0 |
+| sonic4 config-a | 0 | 2ce7438f/870972 | 0 |
+| sonic4 config-b | 0 | 128361b3/617715 | 0 |
+| sonic4 lean | 0 | f6b07847/798198 | 0 |
+| demo release | 0 | 4587df52/99980 | 0 |
+| demo debug | 0 | 37d66535/106981 | 0 |
+| Cherub release | 0 | 800f166e/104533 | 0 |
+
+No finding in any aeon or Cherub shape. Coverage: the probe sits in `check_preserves_sr`,
+so it saw the procs that declare `preserves(sr)`/`preserves(sr.mask)` and reach the
+round-trip test (32 such declarations in the aeon ref: the `Sound_*` API, `Music_Service`,
+`QueueDMA_*`, `DMA_Deferrable_DestPending`, `VSync_Wait`, `Parallax_Update`,
+`Section_RedrawPlanes`, `BG_Init`, `GameState_OJZScroll_Init`). Cherub declares none of its
+own; its engine modules come from the aeon ref. Restored with
+`git checkout c731702c -- crates/sigil-frontend-emp/src/lower/proc.rs`; `git status
+--short` empty.
