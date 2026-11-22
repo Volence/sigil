@@ -455,3 +455,67 @@ out to a non-preserver), in `STEPA-P2B-CALLS`; `d10` (raw `dc.w`), in `STEPA-P2A
   6391 passed, 0 failed, 4 ignored. Expected 6302 + 89 (`^+ #[test]` in `5a6c2dd8..HEAD -- crates`) - 0 = 6391.
   Difference 0.
 - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+
+### F1b: which labels are extra entries (1cd657b0)
+
+Coordinator ruling after the F1 STOP. After a first walk from the ordinary entries, `mask_findings` also seeds
+at `SrState::at_entry()`: (a) every code label whose instruction that walk did not reach; (b) every label in any
+`targets` list; (c) every code label whose address the routine takes (a symbol in an operand of an instruction
+that is not a branch, call or return: `is_transfer`). The lowest-unreached loop stays; seeds are a `BTreeSet`.
+Symbols are read by `operand_symbols`: `Sym`, `SymOff`, `PcRel`, `PcRelIdx`, `AbsSym`, `DispSymInd`, and the
+`Expr::Sym` leaves of `ImmLink` and `Z80MemSym`; no other variant carries a symbol. `Cfg::label_index` returns the
+first instruction at or after a label EVEN WITH DATA BETWEEN, so `code_label_index` also requires that only
+labels and context marks sit between the label and that instruction (a data label is not an entry).
+
+TDD: 10 new unit tests and 5 whole-source tests; RED on 5c01239d (`ff-f1b-red.log`): 7 unit and 4 whole-source
+failed (`left: []` for x1, x2, x3, x4, the unreached-label and reached-targets tests; the masked-dispatch test
+missing its `(13, Untracked)`); the two data-label tests and the balanced-mid-block test were already green
+(they pin non-entries). GREEN (`ff-f1b-green.log`): sr_level unit 71, whole-source 30; front-end 3024 passed.
+
+RF on 1cd657b0 (`ff-f1b-rf.txt`), each quoted from disk, `git diff --stat` `sr_level.rs | 2 +-`, restored with
+`git checkout 1cd657b0 -- <path>`, status empty, re-run green:
+- (a) `469:                    if false && !first.contains_key(&idx) {` -> `a_label_in_unreached_code_is_an_entry`
+  FAILED, `left: []` / `right: [(5, Untracked)]`.
+- (b) `475:                for t in targets.iter().filter(|_| false) {` -> `a_reached_targets_label_is_an_entry`
+  FAILED, `left: []` / `right: [(9, Untracked)]`.
+- (c) `478:                if false && !is_transfer(mnemonic) {` -> `a_pointer_into_a_reached_restore_is_found`
+  FAILED, `left: []` / `right: [(6, Untracked)]`.
+- data label `501:    (between_is_code || true).then_some(target)` ->
+  `a_data_label_whose_address_is_taken_is_not_an_entry` FAILED, `left: [(8, Untracked)]` / `right: []`.
+
+**F1b STOP item: an entry need not land on a label.** Address arithmetic reaches an instruction with no label,
+and the walk seeds the label instead. Each was refused on 7d46ec3d (the old unreached pass saw the sr writes) and
+builds on 5c01239d and 1cd657b0; master builds all three. On the machine each lands on the restore at depth 0 and
+loads the high word of the return address into `sr`.
+
+```
+module m
+proc P () clobbers(d0, d1, a0) preserves(sr.mask) {
+    lea .x(pc), a0
+    jmp 6(a0)              ; y1. y2: `lea .x+6(pc), a0 / jmp (a0)`. y3: `jmp .x+6(pc)` on one path
+.x:
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr       ; .x+6
+    rts
+}
+```
+
+y1 bytes on 1cd657b0: `41 FA 00 06 4E E8 00 06 40 E7 46 FC 27 00 46 DF 4E 75` (`.x` = 8, `6(a0)` = 14 = `46 DF`).
+Not adjusted. Seeding by label cannot see these; options for the ruling: treat every instruction as an entry when
+the routine has a computed transfer without `targets` or takes a label's address with an addend (sound, refuses
+every bracket in such a routine), or refuse `preserves(sr.mask)` on such routines outright.
+
+Re-measure on `sigil-cand-1cd657b0` (committed tree, `tree: clean at capture`):
+- Probes (72 review probes + x1-x4, y1-y3, r1-r5; table `ff-probe-table-f1b.txt`, columns 7d46ec3d / 5c01239d /
+  1cd657b0). Differences from 5c01239d: x1, x2, x3 refused again, x4 refused for the first time, r5 newly refused
+  (false refusal, QUEUE). y1-y3 build (STOP item). Every other probe as on 5c01239d.
+- BN `SHAPES 7/7 IDENTICAL` (`AEON_DIR` unset for the script); RN sonic4 154 / demo 127 / Cherub 127, all SAME;
+  Cherub builds; no `preserves-sr` line in any stderr. No aeon or Cherub shape is refused.
+- W2 plant: rc 1 at `dma_queue.emp:185:9` (`QueueDMA_Deferrable`, level 7); restored, status empty, rebuild rc 0,
+  850262 bytes, CRC `142a39b9`.
+- TC, five runs (the 10-minute limit; a first `-p sigil-cli` run under `timeout 590` was cut short at 105 lines,
+  rc 124, and was discarded and re-run in full): non-emp leaf crates 140 lines 1640, `sigil-cli` 203 lines 1029,
+  `sigil-build` 6 lines 180, `sigil-harness` 70 lines 532, `sigil-frontend-emp` 150 lines 3024; all rc 0. 569
+  lines, 6405 passed, 0 failed, 4 ignored. Expected 6302 + 103 - 0 = 6405. Difference 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.

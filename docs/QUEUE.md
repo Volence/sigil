@@ -3540,7 +3540,8 @@ when 2b lands.
 ## STEPA-P2A-FALSE-REFUSALS
 
 - state: open 2026-11-21 (booked by step A piece 2a; re-measured by its final-review fix wave on
-  `sigil-cand-5c01239d`)  size: `S` each  project: `STEP-A`
+  `sigil-cand-5c01239d` and again after F1b on `sigil-cand-1cd657b0`: every row below holds on both unless it
+  says otherwise)  size: `S` each  project: `STEP-A`
 - blockedBy: nothing. None occurs in aeon today (0 firings across the 7 shapes and Cherub).
 
 **Correct shapes the level walk refuses.** Each row measured on master (`sigil-base`) and on the fix-wave
@@ -3550,7 +3551,9 @@ binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-
   master builds; STILL REFUSED, three errors: the `jmp` (judged as a way out at level 7, since the walk does not
   follow `targets`) and each arm's `rts` (each arm is now walked as an extra entry at the caller's level with
   nothing pushed, so its `move.w (sp)+, sr` pops a word it did not save: untracked). Fix: follow the declared
-  targets as successors.
+  targets as successors. After F1b every `targets` label is also an entry, so an arm reached BOTH by an
+  ordinary branch and by the dispatch is refused at its `rts` too (pinned in
+  `a_masked_targets_dispatch_whose_arms_restore_is_refused`: the `jmp` and both arms' `rts`).
 - A balanced local helper reached only pc-relative (`jsr .h(pc)`, `r2_pcrel_helper_balanced`) or through a pointer
   (`lea .h(pc), a0 / jsr (a0)`, `r3_ptr_helper_balanced`): NOW CLEAN (the fix wave walks every unreached
   instruction as an extra entry). A masking helper reached that way is refused on its own `rts`
@@ -3563,6 +3566,11 @@ binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-
 - (Final review M2.) Taking the address of a stack local between save and restore: `lea (sp), a0`
   (`f03_lea_local`): master builds; refused (`sp_effect` reads an sp-based `lea`/`pea` source as `Lost`, a
   deliberate choice: the stack can then be rewritten through `a0`). Fix would need alias tracking of `a0`.
+- (Fix wave F1b.) A code label whose address is taken inside a masked section (`r5_code_label_address_in_mask`:
+  save; mask; `lea .x(pc), a0`; `.x: move.w (sp)+, sr / rts`): master builds, `sigil-cand-5c01239d` builds,
+  `sigil-cand-1cd657b0` refuses. Any code label whose address the routine takes is an entry at the caller's
+  level with nothing saved, so it meets the bracket's save and the restore is untracked. None in aeon (BN 7/7,
+  RN 3 SAME on 1cd657b0). Fix would need to know the address is not jumped to.
 
 ## CFG-BT-BF-EDGES
 
