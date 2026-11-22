@@ -1984,6 +1984,12 @@ mod frame_tests {
                 continue;
             }
             let items = [item];
+            // The effect under test is sp_effect's own reading, not the table's.
+            let want = {
+                let got = sp_effect(&items, 0);
+                assert_eq!(got, want, "{name}");
+                got
+            };
             let cfg = Cfg::build(&items);
             // Two-byte slots, so a `.w` pop and a `.l` pop both land on a slot edge.
             let mut st = State::at_entry();
