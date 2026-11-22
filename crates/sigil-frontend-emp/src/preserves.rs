@@ -908,14 +908,17 @@ pub(crate) enum SpEffect {
     /// Anything the stack check bails on: a bare `a7`, a `(sp)` store,
     /// `d(sp)` other than the exempt reads, `(sp,Xn)`, `sub #n, sp`, `link`, `unlk`.
     /// Also `lea` or `pea` with an sp-based source: the stack's address escapes.
+    /// Also an instruction that is both a push and a pop (`move.w (sp)+, -(sp)`):
+    /// sp nets zero but the slot is rewritten, so neither `Push` nor `None` is true.
     Lost,
 }
 
 /// How instruction `idx` moves sp. Same order of cases as [`transfer`]: call,
 /// `rtr`, `link`/`unlk`, immediate cleanup, the sp hazard with its three
-/// exemptions, push, pop. Two stated differences from `transfer`: `pea <ea>` is
-/// `Push(4)` (`transfer` does not model it), and a `lea`/`pea` whose source is
-/// sp-based is `Lost` (`transfer` exempts `lea (sp), aN` as a read).
+/// exemptions, push, pop. Three stated differences from `transfer`: `pea <ea>` is
+/// `Push(4)` (`transfer` does not model it), a `lea`/`pea` whose source is
+/// sp-based is `Lost` (`transfer` exempts `lea (sp), aN` as a read), and an
+/// instruction that is both push and pop is `Lost` (`transfer` takes it as a push).
 #[cfg_attr(not(test), allow(dead_code))] // Task 2 of step A piece 2a uses it; remove then.
 pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     let Some(CodeItem::Instr { mnemonic, ops, .. }) = items.get(idx) else {
@@ -947,6 +950,10 @@ pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
         && !is_safe_sp_disp_read(mnem, ops)
         && !is_irq_frame_access(items, idx)
     {
+        return SpEffect::Lost;
+    }
+    // Both `-(sp)` and `(sp)+` on one line: sp nets zero, the slot is rewritten.
+    if is_push(ops) && is_pop(ops) {
         return SpEffect::Lost;
     }
     let members = reglist_mask(ops).map_or(1, |m| m.count_ones());
@@ -1922,7 +1929,7 @@ mod frame_tests {
         it
     }
 
-    /// Which rows of the `sp_effect` table are the two stated differences from
+    /// Which rows of the `sp_effect` table are the stated differences from
     /// `transfer` (`pea` is unmodelled there, `lea (sp)` is exempted there).
     #[derive(PartialEq, Eq, Clone, Copy)]
     enum Row {
@@ -1945,6 +1952,7 @@ mod frame_tests {
             ("pea (a0)", sized("pea", l, vec![O::Ind(Reg::A0)]), E::Push(4), Row::StatedDifference),
             ("pea 4(sp)", sized("pea", l, vec![O::DispInd { disp: 4, reg: sp }]), E::Lost, Row::StatedDifference),
             ("lea (sp),a0", sized("lea", l, vec![O::Ind(sp), O::Reg(Reg::A0)]), E::Lost, Row::StatedDifference),
+            ("move.w (sp)+,-(sp)", sized("move", w, vec![O::PostInc(sp), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
             ("move.w (sp)+,sr", sized("move", w, vec![O::PostInc(sp), O::Sr]), E::Drop(2), Row::Same),
             ("move.w (sp)+,ccr", sized("move", w, vec![O::PostInc(sp), O::Ccr]), E::Drop(2), Row::Same),
             ("movem.l (sp)+,d0-d2/a0", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x0107)]), E::Drop(16), Row::Same),
@@ -1984,12 +1992,9 @@ mod frame_tests {
                 continue;
             }
             let items = [item];
-            // The effect under test is sp_effect's own reading, not the table's.
-            let want = {
-                let got = sp_effect(&items, 0);
-                assert_eq!(got, want, "{name}");
-                got
-            };
+            // The effect under test is sp_effect's own reading, compared first with
+            // `transfer` below and only then with the table.
+            let got = sp_effect(&items, 0);
             let cfg = Cfg::build(&items);
             // Two-byte slots, so a `.w` pop and a `.l` pop both land on a slot edge.
             let mut st = State::at_entry();
@@ -1999,7 +2004,7 @@ mod frame_tests {
             let before = st.depth_bytes();
             let bail = transfer(&cfg, 0, &mut st, &items, &CallPolicy::ClobberAll);
             let moved = st.depth_bytes() - before;
-            match want {
+            match got {
                 SpEffect::None => {
                     assert!(bail.is_none(), "{name}: {bail:?}");
                     assert_eq!(moved, 0, "{name}");
@@ -2014,6 +2019,7 @@ mod frame_tests {
                 }
                 SpEffect::Lost => assert!(bail.is_some(), "{name}: the stack check must bail too"),
             }
+            assert_eq!(got, want, "{name}: sp_effect against the table");
         }
     }
 
