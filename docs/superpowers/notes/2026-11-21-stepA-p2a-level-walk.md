@@ -87,3 +87,62 @@ RF B (meet on different depths returns `self.clone()`). Inserted line from disk:
 `a_push_in_a_loop_settles` TERMINATED (finished in 0.00s) and was RED: the loop head kept
 `Known { depth: 0 }` instead of `Lost`. Restored from 9866c3d5; `git status --short` empty;
 all 28 sr_level tests green.
+
+## Task 3: mask_findings walks a routine (red-first)
+
+TDD RED: the 24 new tests were written first; `cargo test --release -p sigil-frontend-emp
+--lib sr_level` failed to compile (17 errors: `mask_findings`, `MaskFindingKind`,
+`BTreeSet` not found). GREEN: 52 sr_level tests passed (28 + 24). Green committed first:
+1a59d26a. Front-end 2975 passed, 0 failed (149 result lines; 2951 + 24). Clippy
+`--workspace --all-targets -D warnings` exit 0.
+
+Found while building it:
+- `Cfg::label_index(name)` is the first instruction at or after the label. A label followed
+  by another label resolves to the instruction after both; a body-closing label (no
+  instruction after it) is `None` and seeds nothing. Pinned in
+  `a_closing_export_label_and_an_empty_body_do_not_panic`.
+- The only single 68000 instruction in this tree that both writes `sr` and carries a
+  leaving edge is the body's LAST instruction (its `FallOff` edge): no return or transfer
+  mnemonic writes `sr`. `a_return_is_judged_after_its_own_effect` pins that both ways (a
+  closing restore arrives at 7 and leaves clean; a closing `move.w #$2700, sr` arrives at
+  the entry level and is found), the brief's `jmp Other` pair, and `rtr` (its Drop(2)
+  loses the stack, not the level: clean).
+- `sets_level(mnem, ops)` (`stop`, or `sr` as last operand) is the one test `step` and the
+  unreached pass share; the pass adds `rte`. It does not also require
+  `writes_dest_register` as `check_clobbers` does (dispatcher's resolution: same test as
+  `step`).
+
+Five red-first mutations, each applied to 1a59d26a, quoted from disk, run, restored with
+`git checkout 1a59d26a -- crates/sigil-frontend-emp/src/sr_level.rs` (`git status
+--short` empty after each) and re-run green. Every `git diff --stat`:
+`crates/sigil-frontend-emp/src/sr_level.rs | 2 +-` (RF e: `| 3 ++-`).
+
+RF a (drop the local-helper seeds). From disk:
+`418:            CodeItem::Instr { mnemonic, ops, .. } if false && is_call(mnemonic) => {`
+`a_local_helper_reached_only_by_bsr_is_walked` RED:
+`left: [(3, Unreached)]` / `right: [(4, NotTheCallers { levels: [7] })]` (the helper is
+never walked, so only the unreached pass sees its `move`).
+
+RF b (drop the export-label seeds). From disk:
+`417:            CodeItem::Label { name, export: true, .. } if false => at.extend(cfg.label_index(name)),`
+`an_export_label_after_the_save_is_refused` RED: `left: []` /
+`right: [(4, Untracked { lost_at: Some((3, "move", Span { start: 3, end: 4 })) })]`.
+
+RF c (remove the `exit_diverges` skip). From disk:
+`377:                    if false && exit_diverges(&items[idx], noreturn) {`
+`a_diverging_rail_inside_a_masked_section_is_not_a_finding` RED:
+`left: [(7, NotTheCallers { levels: [7] })]` / `right: []`.
+
+RF d (remove the unreached pass). From disk:
+`395:        if false && !states.contains_key(&idx) && (sets_level(mnemonic, ops) || mnemonic == "rte") {`
+`a_helper_entered_through_a_pointer_is_unreached` RED: `left: []` / `right: [(4, Unreached)]`.
+
+RF e (skip `FallOff`). From disk: `376:                Edge::FallOff => None,` (the arm split
+off `Edge::TailOut | Edge::BranchOut`). `a_masked_branch_to_the_closing_label_is_found`
+RED: `left: []` / `right: [(5, NotTheCallers { levels: [7] })]`.
+
+All five: `test result: FAILED. 0 passed; 1 failed`, then after restore
+`test result: ok. 1 passed; 0 failed`. Full transcript:
+`.stepA-p2a-scratch/t3-rf.txt`. (The harness moved the RF run to the background after
+180 s; it completed with exit 0 and the transcript was read only after all ten result
+lines were present.)
