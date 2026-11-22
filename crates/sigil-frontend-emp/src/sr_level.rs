@@ -354,14 +354,20 @@ pub(crate) struct MaskFinding {
 /// on a label, so after a first walk from the ordinary entries, these labels are
 /// entries too, each at [`SrState::at_entry`] ([`hidden_entries`]): every code
 /// label in code that walk did not reach, every label a `targets(...)` list
-/// names, and every code label whose address the routine takes. Then, while
+/// names, every code label whose address the routine takes, and every code label
+/// a transfer names in an operand the CFG does not follow. Then, while
 /// some instruction is still not reached, the lowest-index one becomes one more
 /// entry and the walk runs again, so every instruction is judged.
 ///
-/// Why `at_entry` is sound there: the jump that enters is itself a way out
+/// Why `at_entry` is sound there: a jump that enters is itself a way out
 /// judged here, so it can only be taken cleanly at the caller's level; at the
 /// label the entry state meets whatever else arrives, and a differing depth or
 /// save list loses the stack, so a restore after it is `Unknown` (a finding).
+/// A call that enters (`jsr (a0)`, `jsr .h(pc)`) is NOT judged: there the seed
+/// reads the helper as a routine of its own whose entry level is its caller's,
+/// and the call as leaving the level alone ([`call_effect`]). A helper that
+/// throws away its return address and returns past its caller breaks that and
+/// is not modelled (piece 2b, `docs/QUEUE.md` STEPA-P2B-CALLS).
 /// A data label is not an entry ([`code_label_index`]).
 ///
 /// An entry reached by address arithmetic lands on no label. When a routine has
@@ -381,8 +387,9 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
     };
     let mut at = entry_seeds(items, &cfg);
     let first = walk(&at_entry_states(&at));
-    at.extend(hidden_entries(items, &cfg, &first));
-    if offset_entry_hazard(items, &cfg) {
+    let taken = address_taken(items, &cfg);
+    at.extend(hidden_entries(items, &cfg, &first, &taken));
+    if offset_entry_hazard(items, &cfg, &taken) {
         at.extend(
             items.iter().enumerate().filter(|(_, it)| matches!(it, CodeItem::Instr { .. })).map(|(idx, _)| idx),
         );
@@ -474,8 +481,16 @@ fn at_entry_states(at: &BTreeSet<usize>) -> Vec<(usize, SrState)> {
 /// (a) every code label whose instruction `first` (the walk from the ordinary
 /// entries) did not reach; (b) every label named in an instruction's `targets`
 /// list; (c) every code label whose address the routine takes, that is, a name
-/// in an operand of an instruction that is not a branch, a call or a return.
-fn hidden_entries(items: &[CodeItem], cfg: &Cfg, first: &BTreeMap<usize, SrState>) -> BTreeSet<usize> {
+/// in an operand of an instruction that is not a branch, a call or a return
+/// (`taken`, [`address_taken`]); (d) every code label a branch, jump or call
+/// names in an operand that is not a plain `Sym` (`jmp .r(pc)`, `jsr .h(pc)`, an
+/// `AbsSym` form): the CFG follows only a plain `Sym`, so it does not enter there.
+fn hidden_entries(
+    items: &[CodeItem],
+    cfg: &Cfg,
+    first: &BTreeMap<usize, SrState>,
+    taken: &BTreeSet<usize>,
+) -> BTreeSet<usize> {
     let mut at = BTreeSet::new();
     for item in items {
         match item {
@@ -486,15 +501,22 @@ fn hidden_entries(items: &[CodeItem], cfg: &Cfg, first: &BTreeMap<usize, SrState
                     }
                 }
             }
-            CodeItem::Instr { targets, .. } => {
+            CodeItem::Instr { mnemonic, ops, targets, .. } => {
                 for t in targets {
                     at.extend(code_label_index(items, cfg, t));
+                }
+                if is_transfer(mnemonic) {
+                    for op in ops.iter().filter(|op| !matches!(op, CodeOperand::Sym(_))) {
+                        for name in operand_symbols(op) {
+                            at.extend(code_label_index(items, cfg, &name));
+                        }
+                    }
                 }
             }
             _ => {}
         }
     }
-    at.extend(address_taken(items, cfg));
+    at.extend(taken.iter().copied());
     at
 }
 
@@ -526,7 +548,8 @@ fn address_taken(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
 /// a local code label's address and has an indirect `jmp`/`jsr`/`jbsr` with a
 /// displacement or an index (`d(aN)` with d not 0, `d(aN, Xn)`, `d(pc, Xn)`,
 /// `sym(aN)`) and no `targets` list.
-fn offset_entry_hazard(items: &[CodeItem], cfg: &Cfg) -> bool {
+/// `taken` is [`address_taken`].
+fn offset_entry_hazard(items: &[CodeItem], cfg: &Cfg, taken: &BTreeSet<usize>) -> bool {
     use CodeOperand as O;
     let is_code = |name: &str| code_label_index(items, cfg, name).is_some();
     let names_code_with_offset = |op: &CodeOperand| match op {
@@ -556,7 +579,7 @@ fn offset_entry_hazard(items: &[CodeItem], cfg: &Cfg) -> bool {
         }
         _ => false,
     });
-    displaced_jump && !address_taken(items, cfg).is_empty()
+    displaced_jump && !taken.is_empty()
 }
 
 /// The instruction a local label leads to, when only labels and context marks
@@ -1652,6 +1675,41 @@ mod tests {
             jmp_disp("jsr", 4, Reg::A1), // 2
             restore(),                   // 3
             op("rts", vec![]),           // 4
+        ];
+        assert_eq!(found(items), vec![]);
+    }
+
+    // ---- Re-review N2: a transfer that names a label in a non-`Sym` operand ----
+
+    /// Probe b01: `jmp .r(pc)` straight into a reached restore. The CFG follows
+    /// only a plain `Sym`, so the jump is a tail out and `.r` was no entry.
+    #[test]
+    fn a_pc_relative_jump_into_a_reached_restore_is_found() {
+        let items = vec![
+            tst_d0(),                                                          // 0
+            op("beq", vec![sym(".via")]),                                      // 1
+            save(),                                                            // 2
+            set_sr(0x2700),                                                    // 3
+            label(".r"),                                                       // 4
+            restore(),                                                         // 5
+            op("rts", vec![]),                                                 // 6
+            label(".via"),                                                     // 7
+            op("jmp", vec![O::PcRel { target: ".r".to_string(), addend: 0 }]), // 8
+        ];
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+    }
+
+    /// Probe r2: a balanced helper called as `jsr .h(pc)` stays clean.
+    #[test]
+    fn a_balanced_helper_called_pc_relative_is_clean() {
+        let items = vec![
+            op("jsr", vec![O::PcRel { target: ".h".to_string(), addend: 0 }]), // 0
+            op("rts", vec![]),                                                 // 1
+            label(".h"),                                                       // 2
+            save(),                                                            // 3
+            set_sr(0x2700),                                                    // 4
+            restore(),                                                         // 5
+            op("rts", vec![]),                                                 // 6
         ];
         assert_eq!(found(items), vec![]);
     }

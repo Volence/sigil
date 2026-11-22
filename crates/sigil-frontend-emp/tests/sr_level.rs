@@ -489,6 +489,77 @@ fn an_immediate_address_with_an_offset_is_refused() {
     assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
+// ---- Re-review N2 and N3 ----
+
+/// The reached restore of the N2 probes, entered from `.via`.
+fn into_reached_restore(via: &str) -> String {
+    routine(
+        "clobbers(d0, d1, a0, a1) preserves(sr.mask)",
+        &format!(
+            "    tst.w d0
+    beq .via
+    move.w sr, -(sp)
+    move.w #$2700, sr
+.r:
+    move.w (sp)+, sr
+    rts
+.via:
+{via}"
+        ),
+    )
+}
+
+/// Probe b01 (re-review N2): `jmp .r(pc)` straight into a reached restore.
+#[test]
+fn a_pc_relative_jump_into_a_reached_restore_is_refused() {
+    let src = into_reached_restore("    jmp .r(pc)");
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
+/// Probe b05 (re-review N2): the same through `jsr .r(pc)`.
+#[test]
+fn a_pc_relative_call_into_a_reached_restore_is_refused() {
+    let src = into_reached_restore("    jsr .r(pc)\n    rts");
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
+/// Probe r2: a balanced local helper called as `jsr .h(pc)` builds.
+#[test]
+fn a_balanced_helper_called_pc_relative_builds() {
+    let src = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        "    jsr .h(pc)
+    rts
+.h:
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr
+    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
+/// Probe u2_btst_pop_min (re-review N3): `btst #0, (sp)+` has no size suffix and
+/// pops 2 bytes on the machine; counted as 4, the save looked like the top and
+/// the routine returned at level 7 with a clean build.
+#[test]
+fn a_pop_on_a_sizeless_instruction_is_refused() {
+    let src = routine(
+        "clobbers(d0, d1, a0, a1) preserves(sr.mask)",
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.l #$27002700, -(sp)
+    btst #0, (sp)+
+    move.w (sp)+, sr
+    addq.l #2, sp
+    rts",
+    );
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
 /// The object-dispatch shape must not be refused.
 #[test]
 fn a_masked_displaced_call_builds() {

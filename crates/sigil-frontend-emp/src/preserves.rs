@@ -916,13 +916,14 @@ pub(crate) enum SpEffect {
     /// operands on one line (`move.w (sp)+, -(sp)` nets zero but rewrites the
     /// slot; `cmpm.w (sp)+, (sp)+` pops twice); an exempt read with a second sp
     /// operand (`move.w (sp), 2(sp)`, `movea.l (sp), sp`); a `movem` whose list
-    /// holds a7 (`movem.l (sp)+, a7` loads sp).
+    /// holds a7 (`movem.l (sp)+, a7` loads sp); a push or pop on an instruction
+    /// with no size (`st -(sp)`, `tas (sp)+`: the true width is 2, not 4).
     Lost,
 }
 
 /// How instruction `idx` moves sp. Same order of cases as [`transfer`]: call,
 /// `rtr`, `link`/`unlk`, immediate cleanup, the sp hazard with its three
-/// exemptions, push, pop. Seven stated differences from `transfer`, each `Lost`
+/// exemptions, push, pop. Eight stated differences from `transfer`, each `Lost`
 /// here unless said: `pea <ea>` is `Push(4)` (`transfer` does not model it); a
 /// `lea`/`pea` whose source is sp-based (`transfer` exempts `lea (sp), aN` as a
 /// read); two or more `-(sp)`/`(sp)+` operands on one line (`transfer` takes
@@ -930,10 +931,12 @@ pub(crate) enum SpEffect {
 /// exemption taken while a second operand also touches sp (`move.w (sp), 2(sp)`,
 /// `move.w (sp), -(sp)`, `movea.l (sp), sp`: `transfer` exempts the read); a
 /// `movem` whose list holds a7 (`transfer` counts it as an ordinary member);
-/// and a bare `a7` destination other than the immediate cleanup (`transfer`
-/// bails on every such form except `movea.l (sp), sp`, which is the read case).
-/// The last is a guard of its own here so the rule does not rest on the order
-/// of the cases.
+/// a bare `a7` destination other than the immediate cleanup (`transfer`
+/// bails on every such form except `movea.l (sp), sp`, which is the read case;
+/// a guard of its own here so the rule does not rest on the order of the
+/// cases); and a push or pop on an instruction with no size (`st -(sp)`,
+/// `tas (sp)+`, `btst #0, (sp)+`: a byte operation that moves sp by 2, which
+/// `transfer` counts as 4 through `slot_bytes(None)`).
 pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     let Some(CodeItem::Instr { mnemonic, ops, .. }) = items.get(idx) else {
         return SpEffect::None;
@@ -982,6 +985,14 @@ pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
         && !(one_sp_operand && (is_sp_top_read(ops) || is_safe_sp_disp_read(mnem, ops)))
         && !is_irq_frame_access(items, idx)
     {
+        return SpEffect::Lost;
+    }
+    // A push or pop on a mnemonic that takes no size suffix (`st`/`seq`/every
+    // `Scc`, `tas`, `nbcd`, `btst`/`bset`/`bclr`/`bchg` on memory): a byte
+    // operation, so the machine moves sp by 2, but `slot_bytes(None)` says 4.
+    // `pea`, `rtr`, calls and the immediate cleanup have returned above.
+    // (`movem` always carries a size: an unsized one is refused by the parser.)
+    if (is_push(ops) || is_pop(ops)) && instr_size(items, idx).is_none() {
         return SpEffect::Lost;
     }
     let members = reglist_mask(ops).map_or(1, |m| m.count_ones());
@@ -1998,6 +2009,17 @@ mod frame_tests {
             ("cmpm.w (sp)+,(sp)+", sized("cmpm", w, vec![O::PostInc(sp), O::PostInc(sp)]), E::Lost, Row::StatedDifference),
             ("move.w (sp)+,(sp)+", sized("move", w, vec![O::PostInc(sp), O::PostInc(sp)]), E::Lost, Row::StatedDifference),
             ("addx.w -(sp),-(sp)", sized("addx", w, vec![O::PreDec(sp), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            // Re-review N3: a push or pop on a mnemonic that takes no size suffix
+            // (a byte operation: the machine moves sp by 2, `slot_bytes(None)` says 4).
+            ("st -(sp)", sized("st", None, vec![O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            ("tas (sp)+", sized("tas", None, vec![O::PostInc(sp)]), E::Lost, Row::StatedDifference),
+            ("btst #0,(sp)+", sized("btst", None, vec![O::Imm(0), O::PostInc(sp)]), E::Lost, Row::StatedDifference),
+            ("nbcd -(sp)", sized("nbcd", None, vec![O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            // With the explicit `.b` the width is known: 2 bytes.
+            ("st.b -(sp)", sized("st", b, vec![O::PreDec(sp)]), E::Push(2), Row::Same),
+            // `pea` is read before the guard, sized or not.
+            ("pea (a0) unsized", sized("pea", None, vec![O::Ind(Reg::A0)]), E::Push(4), Row::StatedDifference),
+            ("btst.b #0,(sp)+", sized("btst", b, vec![O::Imm(0), O::PostInc(sp)]), E::Drop(2), Row::Same),
             ("move.w (sp)+,sr", sized("move", w, vec![O::PostInc(sp), O::Sr]), E::Drop(2), Row::Same),
             ("move.w (sp)+,ccr", sized("move", w, vec![O::PostInc(sp), O::Ccr]), E::Drop(2), Row::Same),
             ("movem.l (sp)+,d0-d2/a0", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x0107)]), E::Drop(16), Row::Same),
