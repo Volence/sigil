@@ -324,6 +324,42 @@ fn a_dead_block_feeding_the_restore_is_refused() {
     assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
+/// The final review's I3(a) probe (`s02_copy_top_over_save`): `move.w (sp), 2(sp)`
+/// copies the pushed `$2700` over the saved word.
+#[test]
+fn copying_the_top_over_the_saved_word_is_refused() {
+    let src = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        "    move.w sr, -(sp)
+    move.w #$2700, -(sp)
+    move.w (sp), 2(sp)
+    addq.l #2, sp
+    move.w (sp)+, sr
+    rts",
+    );
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
+/// The final review's I3(d) probe (`c03_cmpm_double_pop`): `cmpm.w (sp)+, (sp)+`
+/// pops four bytes; the `pea` + `cmpm` pair hides the imbalance from the stack check.
+#[test]
+fn a_double_pop_on_one_line_is_refused() {
+    let src = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        "    move.w #$2700, -(sp)
+    move.w sr, -(sp)
+    move.w d0, -(sp)
+    cmpm.w (sp)+, (sp)+
+    move.w (sp)+, sr
+    pea (a0)
+    cmpm.w (sp)+, (sp)+
+    rts",
+    );
+    let d = lower(&src);
+    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+}
+
 /// The DEBUG assert rail (`subq #2, sp`, a `d(sp)` store, a jump that never
 /// returns) inside a masked section is not a way out.
 #[test]

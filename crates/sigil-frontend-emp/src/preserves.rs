@@ -789,6 +789,11 @@ fn is_push(ops: &[CodeOperand]) -> bool {
     ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7)))
 }
 
+/// `-(sp)` or `(sp)+`: an operand that moves sp by itself.
+fn is_sp_auto(op: &CodeOperand) -> bool {
+    matches!(op, CodeOperand::PreDec(Reg::A7) | CodeOperand::PostInc(Reg::A7))
+}
+
 /// A POP: some operand postincrements a7 (`(sp)+`).
 fn is_pop(ops: &[CodeOperand]) -> bool {
     ops.iter().any(|o| matches!(o, CodeOperand::PostInc(Reg::A7)))
@@ -907,17 +912,28 @@ pub(crate) enum SpEffect {
     /// Anything the stack check bails on: a bare `a7`, a `(sp)` store,
     /// `d(sp)` other than the exempt reads, `(sp,Xn)`, `sub #n, sp`, `link`, `unlk`.
     /// Also `lea` or `pea` with an sp-based source: the stack's address escapes.
-    /// Also an instruction that is both a push and a pop (`move.w (sp)+, -(sp)`):
-    /// sp nets zero but the slot is rewritten, so neither `Push` nor `None` is true.
+    /// Also, where the stack check does not bail: two or more `-(sp)`/`(sp)+`
+    /// operands on one line (`move.w (sp)+, -(sp)` nets zero but rewrites the
+    /// slot; `cmpm.w (sp)+, (sp)+` pops twice); an exempt read with a second sp
+    /// operand (`move.w (sp), 2(sp)`, `movea.l (sp), sp`); a `movem` whose list
+    /// holds a7 (`movem.l (sp)+, a7` loads sp).
     Lost,
 }
 
 /// How instruction `idx` moves sp. Same order of cases as [`transfer`]: call,
 /// `rtr`, `link`/`unlk`, immediate cleanup, the sp hazard with its three
-/// exemptions, push, pop. Three stated differences from `transfer`: `pea <ea>` is
-/// `Push(4)` (`transfer` does not model it), a `lea`/`pea` whose source is
-/// sp-based is `Lost` (`transfer` exempts `lea (sp), aN` as a read), and an
-/// instruction that is both push and pop is `Lost` (`transfer` takes it as a push).
+/// exemptions, push, pop. Seven stated differences from `transfer`, each `Lost`
+/// here unless said: `pea <ea>` is `Push(4)` (`transfer` does not model it); a
+/// `lea`/`pea` whose source is sp-based (`transfer` exempts `lea (sp), aN` as a
+/// read); two or more `-(sp)`/`(sp)+` operands on one line (`transfer` takes
+/// `move.w (sp)+, -(sp)` as a push and `cmpm.w (sp)+, (sp)+` as one pop); a read
+/// exemption taken while a second operand also touches sp (`move.w (sp), 2(sp)`,
+/// `move.w (sp), -(sp)`, `movea.l (sp), sp`: `transfer` exempts the read); a
+/// `movem` whose list holds a7 (`transfer` counts it as an ordinary member);
+/// and a bare `a7` destination other than the immediate cleanup (`transfer`
+/// bails on every such form except `movea.l (sp), sp`, which is the read case).
+/// The last is a guard of its own here so the rule does not rest on the order
+/// of the cases.
 pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     let Some(CodeItem::Instr { mnemonic, ops, .. }) = items.get(idx) else {
         return SpEffect::None;
@@ -935,6 +951,11 @@ pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     if let Some(n) = immediate_sp_cleanup_bytes(mnem, ops) {
         return u32::try_from(n).map_or(SpEffect::Lost, SpEffect::Drop);
     }
+    // sp itself is written (`movea.l d0, sp`, `movea.l (sp), sp`, `exg d0, sp`,
+    // `lea 4(sp), sp`): not the immediate cleanup above, so its new value is unknown.
+    if matches!(ops.last(), Some(CodeOperand::Reg(Reg::A7))) {
+        return SpEffect::Lost;
+    }
     // `lea`/`pea` read the sp-based source's ADDRESS, which lets the stack be
     // rewritten through another register: lost, even for the `(sp)` form.
     if (mnem == "lea" || mnem == "pea") && ops.first().is_some_and(operand_touches_sp) {
@@ -943,15 +964,24 @@ pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
     if mnem == "pea" {
         return SpEffect::Push(4);
     }
-    if sp_hazard(ops)
-        && !is_sp_top_read(ops)
-        && !is_safe_sp_disp_read(mnem, ops)
-        && !is_irq_frame_access(items, idx)
-    {
+    // Two or more `-(sp)`/`(sp)+` operands on one line: a push and a pop net zero
+    // but rewrite the slot (`move.w (sp)+, -(sp)`); two pops or two pushes move sp
+    // twice (`cmpm.w (sp)+, (sp)+`, `addx.w -(sp), -(sp)`), which the single
+    // count below does not see.
+    if ops.iter().filter(|o| is_sp_auto(o)).count() >= 2 {
         return SpEffect::Lost;
     }
-    // Both `-(sp)` and `(sp)+` on one line: sp nets zero, the slot is rewritten.
-    if is_push(ops) && is_pop(ops) {
+    // A `movem` whose list holds a7: a pop loads sp from the stack, a push stores sp.
+    if reglist_mask(ops).is_some_and(|m| m & (1 << 15) != 0) {
+        return SpEffect::Lost;
+    }
+    // The read exemptions hold only when the read is the line's ONE sp operand:
+    // `move.w (sp), 2(sp)` reads the top and stores over a lower slot.
+    let one_sp_operand = ops.iter().filter(|o| operand_touches_sp(o) || is_sp_auto(o)).count() == 1;
+    if sp_hazard(ops)
+        && !(one_sp_operand && (is_sp_top_read(ops) || is_safe_sp_disp_read(mnem, ops)))
+        && !is_irq_frame_access(items, idx)
+    {
         return SpEffect::Lost;
     }
     let members = reglist_mask(ops).map_or(1, |m| m.count_ones());
@@ -1928,7 +1958,7 @@ mod frame_tests {
     }
 
     /// Which rows of the `sp_effect` table are the stated differences from
-    /// `transfer` (`pea` is unmodelled there, `lea (sp)` is exempted there).
+    /// `transfer` (listed on [`sp_effect`]).
     #[derive(PartialEq, Eq, Clone, Copy)]
     enum Row {
         Same,
@@ -1951,6 +1981,23 @@ mod frame_tests {
             ("pea 4(sp)", sized("pea", l, vec![O::DispInd { disp: 4, reg: sp }]), E::Lost, Row::StatedDifference),
             ("lea (sp),a0", sized("lea", l, vec![O::Ind(sp), O::Reg(Reg::A0)]), E::Lost, Row::StatedDifference),
             ("move.w (sp)+,-(sp)", sized("move", w, vec![O::PostInc(sp), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            // Final review I3. (a) a read exemption with a second sp operand.
+            ("move.w (sp),2(sp)", sized("move", w, vec![O::Ind(sp), O::DispInd { disp: 2, reg: sp }]), E::Lost, Row::StatedDifference),
+            ("move.w (sp),-(sp)", sized("move", w, vec![O::Ind(sp), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            // (b) bare `a7` as the destination, other than the immediate cleanup.
+            ("movea.l (sp),sp", sized("movea", l, vec![O::Ind(sp), O::Reg(sp)]), E::Lost, Row::StatedDifference),
+            ("movea.l (sp)+,sp", sized("movea", l, vec![O::PostInc(sp), O::Reg(sp)]), E::Lost, Row::Same),
+            ("movea.l d0,sp", sized("movea", l, vec![O::Reg(Reg::D0), O::Reg(sp)]), E::Lost, Row::Same),
+            ("lea 4(sp),sp", sized("lea", l, vec![O::DispInd { disp: 4, reg: sp }, O::Reg(sp)]), E::Lost, Row::Same),
+            ("exg d0,sp", sized("exg", l, vec![O::Reg(Reg::D0), O::Reg(sp)]), E::Lost, Row::Same),
+            // (c) a `movem` whose list holds a7.
+            ("movem.l (sp)+,a7", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x8000)]), E::Lost, Row::StatedDifference),
+            ("movem.l (sp)+,d0/a7", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x8001)]), E::Lost, Row::StatedDifference),
+            ("movem.l a7,-(sp)", sized("movem", l, vec![O::RegList(0x8000), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
+            // (d) two sp auto-increment/decrement operands on one line.
+            ("cmpm.w (sp)+,(sp)+", sized("cmpm", w, vec![O::PostInc(sp), O::PostInc(sp)]), E::Lost, Row::StatedDifference),
+            ("move.w (sp)+,(sp)+", sized("move", w, vec![O::PostInc(sp), O::PostInc(sp)]), E::Lost, Row::StatedDifference),
+            ("addx.w -(sp),-(sp)", sized("addx", w, vec![O::PreDec(sp), O::PreDec(sp)]), E::Lost, Row::StatedDifference),
             ("move.w (sp)+,sr", sized("move", w, vec![O::PostInc(sp), O::Sr]), E::Drop(2), Row::Same),
             ("move.w (sp)+,ccr", sized("move", w, vec![O::PostInc(sp), O::Ccr]), E::Drop(2), Row::Same),
             ("movem.l (sp)+,d0-d2/a0", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x0107)]), E::Drop(16), Row::Same),

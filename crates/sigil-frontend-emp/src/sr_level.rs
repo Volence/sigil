@@ -1188,6 +1188,39 @@ mod tests {
         assert_eq!(found(items), vec![]);
     }
 
+    /// The review's I3(a) probe (`s02_copy_top_over_save`): the pushed `$2700`
+    /// is copied over the saved word, then "restored".
+    #[test]
+    fn copying_the_top_over_the_saved_word_is_found() {
+        let items = vec![
+            save(),                                                                          // 0
+            ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]),                          // 1
+            ins(0, "move", W, vec![O::Ind(SP), O::DispInd { disp: 2, reg: SP }]),            // 2
+            addq_sp(2),                                                                      // 3
+            restore(),                                                                       // 4
+            op("rts", vec![]),                                                               // 5
+        ];
+        assert_eq!(found(items), vec![(5, MaskFindingKind::Untracked)]);
+    }
+
+    /// The review's I3(d) probe (`c03_cmpm_double_pop`): each `cmpm.w (sp)+,
+    /// (sp)+` pops four bytes, so the restore loads the pushed `$2700`.
+    #[test]
+    fn a_double_pop_on_one_line_is_found() {
+        let cmpm = || ins(0, "cmpm", W, vec![O::PostInc(SP), O::PostInc(SP)]);
+        let items = vec![
+            ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]), // 0
+            save(),                                                 // 1
+            push_d0(),                                              // 2
+            cmpm(),                                                 // 3
+            restore(),                                              // 4
+            ins(0, "pea", L, vec![O::Ind(Reg::A0)]),                // 5
+            cmpm(),                                                 // 6
+            op("rts", vec![]),                                      // 7
+        ];
+        assert_eq!(found(items), vec![(7, MaskFindingKind::Untracked)]);
+    }
+
     #[test]
     fn unreached_code_that_never_sets_the_level_is_not() {
         let items = vec![
