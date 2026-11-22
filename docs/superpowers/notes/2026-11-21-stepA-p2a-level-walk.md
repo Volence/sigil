@@ -21,3 +21,33 @@
 - `emp e_bare_sr_planted.emp --hex`: rc 0, 18 bytes, one existing advisory `[proc.ccr-advisory]` (bare `preserves(sr)`, `rts` between save and restore); accepted.
 - Whole-build plant: fresh `git clone` of the aeon ref at `9b80db1d` into `aeon-plant`. Line 183 of `engine/system/dma_queue.emp` before: `        move.w  (sp)+, sr` (the `.full:` exit); after: `        addq.l  #2, sp`. `build --project aeon-plant/games/sonic4 --shape release`: exit 0, `contract closure gate: passed (sonic4 release: 196 module(s) analysed ...)`, 850262 bytes, CRC ee52408a (differs from the clean 142a39b9, as the plant changes bytes). Restored with `git checkout 9b80db1d -- engine/system/dma_queue.emp`; `git status --short` empty; line 183 back to `move.w  (sp)+, sr`.
 - Probe sources: `survey-probes/{w2_planted,a_leak_pop_d0,e_bare_sr_planted}.emp`; outputs `p-*.out`.
+
+## Task 1: sp_effect (red-first)
+
+Commits: 7f9a3f04 (feature + tests), c7cd74de (agreement test fix, below).
+
+First RF pass on 7f9a3f04 found a test defect: with the immediate-cleanup arm
+mutated to return `Push`, `sp_effect_reads_each_form` went red but
+`sp_effect_agrees_with_the_stack_check` stayed green, because it compared `transfer`
+against the table's expected value and never called `sp_effect`. Fixed in c7cd74de
+(it now calls `sp_effect` and checks it against the table and `transfer`), then the
+RF was redone on c7cd74de.
+
+Mutation: the immediate-cleanup arm of `sp_effect` returns `Push` instead of `Drop`.
+Mutated line from disk (`grep -n`):
+
+    935:        return SpEffect::Push(n as u32);
+
+`git diff --stat`: `crates/sigil-frontend-emp/src/preserves.rs | 2 +-`
+
+`cargo test --release -p sigil-frontend-emp --lib sp_effect` RED:
+
+    test preserves::frame_tests::sp_effect_agrees_with_the_stack_check ... FAILED
+    test preserves::frame_tests::sp_effect_reads_each_form ... FAILED
+    assertion `left == right` failed: addq.l #2,sp
+      left: Push(2)
+     right: Drop(2)
+    test result: FAILED. 0 passed; 2 failed
+
+Restored with `git checkout c7cd74de -- crates/sigil-frontend-emp/src/preserves.rs`;
+`git status --short` clean for that path; re-run: 2 passed, 0 failed.
