@@ -519,3 +519,43 @@ Re-measure on `sigil-cand-1cd657b0` (committed tree, `tree: clean at capture`):
   `sigil-build` 6 lines 180, `sigil-harness` 70 lines 532, `sigil-frontend-emp` 150 lines 3024; all rc 0. 569
   lines, 6405 passed, 0 failed, 4 ignored. Expected 6302 + 103 - 0 = 6405. Difference 0.
 - `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+
+### F1c: the offset-entry hazard (ae04cac7)
+
+Coordinator ruling after the F1b STOP. `offset_entry_hazard`: (1) an operand names a local code label (F1b's
+`code_label_index`, no data between) with an offset not provably zero: `PcRel` with addend not 0, `SymOff` with
+`off` not 0, `PcRelIdx` (the index is an offset), `DispSymInd` (the base register is an offset), and
+`ImmLink`/`Z80MemSym` when the expression is not just `Expr::Sym`; `Sym` and `AbsSym` carry no offset, no other
+variant names a symbol. (2) `address_taken` (F1b class (c)) is non-empty and some `jmp`/`jsr`/`jbsr` with an empty
+`targets` list has a `DispInd` with disp not 0, an `IndIdx`, a `PcRelIdx` or a `DispSymInd` operand. With the
+hazard, every instruction is a seed at `SrState::at_entry()`. No new finding kind or message. Module doc states
+what is out of the model: an interior address formed outside the routine without an `export` label.
+
+TDD: 6 unit and 4 whole-source tests. RED on 1cd657b0 (`ff-f1c-red.log`): y1, y2, y3 unit (`left: []`) and y1,
+y3, `#.x+6` whole-source (`left: []`); the three "no hazard / clean" pins were green already. GREEN
+(`ff-f1c-green.log`): sr_level unit 77, whole-source 34; front-end 3034.
+
+RF on ae04cac7 (`ff-f1c-rf.txt`; `sr_level.rs | 2 +-` each; restored with `git checkout ae04cac7 -- <path>`,
+status empty, green):
+- (1) `545:    if false && offset_named {` -> `an_address_with_an_offset_is_found` FAILED, `left: []` /
+  `right: [(6, Untracked)]`.
+- (2) `559:    false && displaced_jump && !address_taken(items, cfg).is_empty()` ->
+  `a_displaced_jump_after_taking_an_address_is_found` FAILED, `left: []` / `right: [(6, Untracked)]`.
+
+Found in this pass and recorded, not fixed (per the ruling): `z1_data_table_into_reached_restore`, a code label
+reached only through a `dc.w` jump table with no `targets` clause, also reached with a save on the stack: builds
+on master, 7d46ec3d and ae04cac7. In `docs/QUEUE.md` `STEPA-P2A-KNOWN-ESCAPES`, with the source and every other
+known escape. New false refusal `r7_hazard_from_unrelated_address` in `STEPA-P2A-FALSE-REFUSALS`.
+
+Re-measure on `sigil-cand-ae04cac7` (committed tree, `tree: clean at capture`):
+- Probes (72 review + x1-x4 + y1-y3 + r1-r7 + z1; `ff-probe-table-f1c.txt`, columns base / 7d46ec3d / 5c01239d /
+  1cd657b0 / ae04cac7). Changes against 1cd657b0: y1, y2, y3 refused; r7 newly refused (false refusal). z1 builds
+  on all five (known escape). Every other probe as on 1cd657b0.
+- BN `SHAPES 7/7 IDENTICAL` (`AEON_DIR` unset for the script). RN sonic4 154 / demo 127 / Cherub 127, all SAME;
+  Cherub builds; no `preserves-sr` line in any stderr. No aeon or Cherub shape is refused.
+- W2 plant: rc 1 at `dma_queue.emp:185:9` (`QueueDMA_Deferrable`); restored, status empty, rebuild rc 0, 850262
+  bytes, CRC `142a39b9`.
+- TC, five runs, all rc 0: leaf crates 140 lines 1640, `sigil-cli` 203 lines 1029, `sigil-build` 6 lines 180,
+  `sigil-harness` 70 lines 532, `sigil-frontend-emp` 150 lines 3034. 569 lines, 6415 passed, 0 failed, 4 ignored.
+  Expected 6302 + 113 - 0 = 6415. Difference 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.

@@ -3540,8 +3540,8 @@ when 2b lands.
 ## STEPA-P2A-FALSE-REFUSALS
 
 - state: open 2026-11-21 (booked by step A piece 2a; re-measured by its final-review fix wave on
-  `sigil-cand-5c01239d` and again after F1b on `sigil-cand-1cd657b0`: every row below holds on both unless it
-  says otherwise)  size: `S` each  project: `STEP-A`
+  `sigil-cand-5c01239d`, after F1b on `sigil-cand-1cd657b0` and after F1c on `sigil-cand-ae04cac7`: every row
+  below holds on each unless it says otherwise)  size: `S` each  project: `STEP-A`
 - blockedBy: nothing. None occurs in aeon today (0 firings across the 7 shapes and Cherub).
 
 **Correct shapes the level walk refuses.** Each row measured on master (`sigil-base`) and on the fix-wave
@@ -3571,6 +3571,14 @@ binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-
   `sigil-cand-1cd657b0` refuses. Any code label whose address the routine takes is an entry at the caller's
   level with nothing saved, so it meets the bracket's save and the restore is untracked. None in aeon (BN 7/7,
   RN 3 SAME on 1cd657b0). Fix would need to know the address is not jumped to.
+- (Fix wave F1c.) A masked routine with the offset-entry hazard: every instruction becomes an entry at the
+  caller's level, so every restore meets an empty stack and is untracked. `r7_hazard_from_unrelated_address`
+  (`lea .h(pc), a0` for a helper OUTSIDE the bracket, then save; mask; `jsr 4(a1)`; restore; `rts`): master,
+  7d46ec3d, 5c01239d and 1cd657b0 build; `sigil-cand-ae04cac7` refuses. `r6_masked_offset_hazard`
+  (`move.w .x+2(pc), d0` reading an instruction word, then a bracket ending at `.x`) is refused from 1cd657b0 on
+  (it also takes `.x`'s address). The common object-dispatch shape (masked, balanced, `jsr 4(a1)`, no local label
+  address taken) is NOT affected (`a_masked_displaced_call_builds`). None in aeon (BN 7/7, RN 3 SAME on
+  ae04cac7).
 
 ## CFG-BT-BF-EDGES
 
@@ -3626,3 +3634,53 @@ compared before and after.
    seen by the level walk, and was not seen by the old line-order check either: `d10_data_sr` builds clean on
    master (`sigil-base`, rc 0) and on the fix-wave binary (rc 0). Data is not an instruction to any CFG check;
    not provable, recorded so nobody assumes it is covered.
+
+## STEPA-P2A-KNOWN-ESCAPES
+
+- state: open 2026-11-21 (step A piece 2a final-review fix wave, after F1c `ae04cac7`)  size: `M` overall
+  project: `STEP-A`
+- blockedBy: each item names its own home.
+
+**Ways a routine that declares `preserves(sr.mask)` / `preserves(sr)` can still leave at the wrong interrupt
+level and build, after piece 2a.** Each measured on master (`sigil-base`), the reviewed branch tip
+(`sigil-cand-7d46ec3d`) and the fix-wave binary (`sigil-cand-ae04cac7`); probes under `.stepA-p2a-scratch/`.
+
+- **A code label reached only through a DATA jump table, with no `targets` clause** (`ff-probes/z1`). Found in the
+  F1c pass. The table entry `dc.w .mid-.tbl` is data, so `.mid` is neither address-taken (class (c) reads
+  instruction operands only) nor a `targets` label, and `.tbl` is a data label, so `jmp .tbl(pc, d1.w)` sets no
+  offset hazard. When `.mid` is also reached by ordinary flow with a save on the stack, its restore is trusted:
+  master rc 0, 7d46ec3d rc 0, ae04cac7 rc 0. Fix direction: read local code labels out of inline data cells too
+  (as class (c)), or require `targets(...)` on every computed `jmp` in a mask-claiming routine.
+
+  ```
+  module m
+  proc P () clobbers(d0, d1, a0) preserves(sr.mask) {
+      tst.w d0
+      beq .x
+      move.w sr, -(sp)
+      move.w #$2700, sr
+  .mid:
+      move.w (sp)+, sr
+      rts
+  .x:
+      moveq #0, d1
+      move.w .tbl(pc, d1.w), d1
+      jmp .tbl(pc, d1.w)
+  .tbl:
+      dc.w .mid-.tbl
+  }
+  ```
+- **An interior address formed OUTSIDE the routine without an `export` label** (another routine jumping to
+  `P` plus an offset). Out of the model on purpose (module doc of `sr_level.rs`); not measured.
+- **`bt` / `bf`**: the edge model treats both as falling through. `q04_bt_plain`, `q03_bf_call`, `m2_bt_s`,
+  `m2_bt_w`, `m_bt`, `m2_bf`: rc 0 on all three binaries. Home: `CFG-BT-BF-EDGES`.
+- **Raw `dc.w` that encodes an `sr` write** (`d10_data_sr`): rc 0 on all three. Home: `STEPA-P2A-OWNER-NOTES` (2).
+- **Calls** (piece 2b): a call to a routine that masks (`a_call_to_a_masking_routine_still_builds`); a local helper
+  that rewrites its caller's saved word (`h01`, `q08`: rc 0 on all three); a mid-body tail or branch out to a
+  non-preserver (`t01`, `t02`: rc 0 on all three, `[proc.sr-undeclared]` warning only). Home: `STEPA-P2B-CALLS`.
+- **The S and T bits under bare `preserves(sr)`** (`b01`, `b03`): rc 1 on master, rc 0 on 7d46ec3d and ae04cac7
+  (advisory only). Owner decision: `STEPA-P2A-OWNER-NOTES` (1).
+
+Closed by the fix wave (refused on ae04cac7): c01, c02 (pointer/`targets` block feeding the restore), s02, d12,
+d15, c03 (sp shapes), x1-x4 (pointer or `targets` into dead code or a reached restore), y1-y3 (entry by address
+arithmetic).
