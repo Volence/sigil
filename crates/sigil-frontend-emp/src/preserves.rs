@@ -893,6 +893,72 @@ fn immediate_sp_cleanup_bytes(mnem: &str, ops: &[CodeOperand]) -> Option<i64> {
     }
 }
 
+/// How one 68000 instruction moves sp, as far as the stack check's own
+/// helpers can say. Built from them so the two readings cannot drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))] // Task 2 of step A piece 2a uses it; remove then.
+pub(crate) enum SpEffect {
+    /// sp does not move.
+    None,
+    /// `-(sp)`: this many bytes pushed (a `movem` counts every member).
+    Push(u32),
+    /// This many bytes leave the stack: `(sp)+`, `rtr`'s condition-code word,
+    /// or `add`/`addq`/`adda #n, sp`.
+    Drop(u32),
+    /// Anything the stack check bails on: a bare `a7`, a `(sp)` store,
+    /// `d(sp)` other than the exempt reads, `(sp,Xn)`, `sub #n, sp`, `link`, `unlk`.
+    /// Also `lea` or `pea` with an sp-based source: the stack's address escapes.
+    Lost,
+}
+
+/// How instruction `idx` moves sp. Same order of cases as [`transfer`]: call,
+/// `rtr`, `link`/`unlk`, immediate cleanup, the sp hazard with its three
+/// exemptions, push, pop. Two stated differences from `transfer`: `pea <ea>` is
+/// `Push(4)` (`transfer` does not model it), and a `lea`/`pea` whose source is
+/// sp-based is `Lost` (`transfer` exempts `lea (sp), aN` as a read).
+#[cfg_attr(not(test), allow(dead_code))] // Task 2 of step A piece 2a uses it; remove then.
+pub(crate) fn sp_effect(items: &[CodeItem], idx: usize) -> SpEffect {
+    let Some(CodeItem::Instr { mnemonic, ops, .. }) = items.get(idx) else {
+        return SpEffect::None;
+    };
+    let (mnem, ops) = (mnemonic.as_str(), ops.as_slice());
+    if is_call(mnem) {
+        return SpEffect::None;
+    }
+    if mnem == "rtr" {
+        return SpEffect::Drop(2);
+    }
+    if mnem == "link" || mnem == "unlk" {
+        return SpEffect::Lost;
+    }
+    if let Some(n) = immediate_sp_cleanup_bytes(mnem, ops) {
+        return u32::try_from(n).map_or(SpEffect::Lost, SpEffect::Drop);
+    }
+    // `lea`/`pea` read the sp-based source's ADDRESS, which lets the stack be
+    // rewritten through another register: lost, even for the `(sp)` form.
+    if (mnem == "lea" || mnem == "pea") && ops.first().is_some_and(operand_touches_sp) {
+        return SpEffect::Lost;
+    }
+    if mnem == "pea" {
+        return SpEffect::Push(4);
+    }
+    if sp_hazard(ops)
+        && !is_sp_top_read(ops)
+        && !is_safe_sp_disp_read(mnem, ops)
+        && !is_irq_frame_access(items, idx)
+    {
+        return SpEffect::Lost;
+    }
+    let members = reglist_mask(ops).map_or(1, |m| m.count_ones());
+    if is_push(ops) {
+        return SpEffect::Push(slot_bytes(instr_size(items, idx)) * members);
+    }
+    if is_pop(ops) {
+        return SpEffect::Drop(slot_bytes(instr_size(items, idx)) * members.max(1));
+    }
+    SpEffect::None
+}
+
 /// Drop exactly `n` BYTES of tracked slots off the top of `st.stack` (an immediate
 /// sp-cleanup). Returns `Some(reason)` on a bail:
 /// - the drop lands MID-SLOT (`n` does not consume whole slots) — a partial-slot
@@ -1845,6 +1911,104 @@ mod frame_tests {
 
     fn rts(idx: u32) -> CodeItem {
         instr(idx, "rts", vec![])
+    }
+
+    /// One sized instruction item, for the `sp_effect` rows.
+    fn sized(mnemonic: &str, size: Option<Width>, ops: Vec<CodeOperand>) -> CodeItem {
+        let mut it = instr(0, mnemonic, ops);
+        if let CodeItem::Instr { size: s, .. } = &mut it {
+            *s = size;
+        }
+        it
+    }
+
+    /// Which rows of the `sp_effect` table are the two stated differences from
+    /// `transfer` (`pea` is unmodelled there, `lea (sp)` is exempted there).
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    enum Row {
+        Same,
+        StatedDifference,
+        Frame,
+    }
+
+    fn sp_effect_rows() -> Vec<(&'static str, CodeItem, SpEffect, Row)> {
+        use CodeOperand as O;
+        use SpEffect as E;
+        let sp = Reg::A7;
+        let (w, l, b) = (Some(Width::W), Some(Width::L), Some(Width::B));
+        vec![
+            ("move.w sr,-(sp)", sized("move", w, vec![O::Sr, O::PreDec(sp)]), E::Push(2), Row::Same),
+            ("move.l d0,-(sp)", sized("move", l, vec![O::Reg(Reg::D0), O::PreDec(sp)]), E::Push(4), Row::Same),
+            ("movem.l d0-d2/a0,-(sp)", sized("movem", l, vec![O::RegList(0x0107), O::PreDec(sp)]), E::Push(16), Row::Same),
+            ("movem.w d0-d1,-(sp)", sized("movem", w, vec![O::RegList(0x0003), O::PreDec(sp)]), E::Push(4), Row::Same),
+            ("move.b d0,-(sp)", sized("move", b, vec![O::Reg(Reg::D0), O::PreDec(sp)]), E::Push(2), Row::Same),
+            ("pea (a0)", sized("pea", l, vec![O::Ind(Reg::A0)]), E::Push(4), Row::StatedDifference),
+            ("pea 4(sp)", sized("pea", l, vec![O::DispInd { disp: 4, reg: sp }]), E::Lost, Row::StatedDifference),
+            ("lea (sp),a0", sized("lea", l, vec![O::Ind(sp), O::Reg(Reg::A0)]), E::Lost, Row::StatedDifference),
+            ("move.w (sp)+,sr", sized("move", w, vec![O::PostInc(sp), O::Sr]), E::Drop(2), Row::Same),
+            ("move.w (sp)+,ccr", sized("move", w, vec![O::PostInc(sp), O::Ccr]), E::Drop(2), Row::Same),
+            ("movem.l (sp)+,d0-d2/a0", sized("movem", l, vec![O::PostInc(sp), O::RegList(0x0107)]), E::Drop(16), Row::Same),
+            ("rtr", sized("rtr", None, vec![]), E::Drop(2), Row::Same),
+            ("addq.l #2,sp", sized("addq", l, vec![O::Imm(2), O::Reg(sp)]), E::Drop(2), Row::Same),
+            ("adda.w #8,sp", sized("adda", w, vec![O::Imm(8), O::Reg(sp)]), E::Drop(8), Row::Same),
+            ("subq.l #2,sp", sized("subq", l, vec![O::Imm(2), O::Reg(sp)]), E::Lost, Row::Same),
+            ("move.w d0,1(sp)", sized("move", w, vec![O::Reg(Reg::D0), O::DispInd { disp: 1, reg: sp }]), E::Lost, Row::Same),
+            ("movea.l 8(sp),a1", sized("movea", l, vec![O::DispInd { disp: 8, reg: sp }, O::Reg(Reg::A1)]), E::None, Row::Same),
+            ("move.w (sp),d0", sized("move", w, vec![O::Ind(sp), O::Reg(Reg::D0)]), E::None, Row::Same),
+            ("link a6,#-8", link(0, Reg::A6, -8), E::Lost, Row::Frame),
+            ("unlk a6", unlk(0, Reg::A6), E::Lost, Row::Frame),
+            ("jsr Foo", sized("jsr", None, vec![O::Sym("Foo".to_string())]), E::None, Row::Same),
+            ("moveq #0,d0", sized("moveq", None, vec![O::Imm(0), O::Reg(Reg::D0)]), E::None, Row::Same),
+        ]
+    }
+
+    #[test]
+    fn sp_effect_reads_each_form() {
+        for (name, item, want, _) in sp_effect_rows() {
+            assert_eq!(sp_effect(&[item], 0), want, "{name}");
+        }
+        // A non-instruction item does not move sp.
+        assert_eq!(sp_effect(&[CodeItem::Label {
+            name: "x".to_string(),
+            export: false,
+            span: Span { source: SourceId(0), start: 0, end: 0 },
+        }], 0), SpEffect::None);
+    }
+
+    /// `sp_effect` is built from the stack check's own helpers; this pins that the
+    /// two cannot drift, on every row that is not a stated difference.
+    #[test]
+    fn sp_effect_agrees_with_the_stack_check() {
+        for (name, item, want, kind) in sp_effect_rows() {
+            if kind != Row::Same {
+                continue;
+            }
+            let items = [item];
+            let cfg = Cfg::build(&items);
+            // Two-byte slots, so a `.w` pop and a `.l` pop both land on a slot edge.
+            let mut st = State::at_entry();
+            for _ in 0..16 {
+                st.stack.push(Slot { reg: None, bytes: 2, save_width: None });
+            }
+            let before = st.depth_bytes();
+            let bail = transfer(&cfg, 0, &mut st, &items, &CallPolicy::ClobberAll);
+            let moved = st.depth_bytes() - before;
+            match want {
+                SpEffect::None => {
+                    assert!(bail.is_none(), "{name}: {bail:?}");
+                    assert_eq!(moved, 0, "{name}");
+                }
+                SpEffect::Push(n) => {
+                    assert!(bail.is_none(), "{name}: {bail:?}");
+                    assert_eq!(moved, n as i64, "{name}");
+                }
+                SpEffect::Drop(n) => {
+                    assert!(bail.is_none(), "{name}: {bail:?}");
+                    assert_eq!(moved, -(n as i64), "{name}");
+                }
+                SpEffect::Lost => assert!(bail.is_some(), "{name}: the stack check must bail too"),
+            }
+        }
     }
 
     /// The one thing the exit KIND does not settle: whether running off the end
