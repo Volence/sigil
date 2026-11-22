@@ -237,3 +237,48 @@ W2 liveness (rc 0, printed twice):
 
 Every `.err` present. Reference trees' `git status --short` empty. Restored with
 `git checkout 4870e983 -- crates/sigil-frontend-emp/src/lower/proc.rs`; `git status --short` empty.
+
+### Task 4: the walk in place of the line-order test (7cef6d21)
+
+`check_preserves_sr`'s third refusal (`if !sr_writes_round_trip(..)`) replaced by a loop over
+`sr_level::mask_findings(&buf.items, noreturn)`: one `Level::Error` per finding at
+`finding.span`, message texts as the brief; for `Untracked { lost_at: Some(..) }` also one
+`Level::Note` at the `lost_at` span, "the interrupt level stops being known here"
+(`sigil_span::Level` has `Note`). Two tail refusals and their returns untouched;
+`sr_writes_round_trip` untouched (still called from `eval/asm.rs`). `dead_code` allowance on
+`mod sr_level` removed; clippy `-D warnings` exit 0, no dead item reported.
+
+**Why the check ran twice.** Temporary backtrace print in `check_preserves_sr` (removed with
+`git checkout a213dac7 -- .../proc.rs`) on `survey-probes/d_ori_no_save.emp`: call 1 is
+`lower_proc -> check_clobbers -> verified_preserves_regs -> check_preserves` into a local
+`sink` (only "any error?" is read, to zero the register credit; the sink is dropped); call 2
+is `lower_proc -> check_preserves` (line 258) into the real `diags`. Only call 2 reaches the
+user. Measured: `sigil-base emp d_ori_no_save.emp --hex` prints the old diagnostic once;
+`sigil-t4` prints the new one once (d_ori, w2_planted, e_bare_sr_planted: 1 line each;
+h_via_d0: the error and the note, 1 each). Nothing done about it: the new diagnostics ride the
+same path. Side effect (intended): a W2-shaped routine that also preserves registers now gets
+no register credit from `verified_preserves_regs`, as any refused routine already did.
+
+**TDD.** New `tests/sr_level.rs`, 18 tests, each pins the full diagnostic list (level, message
+or code, anchor line via a byte-offset-to-line helper). RED before the wiring:
+`7 passed; 11 failed` (W2 and variants, export-after-save, closing-label branch: `left: []`;
+d/h/l/pointer: the old "not bracketed by" text at line 2; bare-`sr` W2: only the ccr advisory).
+Log `.stepA-p2a-scratch/t4-red.log`. GREEN: 18 passed. Front-end total 2997 passed, 0 failed
+(150 result lines; 2979 + 18). `tranche21_spelling_probes` 15 + `diag_assert_vector` 8 passed
+(no skips), `sr_undeclared_gate` 6 passed. No existing test touched.
+
+`with_ints_off_and_an_early_return_inside_is_refused`, measured: three errors, all on the inner
+`rts` line: `[proc.preserves-sr-unbalanced]` (at 7), `[context.escape]`, `[stack.unbalanced]`
+(2 bytes still on the stack). Before the wiring the first was absent.
+
+**RF** (skip the findings loop). From disk:
+`2627:    for finding in mask_findings(&buf.items, noreturn).into_iter().take(0) {`;
+`git diff --stat`: `proc.rs | 2 +-`. `w2_is_refused_at_the_leaking_return ... FAILED`
+(`left: []`, `right: [.. NotTheCallers text .., line: 8]`), `0 passed; 1 failed`. Restored with
+`git checkout 7cef6d21 -- crates/sigil-frontend-emp/src/lower/proc.rs`; `git status --short`
+empty; sr_level 18 passed. Transcript `.stepA-p2a-scratch/t4-rf.txt`.
+
+**Sanity builds** (`sigil-t4` = `a213dac7-dirty`, the committed 7cef6d21 sources; outputs
+`.stepA-p2a-scratch/t4-sanity/`): sonic4 release rc 0, 142a39b9/850262; sonic4 debug rc 0,
+20acdb67/870606 (both = baseline); 0 `preserves-sr-unbalanced` lines. Aeon ref
+`git status --short` empty.
