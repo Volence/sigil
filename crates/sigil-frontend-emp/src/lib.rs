@@ -24,7 +24,6 @@ pub mod preserves;
 pub mod regfile;
 pub mod resolve;
 pub mod resumable;
-#[cfg_attr(not(test), allow(dead_code))] // Task 3 of step A piece 2a walks routines with it; remove then.
 mod sr_level;
 pub mod z80_preserves;
 pub mod type_slice;

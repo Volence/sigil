@@ -2557,12 +2557,12 @@ fn check_out(
 /// The mask-claim save/restore-balance check (tranche 5 — S2-D7's first
 /// syntactic slice; Sound_PostByte is the exhibit), run for `preserves(sr)`
 /// AND `preserves(sr.mask)` (`token` names the declared spelling for the
-/// message): if the body writes SR at all, a `move.w sr, -(sp)` save must
-/// precede the FIRST SR write and the LAST SR write must be the
-/// `move.w (sp)+, sr` restore. The full-SR round trip restores both halves,
-/// so one proof serves either claim. Static order only — no path analysis (a
-/// save/restore split across branches is S2-D7's dataflow half); a body with
-/// NO SR writes preserves vacuously.
+/// message): after the two tail refusals below, every way out of the body must
+/// be provably at the caller's interrupt level, followed down each path by
+/// [`crate::sr_level::mask_findings`] (step A piece 2a; this replaced the
+/// line-order test `sr_writes_round_trip`, which the context-definition check
+/// still uses). The full-SR round trip restores both halves, so one proof
+/// serves either claim; a body with NO SR writes preserves vacuously.
 fn check_preserves_sr(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
@@ -2619,19 +2619,46 @@ fn check_preserves_sr(
             return;
         }
     }
-    if !sr_writes_round_trip(buf.items.iter()) {
-        push(
-            diags,
-            Level::Error,
-            proc.span,
-            format!(
-                "[proc.preserves-sr-unbalanced] `{}` declares `preserves({token})` but its \
-                 body's SR writes are not bracketed by the `move.w sr, -(sp)` … \
-                 `move.w (sp)+, sr` pair (the syntactic slice checks static order; \
-                 path-sensitive save/restore is S2-D7)",
-                proc.name
+    // Step A piece 2a: every way out must be at the caller's interrupt level,
+    // followed down each path (`crate::sr_level`), one error per way out that is
+    // not, anchored at that way out.
+    use crate::sr_level::{mask_findings, MaskFindingKind};
+    let name = &proc.name;
+    for finding in mask_findings(&buf.items, noreturn) {
+        let message = match &finding.kind {
+            MaskFindingKind::NotTheCallers { levels } => {
+                let levels = levels.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
+                format!(
+                    "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
+                     way out can be reached with the interrupt level at {levels}, not the caller's \
+                     (a path masks interrupts and does not restore the saved level)"
+                )
+            }
+            MaskFindingKind::Untracked { lost_at: Some((_, mnemonic, _)) } => format!(
+                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
+                 interrupt level cannot be followed to this way out: it stops being known at an \
+                 earlier `{mnemonic}` (restore it with `move.w (sp)+, sr` from the matching \
+                 `move.w sr, -(sp)`, with the stack as it was at the save)"
             ),
-        );
+            MaskFindingKind::Untracked { lost_at: None } => format!(
+                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
+                 interrupt level cannot be followed to this way out"
+            ),
+            MaskFindingKind::Unreached => format!(
+                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
+                 instruction sets the interrupt level in code the checker cannot reach from the \
+                 routine's entries (entered through a pointer or a computed jump), so it cannot \
+                 be followed"
+            ),
+            MaskFindingKind::Rte => format!(
+                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but leaves \
+                 by `rte`, which loads the interrupt level from the stack"
+            ),
+        };
+        push(diags, Level::Error, finding.span, message);
+        if let MaskFindingKind::Untracked { lost_at: Some((_, _, at)) } = &finding.kind {
+            push(diags, Level::Note, *at, "the interrupt level stops being known here".to_string());
+        }
     }
 }
 
