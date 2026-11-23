@@ -1830,7 +1830,7 @@ mod zero_model_tests {
                 checked += 1;
             }
         }
-        // Measured at A11 Task 9: 137 spellings over all 85 families.
+        // Measured after CFG-BT-BF-EDGES: 135 spellings over all 85 families (was 137 at A11 Task 9).
         assert!(checked > 132, "the sweep checked only {checked} spellings");
     }
 
@@ -1861,7 +1861,7 @@ mod zero_model_tests {
                 checked += 1;
             }
         }
-        // Measured at A11 Task 9: 137 spellings over all 85 families.
+        // Measured after CFG-BT-BF-EDGES: 135 spellings over all 85 families (was 137 at A11 Task 9).
         assert!(checked > 132, "the sweep checked only {checked} spellings");
     }
 

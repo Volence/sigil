@@ -223,10 +223,10 @@ fn lower_m68k_instr(
 ) {
     let Some(m) = m68k_mnemonic(mnemonic) else {
         let msg = match mnemonic {
-            "bt" => "[mnemonic.bt-bf] `bt` is not a recognized 68000 branch mnemonic — use `bra` \
+            "bt" => "[mnemonic.bt-bf] `bt` is not a recognized 68000 branch mnemonic; use `bra` \
                      (condition code 0000 in Bcc encodes `bra`, not a conditional branch)"
                 .to_string(),
-            "bf" => "[mnemonic.bt-bf] `bf` is not a recognized 68000 branch mnemonic — use `bsr` \
+            "bf" => "[mnemonic.bt-bf] `bf` is not a recognized 68000 branch mnemonic; use `bsr` \
                      for a subroutine call (condition code 0001 in Bcc encodes `bsr`, not a \
                      branch-false)"
                 .to_string(),
@@ -1787,7 +1787,8 @@ fn width_to_size(w: Width) -> M68kSize {
 
 /// A 68k mnemonic string (already lowercased, size-stripped) to its
 /// [`M68kMnemonic`], including the `b<cc>`/`db<cc>`/`s<cc>` conditional families.
-/// Mirrors the AS front-end's `m68k_mnemonic`/`m68k_cond`.
+/// Mirrors the AS front-end's `m68k_mnemonic`/`m68k_cond`, except that `.emp`
+/// refuses `bt`/`bf` (`CFG-BT-BF-EDGES`, see the `strip_prefix('b')` arm below).
 pub(crate) fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {

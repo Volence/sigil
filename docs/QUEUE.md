@@ -3737,17 +3737,18 @@ level and build, after piece 2a.** Each measured on master (`sigil-base`), the r
   ```
 - **An interior address formed OUTSIDE the routine without an `export` label** (another routine jumping to
   `P` plus an offset). Out of the model on purpose (module doc of `sr_level.rs`); not measured.
-- **`bt` / `bf`**: the edge model treats both as falling through. `q04_bt_plain`, `q03_bf_call`, `m2_bt_s`,
-  `m2_bt_w`, `m_bt`, `m2_bf`: rc 0 on all three binaries. Home: `CFG-BT-BF-EDGES`.
 - **Raw `dc.w` that encodes an `sr` write** (`d10_data_sr`): rc 0 on all three. Home: `STEPA-P2A-OWNER-NOTES` (2).
 - **Calls** (piece 2b): a call to a routine that masks (`a_call_to_a_masking_routine_still_builds`); a local helper
   that rewrites its caller's saved word (`h01`, `q08`: rc 0 on all four); a mid-body tail or branch out to a
   non-preserver (`t01`, `t02`: rc 0 on all four, `[proc.sr-undeclared]` warning only). Home: `STEPA-P2B-CALLS`.
 - **The S and T bits under bare `preserves(sr)`** (`b01`, `b03`): rc 1 on master, rc 0 on 7d46ec3d and ae04cac7
-  (advisory only). Owner decision: `STEPA-P2A-OWNER-NOTES` (1).
+  (advisory only). Owner ruled 2026-11-23: leave as-is (`STEPA-P2A-OWNER-NOTES` CLOSED).
 
 - **A local helper that throws away its return address and the caller's save** (`rereview/p/c01`-`c03`): rc 0 on
   all four binaries. A call route. Home: `STEPA-P2B-CALLS`.
+
+Closed on `parcel/cfg-bt-bf-edges` (`CFG-BT-BF-EDGES`): **`bt` / `bf`** (`q04_bt_plain`, `q03_bf_call`, `m2_bt_s`,
+`m2_bt_w`, `m_bt`, `m2_bf`) — refused in `.emp` lowering with `[mnemonic.bt-bf]`.
 
 Closed by the fix wave (refused on ae04cac7): c01, c02 (pointer/`targets` block feeding the restore), s02, d12,
 d15, c03 (sp shapes), x1-x4 (pointer or `targets` into dead code or a reached restore), y1-y3 (an offset written

@@ -50,8 +50,8 @@ fn errors(src: &str) -> Vec<D> {
 }
 
 #[test]
-fn w2_leak_via_bt_is_refused_for_unsized_short_and_word() {
-    for form in ["bt .leak", "bt.s .leak", "bt.w .leak"] {
+fn w2_leak_via_bt_is_refused_for_all_sizes() {
+    for form in ["bt .leak", "bt.s .leak", "bt.w .leak", "bt.b .leak", "bt.l .leak"] {
         let src = format!(
             "module m\n\
              proc P () clobbers(d0, d1, a0) preserves(sr.mask) {{\n\
@@ -67,15 +67,17 @@ fn w2_leak_via_bt_is_refused_for_unsized_short_and_word() {
         );
         let errs = errors(&src);
         assert!(
-            errs.iter().any(|d| d.line == 5 && d.message.starts_with("[mnemonic.bt-bf] `bt`")),
-            "expected `[mnemonic.bt-bf]` error on line 5 for `{form}`, got: {errs:#?}"
+            errs.iter().any(|d| d.line == 5
+                && d.message.starts_with("[mnemonic.bt-bf] `bt`")
+                && d.message.contains("use `bra`")),
+            "expected `[mnemonic.bt-bf]` error guiding to `bra` on line 5 for `{form}`, got: {errs:#?}"
         );
     }
 }
 
 #[test]
-fn hidden_call_via_bf_is_refused_for_unsized_short_and_word() {
-    for form in ["bf .h", "bf.s .h", "bf.w .h"] {
+fn hidden_call_via_bf_is_refused_for_all_sizes() {
+    for form in ["bf .h", "bf.s .h", "bf.w .h", "bf.b .h", "bf.l .h"] {
         let src = format!(
             "module m\n\
              proc P () clobbers(d0) {{\n\
@@ -88,15 +90,58 @@ fn hidden_call_via_bf_is_refused_for_unsized_short_and_word() {
         );
         let errs = errors(&src);
         assert!(
-            errs.iter().any(|d| d.line == 3 && d.message.starts_with("[mnemonic.bt-bf] `bf`")),
-            "expected `[mnemonic.bt-bf]` error on line 3 for `{form}`, got: {errs:#?}"
+            errs.iter().any(|d| d.line == 3
+                && d.message.starts_with("[mnemonic.bt-bf] `bf`")
+                && d.message.contains("use `bsr`")),
+            "expected `[mnemonic.bt-bf]` error guiding to `bsr` on line 3 for `{form}`, got: {errs:#?}"
+        );
+    }
+}
+
+#[test]
+fn bt_and_bf_are_still_refused_under_as_compat() {
+    for (form, mnem, replacement) in [("bt .done", "bt", "bra"), ("bf .done", "bf", "bsr")] {
+        let src = format!(
+            "module m\n\
+             @as_compat\n\
+             proc P () {{\n\
+                 {form}\n\
+             .done:\n\
+                 rts\n\
+             }}\n"
+        );
+        let errs = errors(&src);
+        assert!(
+            errs.iter().any(|d| d.line == 4
+                && d.message.starts_with(&format!("[mnemonic.bt-bf] `{mnem}`"))
+                && d.message.contains(&format!("use `{replacement}`"))),
+            "expected `[mnemonic.bt-bf]` error under @as_compat for `{form}`, got: {errs:#?}"
+        );
+    }
+}
+
+#[test]
+fn uppercase_mixed_case_and_j_prefixed_bt_bf_are_refused() {
+    for form in ["BT .done", "BF .done", "Bt .done", "jbt .done", "jbf .done"] {
+        let src = format!(
+            "module m\n\
+             proc P () {{\n\
+                 {form}\n\
+             .done:\n\
+                 rts\n\
+             }}\n"
+        );
+        let errs = errors(&src);
+        assert!(
+            errs.iter().any(|d| d.line == 3 && d.message.contains("not a recognized 68000 mnemonic")),
+            "expected unrecognized-mnemonic error on line 3 for `{form}`, got: {errs:#?}"
         );
     }
 }
 
 #[test]
 fn bt_and_bf_inside_comptime_asm_template_are_refused() {
-    for (line, expected) in [("bt .done", "bt"), ("bf .done", "bf")] {
+    for (line, expected, replacement) in [("bt .done", "bt", "bra"), ("bf .done", "bf", "bsr")] {
         let src = format!(
             "module m\n\
              comptime fn emit_bad() -> Code {{\n\
@@ -112,7 +157,8 @@ fn bt_and_bf_inside_comptime_asm_template_are_refused() {
         );
         let errs = errors(&src);
         assert!(
-            errs.iter().any(|d| d.message.starts_with(&format!("[mnemonic.bt-bf] `{expected}`"))),
+            errs.iter().any(|d| d.message.starts_with(&format!("[mnemonic.bt-bf] `{expected}`"))
+                && d.message.contains(&format!("use `{replacement}`"))),
             "expected `[mnemonic.bt-bf]` refusal for `{line}` in comptime asm template, got: {errs:#?}"
         );
     }

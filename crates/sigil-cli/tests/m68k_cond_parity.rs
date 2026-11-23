@@ -35,12 +35,10 @@
 //! and the `Cond` enum's documented nibble. Agreement alone would be satisfied by
 //! two copies that are identically wrong.
 //!
-//! `bt`/`bf` are excluded from the branch family only. Both front ends reach them
-//! by the same generic `strip_prefix('b')` path, so they would encode to `0x6000`
-//! and `0x6100` — `bra` and `bsr`. That is a shared property of both copies rather
-//! than a parity difference, and testing it here would read as a blessing of a
-//! spelling no 68000 assembler is expected to offer. The `s`/`db` families cover
-//! `t` and `f`.
+//! `bt`/`bf` are excluded from the branch family only: `.emp` refuses both
+//! (`CFG-BT-BF-EDGES`, pointing to `bra`/`bsr`), while `sigil-frontend-as`
+//! still accepts them through `strip_prefix('b')`. Neither is a real 68000
+//! branch mnemonic; the `s`/`db` families cover `t` and `f`.
 
 use sigil_backend_m68k::m68k::Cond;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
