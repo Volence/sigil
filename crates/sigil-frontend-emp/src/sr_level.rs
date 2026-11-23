@@ -296,9 +296,6 @@ fn is_call(mnem: &str) -> bool {
 pub(crate) struct SrProcInput<'a> {
     pub(crate) name: &'a str,
     pub(crate) items: &'a [CodeItem],
-    /// `"sr"` or `"sr.mask"` when the proc promises to preserve the interrupt
-    /// mask; `None` otherwise.
-    pub(crate) preserves_sr_token: Option<&'static str>,
     pub(crate) falls_into: Option<&'a str>,
     pub(crate) is_resumable: bool,
     pub(crate) is_continuation: bool,
@@ -982,7 +979,6 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
     let proc = SrProcInput {
         name: "",
         items,
-        preserves_sr_token: Some("sr.mask"),
         falls_into: None,
         is_resumable: false,
         is_continuation: false,

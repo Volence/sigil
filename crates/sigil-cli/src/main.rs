@@ -2395,6 +2395,14 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
     ) {
         failed = true;
     }
+    if refuse_located("[proc.preserves-sr-unbalanced]/[proc.with-sr-level-broken] firings",
+        &report.sr_level_firings,
+        |f| Some(f.span),
+        |f| f.message.clone(),
+        &src_index,
+    ) {
+        failed = true;
+    }
 
     let out_got: Vec<(String, String)> =
         report.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
@@ -2888,6 +2896,21 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         };
         debug_assert!(code.starts_with(bus_code(f.kind)));
         println!("  {:<28} {code} @ {}..{}", f.proc, f.span.start, f.span.end);
+    }
+
+    println!(
+        "\n-- [sr_level] interrupt-level firings ({}), trusted @continuation ({}): --",
+        report.sr_level_firings.len(),
+        report.sr_trusted_continuations.len(),
+    );
+    for f in &report.sr_level_firings {
+        println!("  {:<28} {} @ {}..{}", f.proc, f.message, f.span.start, f.span.end);
+    }
+    if !report.sr_trusted_continuations.is_empty() {
+        println!("   trusted @continuation:");
+        for name in &report.sr_trusted_continuations {
+            println!("  {name}");
+        }
     }
 
     println!(

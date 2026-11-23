@@ -2159,7 +2159,6 @@ fn run_module_sr_level_pass(
         .map(|lp| SrProcInput {
             name: &lp.decl.name,
             items: &lp.buf.items,
-            preserves_sr_token: lp.preserves_sr_token,
             falls_into: lp.decl.falls_into.as_deref(),
             is_resumable: lp.decl.is_resumable(),
             is_continuation: lp.decl.is_continuation(),

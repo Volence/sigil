@@ -58,7 +58,17 @@ const CALL_MNEMONICS: [&str; 3] = ["jsr", "bsr", "jbsr"];
 /// Mnemonics that TAIL-TRANSFER: the target's effects become the caller's, but
 /// an unresolved target (a local `.loop` label) is NOT a hole — so these edges
 /// are kept only when the target resolves to a known proc.
-const TAIL_MNEMONICS: [&str; 3] = ["jmp", "bra", "jbra"];
+const TAIL_MNEMONICS: [&str; 4] = ["jmp", "bra", "jbra", "jra"];
+
+/// One whole-program 68000 interrupt-level firing (`[proc.preserves-sr-unbalanced]`
+/// or `[proc.with-sr-level-broken]`, step A piece 2b).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SrLevelFiring {
+    pub proc: String,
+    pub span: Span,
+    pub code: &'static str,
+    pub message: String,
+}
 
 /// The corpus-wide contract analysis result.
 #[derive(Debug, Default)]
@@ -372,6 +382,13 @@ pub struct ContractReport {
     /// later declaration: the closure keys nodes by name, so one went unchecked.
     /// Zero-firing by contract.
     pub z80_collisions: Vec<(String, Span)>,
+    /// Whole-program 68000 interrupt-level firings (`[proc.preserves-sr-unbalanced]`
+    /// across calls/tails/branches/`falls_into` and Rule 3 `[proc.with-sr-level-broken]`).
+    /// Zero-firing by contract. Sorted (proc, span).
+    pub sr_level_firings: Vec<SrLevelFiring>,
+    /// `@continuation` 68000 procs whose manufactured `rte` exit is trusted as
+    /// level-preserving (Decision 1, audited in `--report contracts`). Sorted.
+    pub sr_trusted_continuations: Vec<String>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -1368,6 +1385,100 @@ pub fn analyze_corpus_with_contracts(
     });
     comptime_unresolved.dedup();
 
+    // Step A piece 2b: whole-program 68000 interrupt-level propagation across
+    // calls, mid-body tails, conditional branches out, `falls_into`, exported
+    // mid-body labels, and Rule 3 (`with <ctx> { }` held-level verification).
+    let mut sr_extern_summaries: BTreeMap<String, crate::sr_level::ProcSummary> = BTreeMap::new();
+    let mut sr_clobber_types: BTreeSet<String> = BTreeSet::new();
+    fn collect_sr_env(
+        items: &[Item],
+        ext: &mut BTreeMap<String, crate::sr_level::ProcSummary>,
+        clob_types: &mut BTreeSet<String>,
+    ) {
+        for item in items {
+            match item {
+                Item::ExternProc(e) => {
+                    ext.insert(e.name.clone(), crate::sr_level::extern_proc_summary(e));
+                }
+                Item::ContractType(ct) => {
+                    if ct.sig.clobbers.as_deref().is_some_and(crate::sr_level::tokens_clobber_sr_mask)
+                    {
+                        clob_types.insert(ct.name.clone());
+                    }
+                }
+                Item::Section(s) => collect_sr_env(&s.items, ext, clob_types),
+                _ => {}
+            }
+        }
+    }
+    for file in files {
+        if !module_is_z80(&file.module) {
+            collect_sr_env(&file.items, &mut sr_extern_summaries, &mut sr_clobber_types);
+        }
+    }
+    let sr_inputs: Vec<crate::sr_level::SrProcInput<'_>> = proc_bufs
+        .iter()
+        .map(|pb| crate::sr_level::SrProcInput {
+            name: &pb.name,
+            items: &pb.buf.items,
+            falls_into: pb.falls_into.as_deref(),
+            is_resumable: pb.is_resumable,
+            is_continuation: pb.is_continuation,
+            span: pb.span,
+        })
+        .collect();
+    let sr_env = crate::sr_level::SrExternalEnv {
+        noreturn: &noreturn,
+        extern_summaries: &sr_extern_summaries,
+        sr_clobber_types: &sr_clobber_types,
+        whole_program: true,
+    };
+    let any_sr_work = proc_bufs.iter().any(|pb| {
+        pb.preserves_sr_token.is_some()
+            || pb.buf.items.iter().any(|it| matches!(it, CodeItem::ContextMark { .. }))
+    });
+    let mut sr_level_firings: Vec<SrLevelFiring> = Vec::new();
+    if any_sr_work {
+        let table = crate::sr_level::SummaryTable::compute(&sr_inputs, &sr_env);
+        for (pi, pb) in proc_bufs.iter().enumerate() {
+            if let Some(token) = pb.preserves_sr_token {
+                for f in crate::sr_level::mask_findings_for_proc(pi, &sr_inputs[pi], &table, &sr_env)
+                {
+                    sr_level_firings.push(SrLevelFiring {
+                        proc: pb.name.clone(),
+                        span: f.span,
+                        code: "[proc.preserves-sr-unbalanced]",
+                        message: crate::sr_level::format_mask_finding(&pb.name, token, &f.kind),
+                    });
+                }
+            }
+            for bf in crate::sr_level::check_bracket_levels(pi, &sr_inputs[pi], &table, &sr_env) {
+                sr_level_firings.push(SrLevelFiring {
+                    proc: pb.name.clone(),
+                    span: bf.span,
+                    code: "[proc.with-sr-level-broken]",
+                    message: crate::sr_level::format_bracket_finding(&pb.name, &bf),
+                });
+            }
+        }
+    }
+    sr_level_firings.sort_by(|a, b| {
+        (&a.proc, span_key(&a.span), a.code, &a.message)
+            .cmp(&(&b.proc, span_key(&b.span), b.code, &b.message))
+    });
+    let mut sr_trusted_continuations: Vec<String> = proc_bufs
+        .iter()
+        .filter(|pb| {
+            pb.is_continuation
+                && pb.buf.items.iter().any(|it| {
+                    matches!(it, CodeItem::Instr { mnemonic, .. } if mnemonic == "rte")
+                })
+        })
+        .map(|pb| pb.name.clone())
+        .collect();
+    sr_trusted_continuations.sort();
+    sr_trusted_continuations.dedup();
+
     ContractReport {
         closure,
         firings,
@@ -1429,6 +1540,8 @@ pub fn analyze_corpus_with_contracts(
         ),
         z80_clobber_no_direct_caller: z80_partition.firing_without_direct_caller,
         z80_collisions: z80_closure_inputs.collisions,
+        sr_level_firings,
+        sr_trusted_continuations,
     }
 }
 
@@ -2052,6 +2165,12 @@ struct ProcBuf {
     /// which the claim would have no legal remedy). The raw `out_cond` list
     /// cannot tell the difference.
     cond_out_pairs: Vec<(String, String)>,
+    /// Declared `preserves(sr)` / `preserves(sr.mask)` spelling, if any (68k only).
+    preserves_sr_token: Option<&'static str>,
+    /// `@resumable` 68k proc (`jmp (aN)` treated as return exit).
+    is_resumable: bool,
+    /// `@continuation` 68k proc (manufactured `rte` trusted per Decision 1).
+    is_continuation: bool,
 }
 
 /// The set of status flags a decl's `out(carry: name)` clauses name.
@@ -2232,6 +2351,9 @@ fn collect_items(
                         preserve_word_check,
                         falls_into: p.falls_into.clone(),
                         cond_out_pairs: p.cond_out_pairs(crate::regfile::RegFile::M68k),
+                        preserves_sr_token: crate::sr_level::preserves_sr_token(&p.preserves),
+                        is_resumable: p.is_resumable(),
+                        is_continuation: p.is_continuation(),
                     });
                 }
             }
@@ -2365,6 +2487,9 @@ fn collect_z80_flag_procs(
                         // The §7.1 survives walk is 68k-only; a Z80 buf never
                         // reaches it (these live in their own vector).
                         cond_out_pairs: Vec::new(),
+                        preserves_sr_token: None,
+                        is_resumable: false,
+                        is_continuation: false,
                     });
                 }
             }
