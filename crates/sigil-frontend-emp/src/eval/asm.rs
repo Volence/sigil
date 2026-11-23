@@ -981,7 +981,7 @@ impl Evaluator<'_> {
         if !rte
             && acq_ok
             && rel_ok
-            && !crate::lower::sr_writes_round_trip(
+            && !crate::sr_level::context_pair_round_trips_sr(
                 buf.items[acq_start..acq_end]
                     .iter()
                     .chain(&buf.items[rel_start..rel_end])

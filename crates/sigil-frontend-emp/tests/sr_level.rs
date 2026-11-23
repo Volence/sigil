@@ -1019,3 +1019,226 @@ proc Q () clobbers(sr) {
         vec![err(not_the_callers("sr", "7"), line_named(src, "rts", 0))],
     );
 }
+
+// ---- Step A piece 2b: Task 3 Rule 3 (`with <ctx> { }` level hold) & context round-trip ----
+
+#[test]
+fn rule3_direct_sr_write_inside_with_ints_off_is_refused_without_preserves_sr() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0, sr) {{
+    with ints_off {{
+        move.w #$2300, sr
+        moveq #0, d0
+    }}
+    rts
+}}
+"
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.line == line_named(&src, "move.w #$2300, sr", 0)),
+        "expected [proc.with-sr-level-broken] on the offending sr write: {d:#?}"
+    );
+    // Must not cascade-blame the innocent instruction after it.
+    assert_eq!(
+        d.iter().filter(|x| x.message.starts_with("[proc.with-sr-level-broken]")).count(),
+        1,
+        "expected a single firing, not a cascade: {d:#?}"
+    );
+}
+
+#[test]
+fn rule3_call_to_unmasker_inside_with_ints_off_is_refused() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0) {{
+    with ints_off {{
+        jbsr Unmask
+    }}
+    rts
+}}
+proc Unmask () clobbers(sr) {{
+    move.w #$2000, sr
+    rts
+}}
+"
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.message.contains("Unmask")
+            && x.line == line_named(&src, "jbsr Unmask", 0)),
+        "expected [proc.with-sr-level-broken] naming Unmask: {d:#?}"
+    );
+}
+
+#[test]
+fn rule3_call_to_preserves_sr_callee_that_temporarily_unmasks_is_refused() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0) {{
+    with ints_off {{
+        jbsr UnmaskBriefly
+    }}
+    rts
+}}
+proc UnmaskBriefly () clobbers(d0) preserves(sr.mask) {{
+    move.w sr, -(sp)
+    move.w #$2000, sr
+    moveq #1, d0
+    move.w (sp)+, sr
+    rts
+}}
+"
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.message.contains("UnmaskBriefly")
+            && x.line == line_named(&src, "jbsr UnmaskBriefly", 0)),
+        "expected [proc.with-sr-level-broken] catching transient unmask via body_levels: {d:#?}"
+    );
+}
+
+#[test]
+fn rule3_call_to_critical_section_callee_staying_at_level_7_builds() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0) {{
+    with ints_off {{
+        jbsr QueueDMA
+    }}
+    rts
+}}
+proc QueueDMA () clobbers(d0) preserves(sr.mask) {{
+    move.w sr, -(sp)
+    ori.w #$0700, sr
+    moveq #1, d0
+    move.w (sp)+, sr
+    rts
+}}
+"
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
+#[test]
+fn rule3_released_by_rte_clean_and_broken() {
+    let ctx = "context ints_off_until_rte {
+    acquire = asm { ori.w #$0700, sr }
+    released_by_rte
+}
+";
+    let clean = format!(
+        "module m\n{ctx}proc VBlank () clobbers(d0) {{
+    with ints_off_until_rte {{
+        moveq #0, d0
+        rte
+    }}
+}}
+"
+    );
+    assert_eq!(lower(&clean), vec![]);
+
+    let broken = format!(
+        "module m\n{ctx}proc VBlank () clobbers(d0, sr) {{
+    with ints_off_until_rte {{
+        move.w #$2300, sr
+        rte
+    }}
+}}
+"
+    );
+    let d = lower(&broken);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.line == line_named(&broken, "move.w #$2300, sr", 0)),
+        "expected [proc.with-sr-level-broken] inside released_by_rte bracket: {d:#?}"
+    );
+}
+
+#[test]
+fn rule3_non_sr_context_is_untouched() {
+    let src = "module m
+context dummy {
+    acquire = asm { nop }
+    release = asm { nop }
+}
+proc P () clobbers(d0, sr) {
+    with dummy {
+        move.w #$2300, sr
+        moveq #0, d0
+    }
+    rts
+}
+";
+    assert_eq!(lower(src), vec![]);
+}
+
+#[test]
+fn context_pair_mismatched_stack_warns_sr_undeclared() {
+    // Old linear `sr_writes_round_trip` missed a stack push between save and restore.
+    let src = "module m
+context bad_stack {
+    acquire = asm {
+        move.w sr, -(sp)
+        move.w d0, -(sp)
+        ori.w #$0700, sr
+    }
+    release = asm {
+        move.w (sp)+, sr
+        move.w (sp)+, d0
+    }
+}
+proc P () clobbers(d0) {
+    with bad_stack {
+        nop
+    }
+    rts
+}
+";
+    let d = lower(src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.sr-undeclared]")),
+        "mismatched stack in context acquire/release must warn [proc.sr-undeclared]: {d:#?}"
+    );
+}
+
+#[test]
+fn rule3_nested_non_sr_bracket_and_assert_do_not_fire_with_sr_level_broken() {
+    let nested = format!(
+        "module m\n{INTS_OFF}context dummy {{
+    acquire = asm {{ nop }}
+    release = asm {{ nop }}
+}}
+proc P () clobbers(d0) {{
+    with ints_off {{
+        with dummy {{
+            moveq #0, d0
+        }}
+    }}
+    rts
+}}
+"
+    );
+    assert_eq!(lower(&nested), vec![]);
+
+    // `assert` desugars to an AssertDesugar transfer; Rule 3 must never blame it.
+    let with_assert = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0) {{
+    with ints_off {{
+        assert.w d0, eq
+        moveq #0, d0
+    }}
+    rts
+}}
+"
+    );
+    let d = lower_with(&with_assert, vec![("DEBUG".to_string(), 1)]);
+    assert!(
+        !d.iter().any(|x| x.message.starts_with("[proc.with-sr-level-broken]")),
+        "AssertDesugar must not trigger Rule 3: {d:#?}"
+    );
+}

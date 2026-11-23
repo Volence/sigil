@@ -76,6 +76,10 @@ impl LevelSet {
         (self.0 & !allowed.0) == 0
     }
 
+    pub(crate) fn contains_fixed(self, level: u8) -> bool {
+        self.0 & (1 << (level & 7)) != 0
+    }
+
     fn is_non_empty(self) -> bool {
         self.0 != 0
     }
@@ -1366,6 +1370,255 @@ pub(crate) fn format_mask_finding(name: &str, token: &str, kind: &MaskFindingKin
              by `rte`, which loads the interrupt level from the stack"
         ),
     }
+}
+
+/// Why a `with <ctx> { }` bracket's held interrupt level was broken (Rule 3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum BracketFindingKind {
+    /// Instruction or callee can reach fixed levels outside the held set.
+    LeftHeldLevel { observed: Vec<u8> },
+    /// Instruction or callee makes the interrupt level untracked.
+    Untracked,
+}
+
+/// One Rule 3 (`[proc.with-sr-level-broken]`) finding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct BracketFinding {
+    pub(crate) idx: usize,
+    pub(crate) span: Span,
+    pub(crate) ctx: String,
+    pub(crate) held: Vec<u8>,
+    pub(crate) callee: Option<String>,
+    pub(crate) kind: BracketFindingKind,
+}
+
+fn judge_bracket_level(obs: Level, allowed: LevelSet) -> Option<BracketFindingKind> {
+    if obs.subset_of(allowed) {
+        return None;
+    }
+    match obs {
+        Level::Known(s) => {
+            let outside: Vec<u8> =
+                s.fixed_levels().into_iter().filter(|&n| !allowed.contains_fixed(n)).collect();
+            if outside.is_empty() {
+                Some(BracketFindingKind::Untracked)
+            } else {
+                Some(BracketFindingKind::LeftHeldLevel { observed: outside })
+            }
+        }
+        Level::Unknown => Some(BracketFindingKind::Untracked),
+    }
+}
+
+/// Rule 3: for every complete `with <ctx> { }` region whose `acquire`
+/// establishes a concrete interrupt level (no `ENTRY` bit), verify that every
+/// reachable body instruction and callee stays within that held level.
+pub(crate) fn check_bracket_levels(
+    proc_idx: usize,
+    proc: &SrProcInput<'_>,
+    table: &SummaryTable,
+    env: &SrExternalEnv<'_>,
+) -> Vec<BracketFinding> {
+    let items = proc.items;
+    if !items.iter().any(|it| matches!(it, CodeItem::ContextMark { .. })) {
+        return Vec::new();
+    }
+    let (regions, _) = crate::context::regions_of(proc.name, items);
+    if regions.is_empty() {
+        return Vec::new();
+    }
+    let cfg = Cfg::build(items);
+    let mut findings = Vec::new();
+
+    for region in &regions {
+        let Some(first_acq) = (region.enter + 1..region.acquire_end)
+            .find(|&i| matches!(items[i], CodeItem::Instr { .. }))
+        else {
+            continue;
+        };
+        let acq_seeds = [(first_acq, Reach(Some(SrState::at_entry())))];
+        let acq_states = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &acq_seeds,
+            &|r: &Reach, idx, mnem, ops| {
+                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
+            },
+            &|succ| region.in_acquire(succ),
+        );
+
+        let mut acq_level: Option<Level> = None;
+        let mut body_entries: BTreeSet<usize> = BTreeSet::new();
+        for (&idx, reach_in) in &acq_states {
+            if reach_in.0.is_none() {
+                continue;
+            }
+            let CodeItem::Instr { mnemonic, ops, .. } = &items[idx] else { continue };
+            let reach_out = step_reach(
+                proc_idx,
+                items,
+                &cfg,
+                proc.is_resumable,
+                table,
+                env,
+                reach_in,
+                idx,
+                mnemonic,
+                ops,
+            );
+            let Some(out) = reach_out.0 else { continue };
+            for edge in edges_for(&cfg, Cpu::M68000, idx) {
+                if let Edge::Follow(succ) = edge {
+                    if succ > region.acquire_end && succ < region.body_end {
+                        acq_level = meet_opt_level(acq_level, Some(out.level));
+                        body_entries.insert(succ);
+                    }
+                }
+            }
+        }
+
+        let Some(Level::Known(allowed)) = acq_level else { continue };
+        if allowed.has_entry() || body_entries.is_empty() {
+            continue;
+        }
+        let held = allowed.fixed_levels();
+
+        let seed_state = SrState {
+            level: Level::Known(allowed),
+            stack: Stack::Known { depth: 0, saves: Vec::new() },
+        };
+        let body_seeds: Vec<(usize, Reach)> =
+            body_entries.iter().map(|&i| (i, Reach(Some(seed_state.clone())))).collect();
+        let body_states = forward_in_states(
+            &cfg,
+            Cpu::M68000,
+            &body_seeds,
+            &|r: &Reach, idx, mnem, ops| {
+                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
+            },
+            &|succ| succ > region.acquire_end && succ < region.body_end,
+        );
+
+        for (&idx, reach_in) in &body_states {
+            let Some(st_in) = &reach_in.0 else { continue };
+            let CodeItem::Instr { mnemonic, ops, span, author, .. } = &items[idx] else { continue };
+            if matches!(author, ItemAuthor::AssertDesugar) {
+                continue;
+            }
+            if is_call(mnemonic) {
+                let callee = table.call_summary(proc_idx, items, &cfg, idx, proc.is_resumable, env);
+                let mut combined: Option<Level> = None;
+                if let Some(b) = callee.body_levels {
+                    combined =
+                        meet_opt_level(combined, Some(compose_level(Level::Known(allowed), b)));
+                }
+                if let Some(e) = callee.exit_level {
+                    combined =
+                        meet_opt_level(combined, Some(compose_level(Level::Known(allowed), e)));
+                }
+                if let Some(obs) = combined {
+                    if let Some(kind) = judge_bracket_level(obs, allowed) {
+                        let callee_name = match classify_transfer(
+                            items,
+                            &cfg,
+                            idx,
+                            proc.is_resumable,
+                            env.noreturn,
+                        ) {
+                            TransferTarget::External(name) => Some(name),
+                            TransferTarget::TypedIndirect(ty) => Some(format!("({ty})")),
+                            TransferTarget::Local(_) => ops.iter().find_map(|o| match o {
+                                CodeOperand::Sym(n) | CodeOperand::PcRel { target: n, .. } => {
+                                    Some(n.clone())
+                                }
+                                _ => None,
+                            }),
+                            _ => None,
+                        };
+                        findings.push(BracketFinding {
+                            idx,
+                            span: *span,
+                            ctx: region.ctx.clone(),
+                            held: held.clone(),
+                            callee: callee_name,
+                            kind,
+                        });
+                    }
+                }
+                continue;
+            }
+            if sets_level(mnemonic, ops) {
+                let probe_in = if st_in.level.subset_of(allowed) {
+                    st_in.clone()
+                } else {
+                    SrState { level: Level::Known(allowed), stack: st_in.stack.clone() }
+                };
+                let out = step(items, &probe_in, idx, mnemonic, ops);
+                if let Some(kind) = judge_bracket_level(out.level, allowed) {
+                    findings.push(BracketFinding {
+                        idx,
+                        span: *span,
+                        ctx: region.ctx.clone(),
+                        held: held.clone(),
+                        callee: None,
+                        kind,
+                    });
+                }
+            }
+        }
+    }
+
+    findings
+}
+
+/// Format a `[proc.with-sr-level-broken]` diagnostic message.
+pub(crate) fn format_bracket_finding(proc_name: &str, f: &BracketFinding) -> String {
+    let held_str = f.held.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
+    let ctx = &f.ctx;
+    match (&f.callee, &f.kind) {
+        (Some(callee), BracketFindingKind::LeftHeldLevel { observed }) => {
+            let obs_str = observed.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
+            format!(
+                "[proc.with-sr-level-broken] `{proc_name}` holds interrupt level {held_str} \
+                 inside `with {ctx}`, but calling `{callee}` can reach interrupt level {obs_str}"
+            )
+        }
+        (Some(callee), BracketFindingKind::Untracked) => format!(
+            "[proc.with-sr-level-broken] `{proc_name}` holds interrupt level {held_str} \
+             inside `with {ctx}`, but calling `{callee}` leaves the interrupt level untracked"
+        ),
+        (None, BracketFindingKind::LeftHeldLevel { observed }) => {
+            let obs_str = observed.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
+            format!(
+                "[proc.with-sr-level-broken] `{proc_name}` holds interrupt level {held_str} \
+                 inside `with {ctx}`, but this instruction sets the interrupt level to {obs_str}"
+            )
+        }
+        (None, BracketFindingKind::Untracked) => format!(
+            "[proc.with-sr-level-broken] `{proc_name}` holds interrupt level {held_str} \
+             inside `with {ctx}`, but this instruction leaves the interrupt level untracked"
+        ),
+    }
+}
+
+/// True when a context's acquire + release items preserve the caller's
+/// interrupt level on every way out (replaces the linear `sr_writes_round_trip`
+/// check in `eval/asm.rs`).
+pub(crate) fn context_pair_round_trips_sr<'a>(
+    items: impl Iterator<Item = &'a CodeItem>,
+) -> bool {
+    let mut seq: Vec<CodeItem> = items.cloned().collect();
+    seq.push(CodeItem::Instr {
+        mnemonic: "rts".to_string(),
+        size: None,
+        ops: Vec::new(),
+        span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        as_type: None,
+        targets: Vec::new(),
+        author: ItemAuthor::User,
+    });
+    let empty = BTreeSet::new();
+    mask_findings(&seq, &empty).is_empty()
 }
 
 #[cfg(test)]

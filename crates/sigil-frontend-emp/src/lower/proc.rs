@@ -2587,15 +2587,6 @@ fn check_out(
     }
 }
 
-/// The mask-claim save/restore-balance check (tranche 5 — S2-D7's first
-/// syntactic slice; Sound_PostByte is the exhibit), run for `preserves(sr)`
-/// AND `preserves(sr.mask)` (`token` names the declared spelling for the
-/// message): after the two tail refusals below, every way out of the body must
-/// be provably at the caller's interrupt level, followed down each path by
-/// [`crate::sr_level::mask_findings`] (step A piece 2a; this replaced the
-/// line-order test `sr_writes_round_trip`, which the context-definition check
-/// still uses). The full-SR round trip restores both halves, so one proof
-/// serves either claim; a body with NO SR writes preserves vacuously.
 /// Run the deferred bare-`preserves(sr)` CCR advisory from the module-wide
 /// post-pass when the interrupt-level walk passes cleanly.
 pub(super) fn run_ccr_advisory(
@@ -2964,58 +2955,6 @@ fn ccr_effect(mnemonic: &str, ops: &[crate::value::CodeOperand]) -> CcrEffect {
         m if m.starts_with("db") => CcrEffect::Transparent,
         m if m.starts_with('b') && m.len() == 3 => CcrEffect::Transparent,
         _ => CcrEffect::Writes,
-    }
-}
-
-/// Do the SR writes in `items` ROUND-TRIP — a `move.w sr, -(sp)` save before the
-/// first write, and the `move.w (sp)+, sr` restore as the last? A stream with no
-/// SR write round-trips vacuously. Static order only, no path analysis (a
-/// save/restore split across branches is S2-D7's dataflow half).
-///
-/// `rte` loads SR wholesale from the stack with no `sr` operand, so it is the
-/// one SR write the operand shapes cannot see — any `rte` fails the round trip
-/// outright. (`rtr` pops only CCR; the mask survives it, so the MASK reading
-/// this recognizer serves is unaffected.)
-///
-/// One caller remains: the context DEFINITION check
-/// ([`Evaluator::lower_with`](crate::eval::Evaluator)) reads a `with` bracket's
-/// spliced acquire and release together — the proof that grounds the
-/// [`ItemAuthor::Context`](crate::value::ItemAuthor) exemption in
-/// [`check_clobbers`]. [`check_preserves_sr`] no longer calls it: its mask half
-/// is judged by the level walk (`sr_level::mask_findings`, step A piece 2a).
-pub(crate) fn sr_writes_round_trip<'a>(items: impl Iterator<Item = &'a CodeItem>) -> bool {
-    use crate::value::{CodeOperand, Reg};
-    let mut saved = false;
-    let mut saved_before_first_write: Option<bool> = None;
-    let mut last_write_is_restore = false;
-    for item in items {
-        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
-        if mnemonic == "rte" {
-            return false;
-        }
-        // `stop #imm` loads SR from its immediate with no `sr` operand: an SR
-        // write that is never the restore.
-        if mnemonic == "stop" {
-            saved_before_first_write.get_or_insert(saved);
-            last_write_is_restore = false;
-            continue;
-        }
-        // Save: `move.w sr, -(sp)` (reads SR — not an SR write).
-        if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
-            saved = true;
-            continue;
-        }
-        // Any SR-destination form is an SR write; the restore is the
-        // `move.w (sp)+, sr` spelling specifically.
-        if matches!(ops.last(), Some(CodeOperand::Sr)) {
-            saved_before_first_write.get_or_insert(saved);
-            last_write_is_restore =
-                matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Sr]);
-        }
-    }
-    match saved_before_first_write {
-        None => true,
-        Some(saved_first) => saved_first && last_write_is_restore,
     }
 }
 

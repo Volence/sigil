@@ -31,7 +31,7 @@ pub(crate) use code::is_recognized_mnemonic;
 pub(crate) use code::{m68k_mnemonic, z80_mnemonic};
 pub(crate) use code::{m68k_default_size, reg_kind};
 pub(crate) use proc::instr_written_regs;
-pub(crate) use proc::{sr_writes_round_trip, writes_dest_register};
+pub(crate) use proc::writes_dest_register;
 
 use crate::ast;
 use crate::eval::eval_proc_body_lowering;
@@ -2119,9 +2119,17 @@ fn run_module_sr_level_pass(
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::sr_level::{
-        extern_proc_summary, format_mask_finding, mask_findings_for_proc, tokens_clobber_sr_mask,
-        ProcSummary, SrExternalEnv, SrProcInput, SummaryTable,
+        check_bracket_levels, extern_proc_summary, format_bracket_finding, format_mask_finding,
+        mask_findings_for_proc, tokens_clobber_sr_mask, ProcSummary, SrExternalEnv, SrProcInput,
+        SummaryTable,
     };
+    let any_sr_work = lowered_68k.iter().any(|lp| {
+        lp.preserves_sr_token.is_some()
+            || lp.buf.items.iter().any(|it| matches!(it, crate::value::CodeItem::ContextMark { .. }))
+    });
+    if !any_sr_work {
+        return;
+    }
     fn collect_ext_and_types(
         items: &[ast::Item],
         ext: &mut std::collections::BTreeMap<String, ProcSummary>,
@@ -2167,16 +2175,23 @@ fn run_module_sr_level_pass(
     let table = SummaryTable::compute(&inputs, &env);
 
     for (pi, lp) in lowered_68k.iter().enumerate() {
-        let Some(token) = lp.preserves_sr_token else { continue };
-        if lp.sr_tail_failed {
-            continue;
+        if let Some(token) = lp.preserves_sr_token {
+            if !lp.sr_tail_failed {
+                let findings = mask_findings_for_proc(pi, &inputs[pi], &table, &env);
+                for finding in &findings {
+                    err(
+                        diags,
+                        finding.span,
+                        format_mask_finding(&lp.decl.name, token, &finding.kind),
+                    );
+                }
+                if lp.explicit_bare_sr && findings.is_empty() {
+                    proc::run_ccr_advisory(lp.decl, &lp.buf, noreturn, diags);
+                }
+            }
         }
-        let findings = mask_findings_for_proc(pi, &inputs[pi], &table, &env);
-        for finding in &findings {
-            err(diags, finding.span, format_mask_finding(&lp.decl.name, token, &finding.kind));
-        }
-        if lp.explicit_bare_sr && findings.is_empty() {
-            proc::run_ccr_advisory(lp.decl, &lp.buf, noreturn, diags);
+        for bf in check_bracket_levels(pi, &inputs[pi], &table, &env) {
+            err(diags, bf.span, format_bracket_finding(&lp.decl.name, &bf));
         }
     }
 }
