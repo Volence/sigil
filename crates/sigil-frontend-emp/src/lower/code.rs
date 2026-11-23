@@ -222,7 +222,17 @@ fn lower_m68k_instr(
     diags: &mut Vec<Diagnostic>,
 ) {
     let Some(m) = m68k_mnemonic(mnemonic) else {
-        push_err(diags, span, format!("`{mnemonic}` is not a recognized 68000 mnemonic"));
+        let msg = match mnemonic {
+            "bt" => "[mnemonic.bt-bf] `bt` is not a recognized 68000 branch mnemonic — use `bra` \
+                     (condition code 0000 in Bcc encodes `bra`, not a conditional branch)"
+                .to_string(),
+            "bf" => "[mnemonic.bt-bf] `bf` is not a recognized 68000 branch mnemonic — use `bsr` \
+                     for a subroutine call (condition code 0001 in Bcc encodes `bsr`, not a \
+                     branch-false)"
+                .to_string(),
+            _ => format!("`{mnemonic}` is not a recognized 68000 mnemonic"),
+        };
+        push_err(diags, span, msg);
         return;
     };
     if ops.iter().any(|o| matches!(o, CodeOperand::Usp)) && !is_usp_move(mnemonic, size, ops) {
@@ -1860,8 +1870,15 @@ pub(crate) fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
                 }
             }
             if let Some(rest) = base.strip_prefix('b') {
+                // `CFG-BT-BF-EDGES`: Motorola 68000 `Bcc` excludes condition
+                // codes 0000 (`T`, which is `bra`) and 0001 (`F`, which is
+                // `bsr`, a subroutine call). Accepting `bt`/`bf` here emitted
+                // `bra`/`bsr` opcodes while every CFG/call/stack/contract pass
+                // saw an unknown fall-through instruction.
                 if let Some(c) = m68k_cond(rest) {
-                    return Some(Bcc(c));
+                    if !matches!(c, M68kCond::T | M68kCond::F) {
+                        return Some(Bcc(c));
+                    }
                 }
             }
             if let Some(rest) = base.strip_prefix('s') {

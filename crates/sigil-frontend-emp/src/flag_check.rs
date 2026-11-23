@@ -1786,7 +1786,13 @@ mod zero_model_tests {
         ];
         let imm_to = |reg: CodeOperand| vec![CodeOperand::Imm(0), reg];
         match family {
-            "bcc" => CONDS.iter().map(|c| (format!("b{c}"), vec![])).collect(),
+            // `Bcc` excludes `t`/`f` (`bra`/`bsr` are their own ISA families;
+            // `.emp` refuses `bt`/`bf`, `CFG-BT-BF-EDGES`).
+            "bcc" => CONDS
+                .iter()
+                .filter(|&&c| c != "t" && c != "f")
+                .map(|c| (format!("b{c}"), vec![]))
+                .collect(),
             "scc" => CONDS.iter().map(|c| (format!("s{c}"), vec![])).collect(),
             "dbcc" => CONDS
                 .iter()

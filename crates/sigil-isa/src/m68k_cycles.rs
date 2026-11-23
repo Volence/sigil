@@ -420,8 +420,10 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         // --- control (Tables 8-6, 8-9) -------------------------------------
         // Bcc: taken 10 at either width; not-taken 8 (`.s`) / 12 (`.w`). BRA is
         // always taken: 10 at both widths, so width relaxation cannot move it.
-        (Bra, _) => exact(10),
-        (Bsr, _) => exact(18),
+        // Rule B (`m68k_decode`): `Bcc(T)` encodes `bra` and `Bcc(F)` encodes
+        // `bsr`, so they carry `Bra`/`Bsr` timing rather than conditional Bcc.
+        (Bra, _) | (Bcc(Cond::T), _) => exact(10),
+        (Bsr, _) | (Bcc(Cond::F), _) => exact(18),
         (Bcc(_), _) => match size {
             Size::S => CycleCost::Branch { taken: 10, not_taken: 8, exact: true },
             Size::W => CycleCost::Branch { taken: 10, not_taken: 12, exact: true },
@@ -718,6 +720,22 @@ mod tests {
         use EaCat::*;
         assert_eq!(instr_cycles(Bra, Size::S, &[]), CycleCost::Fixed { cycles: 10, exact: true });
         assert_eq!(instr_cycles(Bra, Size::W, &[]), CycleCost::Fixed { cycles: 10, exact: true });
+        assert_eq!(
+            instr_cycles(Bcc(Cond::T), Size::S, &[]),
+            CycleCost::Fixed { cycles: 10, exact: true }
+        );
+        assert_eq!(
+            instr_cycles(Bcc(Cond::T), Size::W, &[]),
+            CycleCost::Fixed { cycles: 10, exact: true }
+        );
+        assert_eq!(
+            instr_cycles(Bcc(Cond::F), Size::S, &[]),
+            CycleCost::Fixed { cycles: 18, exact: true }
+        );
+        assert_eq!(
+            instr_cycles(Bcc(Cond::F), Size::W, &[]),
+            CycleCost::Fixed { cycles: 18, exact: true }
+        );
         assert_eq!(
             instr_cycles(Bcc(Cond::Eq), Size::S, &[]),
             CycleCost::Branch { taken: 10, not_taken: 8, exact: true }

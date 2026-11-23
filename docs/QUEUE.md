@@ -3600,11 +3600,19 @@ binary; probes in `.stepA-p2a-scratch/ff-probes/` and `.stepA-p2a-scratch/final-
   address taken) is NOT affected (`a_masked_displaced_call_builds`). None in aeon (BN 7/7, RN 3 SAME on
   ae04cac7).
 
-## CFG-BT-BF-EDGES
+## CFG-BT-BF-EDGES: CLOSED 2026-11-23 (branch `parcel/cfg-bt-bf-edges`, pending merge)
 
-- state: open 2026-11-21 (found by the step A piece 2a final review, I2; recorded, not fixed on that branch)
-  size: `S`  project: `STEP-A`
-- blockedBy: nothing.
+- state: closed 2026-11-23 (refused in `.emp` lowering, plus `sigil-isa` `m68k_cycles` Rule B fix)  size: `S`  project: `STEP-A`
+- blockedBy: owner approval to merge `parcel/cfg-bt-bf-edges`.
+- **Resolution:** Motorola 68000 `Bcc` excludes condition codes `0000` (`T`, which encodes `bra`) and `0001` (`F`,
+  which encodes `bsr`, a subroutine call). `.emp`'s `m68k_mnemonic` (`crates/sigil-frontend-emp/src/lower/code.rs`)
+  now refuses `bt` and `bf` with `[mnemonic.bt-bf]` (directing authors to `bra` / `bsr`), closing the whole
+  13-checker blind spot (CFG, calls, stack, contracts, cycles, sr_level) in one place without affecting `st`/`sf`
+  or `dbt`/`dbf`. `sigil-isa`'s `m68k_cycles::instr_cycles` also now prices `Bcc(Cond::T)` as `Bra` (10) and
+  `Bcc(Cond::F)` as `Bsr` (18) per `m68k_decode` Rule B. Pinned red-first in
+  `crates/sigil-frontend-emp/tests/bt_bf_refusal.rs` and `crates/sigil-isa/src/m68k_cycles.rs`; A11 brute-force
+  ISA walk (`emp_isa_walk_m68k`) stays green.
+- Original booking (2026-11-21, step A piece 2a final review, I2), kept:
 
 **`bt` and `bf` assemble, but the shared edge model does not know them.** `bt` encodes as `bra` (`$60`) and `bf`
 as `bsr` (`$61`), but `crates/sigil-frontend-emp/src/flag_check.rs`'s edge model lists neither
@@ -3635,10 +3643,10 @@ Fix belongs in the shared edge model (`bt` unconditional, `bf` a call), or refus
 (no source uses them). Either way it is its own change, with BN (7 shapes) and the three contract reports
 compared before and after.
 
-## STEPA-P2A-OWNER-NOTES
+## STEPA-P2A-OWNER-NOTES: CLOSED 2026-11-23 (owner ruled: leave bare `preserves(sr)` as-is)
 
-- state: open 2026-11-21 (step A piece 2a final review, M3 and M8)  size: `S`  project: `STEP-A`
-- blockedBy: owner decision on (1).
+- state: closed 2026-11-23 (owner decision on item (1): leave bare `preserves(sr)` as-is; item (2) is informational)  size: `S`  project: `STEP-A`
+- blockedBy: nothing.
 
 **Two things the owner should know about `preserves(sr)` after piece 2a.**
 

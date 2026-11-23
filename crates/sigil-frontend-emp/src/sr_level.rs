@@ -595,11 +595,10 @@ fn code_label_index(items: &[CodeItem], cfg: &Cfg, name: &str) -> Option<usize> 
 }
 
 /// A branch, a call or a return: a mnemonic whose symbol operand is where
-/// control goes, not an address the routine takes. `bt`/`bf` are counted here
-/// too (they encode as `bra`/`bsr`).
+/// control goes, not an address the routine takes.
 fn is_transfer(mnem: &str) -> bool {
     matches!(mnem, "jmp" | "jsr" | "jbsr" | "jbra" | "jra" | "rts" | "rte" | "rtr" | "rtd")
-        || (mnem.starts_with('b') && (mnem.len() == 2 || mnem.len() == 3))
+        || (mnem.starts_with('b') && mnem.len() == 3)
         || mnem.starts_with("db")
         || mnem.starts_with("jb")
 }
