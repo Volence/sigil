@@ -470,7 +470,8 @@ fn a_displaced_jump_after_taking_an_address_is_refused() {
     assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
-/// Probe y3: `jmp .x+6(pc)` on one path.
+/// Probe y3: `jmp .x+6(pc)` on one path. Since piece 2b, the offset jump
+/// itself is also reported as an untracked transfer, beside `.x`'s `rts`.
 #[test]
 fn a_pc_relative_jump_with_an_offset_is_refused() {
     let src = routine(
@@ -478,7 +479,14 @@ fn a_pc_relative_jump_with_an_offset_is_refused() {
         &format!("    tst.w d0\n    beq .y\n    jmp .x+6(pc)\n.y:\n    rts{AT_X}"),
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 1))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp .x+6(pc)", 0)),
+            err(untracked(), line_named(&src, "rts", 1)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// The offset hidden in an immediate expression (`ImmLink`).
@@ -517,12 +525,20 @@ fn a_pc_relative_jump_into_a_reached_restore_is_refused() {
     assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
-/// Probe b05 (re-review N2): the same through `jsr .r(pc)`.
+/// Probe b05 (re-review N2): the same through `jsr .r(pc)`. Since piece 2b,
+/// `.r`'s `Unknown` summary also propagates back into `.via`'s `rts`.
 #[test]
 fn a_pc_relative_call_into_a_reached_restore_is_refused() {
     let src = into_reached_restore("    jsr .r(pc)\n    rts");
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "rts", 0)),
+            err(untracked(), line_named(&src, "rts", 1)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe r2: a balanced local helper called as `jsr .h(pc)` builds.
@@ -651,4 +667,165 @@ fn an_s_bit_write_under_bare_sr_gets_only_the_ccr_advisory() {
         }],
         "{d:#?}"
     );
+}
+
+// ---- Step A piece 2b: Task 1 local helpers (red-first) ----
+
+/// STEPA-P2B-CALLS M5 (`h01_helper_rewrites_save`): a local helper called
+/// between save and restore rewrites the caller's saved word via `4(sp)`.
+#[test]
+fn local_helper_rewriting_caller_saved_sr_is_refused() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    bsr .h
+    move.w (sp)+, sr
+    rts
+.h:
+    move.w #$2700, 4(sp)
+    rts",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.line == line_named(&src, "rts", 0)
+            && x.message == untracked()),
+        "expected Untracked error at caller's rts for h01, got: {d:#?}"
+    );
+}
+
+/// STEPA-P2B-CALLS M5 (`q08_pcrel_helper_stack`): same through `jsr .h(pc)`.
+#[test]
+fn pcrel_local_helper_rewriting_caller_saved_sr_is_refused() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    jsr .h(pc)
+    move.w (sp)+, sr
+    rts
+.h:
+    move.w #$2700, 4(sp)
+    rts",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.line == line_named(&src, "rts", 0)
+            && x.message == untracked()),
+        "expected Untracked error at caller's rts for q08, got: {d:#?}"
+    );
+}
+
+/// STEPA-P2B-CALLS re-review (`c01_helper_drops_return_bsr`): a local helper
+/// pops its own return address and the caller's save, returning at level 7.
+#[test]
+fn local_helper_dropping_return_and_save_via_bsr_is_refused() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    bsr .h
+    move.w (sp)+, sr
+    rts
+.h:
+    addq.l #6, sp
+    rts",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.line == line_named(&src, "rts", 0)
+            && x.message == untracked()),
+        "expected Untracked error at caller's rts for c01, got: {d:#?}"
+    );
+}
+
+/// STEPA-P2B-CALLS re-review (`c02_helper_drops_return_ptr`): same through
+/// `lea .h(pc), a0 / jsr (a0)` taken BEFORE the save.
+#[test]
+fn local_helper_dropping_return_via_pointer_is_refused() {
+    let src = routine(
+        "clobbers(d0, a0) preserves(sr.mask)",
+        "    lea .h(pc), a0
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    jsr (a0)
+    move.w (sp)+, sr
+    rts
+.h:
+    addq.l #6, sp
+    rts",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.line == line_named(&src, "rts", 0)
+            && x.message == untracked()),
+        "expected Untracked error at caller's rts for c02, got: {d:#?}"
+    );
+}
+
+/// STEPA-P2B-CALLS re-review (`c03_helper_jumps_back_into_caller_tail`):
+/// helper drops return+save and branches to `.out: rts`.
+#[test]
+fn local_helper_dropping_return_and_branching_to_tail_is_refused() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    bsr .h
+    move.w (sp)+, sr
+.out:
+    rts
+.h:
+    addq.l #6, sp
+    bra .out",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.line == line_named(&src, "rts", 0)
+            && x.message == untracked()),
+        "expected Untracked error at .out rts for c03, got: {d:#?}"
+    );
+}
+
+/// Control (C1): a local helper with internal stack loss called BEFORE the
+/// save (no saved SR on the stack yet) must NOT poison a later save/restore.
+#[test]
+fn local_helper_with_stack_loss_before_save_still_builds() {
+    let src = routine(
+        MASK,
+        "    bsr .h
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr
+    rts
+.h:
+    subq.l #2, sp
+    addq.w #1, (sp)
+    addq.l #2, sp
+    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
+}
+
+/// Control: a balanced local helper called INSIDE a save/restore bracket builds.
+#[test]
+fn balanced_local_helper_inside_mask_still_builds() {
+    let src = routine(
+        MASK,
+        "    move.w sr, -(sp)
+    move.w #$2700, sr
+    bsr .h
+    move.w (sp)+, sr
+    rts
+.h:
+    move.w d0, -(sp)
+    move.w (sp)+, d0
+    rts",
+    );
+    assert_eq!(lower(&src), vec![]);
 }

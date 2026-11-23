@@ -23,7 +23,7 @@
 use crate::context::{edges_for, forward_in_states, Lattice};
 use crate::flag_check::{Cfg, Edge};
 use crate::preserves::{exit_diverges, sp_effect, SpEffect};
-use crate::value::{CodeItem, CodeOperand, Reg};
+use crate::value::{CodeItem, CodeOperand, ItemAuthor, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -65,6 +65,17 @@ impl LevelSet {
         self.0 & ENTRY_BIT != 0
     }
 
+    /// Raw bitmask of fixed levels 0..=7 (`ENTRY_BIT` stripped). May be 0 when
+    /// `self` is `ENTRY` only, so this returns `u16` rather than a `LevelSet`.
+    pub(crate) fn fixed_bits(self) -> u16 {
+        self.0 & !ENTRY_BIT
+    }
+
+    /// True when every member of `self` is also in `allowed`.
+    pub(crate) fn subset_of(self, allowed: LevelSet) -> bool {
+        (self.0 & !allowed.0) == 0
+    }
+
     fn is_non_empty(self) -> bool {
         self.0 != 0
     }
@@ -78,10 +89,17 @@ pub(crate) enum Level {
 }
 
 impl Level {
-    fn meet(self, o: Level) -> Level {
+    pub(crate) fn meet(self, o: Level) -> Level {
         match (self, o) {
             (Level::Known(a), Level::Known(b)) => Level::Known(a.union(b)),
             _ => Level::Unknown,
+        }
+    }
+
+    pub(crate) fn subset_of(self, allowed: LevelSet) -> bool {
+        match self {
+            Level::Known(s) => s.subset_of(allowed),
+            Level::Unknown => false,
         }
     }
 
@@ -91,6 +109,111 @@ impl Level {
             Level::Unknown => true,
         }
     }
+}
+
+/// Compose a caller's current interrupt level with a callee's level transformer.
+///
+/// A callee summary's `ENTRY_BIT` stands for "whatever level the caller passed
+/// in"; fixed bits 0..=7 stand for concrete levels the callee establishes.
+/// Monotone in both arguments, associative, with `Level::Known(LevelSet::ENTRY)`
+/// as the two-sided identity.
+pub(crate) fn compose_level(caller: Level, callee: Level) -> Level {
+    match callee {
+        Level::Unknown => Level::Unknown,
+        Level::Known(cs) => {
+            let fixed = cs.fixed_bits();
+            if cs.has_entry() {
+                match caller {
+                    Level::Unknown => Level::Unknown,
+                    Level::Known(cl) => Level::Known(LevelSet(cl.0 | fixed)),
+                }
+            } else {
+                // `cs` is non-empty and lacks ENTRY, so `fixed != 0`.
+                Level::Known(LevelSet(fixed))
+            }
+        }
+    }
+}
+
+pub(crate) fn meet_opt_level(a: Option<Level>, b: Option<Level>) -> Option<Level> {
+    match (a, b) {
+        (None, x) | (x, None) => x,
+        (Some(x), Some(y)) => Some(x.meet(y)),
+    }
+}
+
+/// Optional reachability wrapper over [`SrState`] for [`forward_in_states`]:
+/// `Reach(None)` is the top identity of `meet` (an unreachable point, e.g.
+/// after a divergent call), letting divergent calls cleanly drop their
+/// fall-through edge without losing fixpoint monotonicity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Reach(Option<SrState>);
+
+impl Lattice for Reach {
+    fn meet(&self, other: &Self) -> Self {
+        match (&self.0, &other.0) {
+            (None, x) | (x, None) => Reach(x.clone()),
+            (Some(a), Some(b)) => Reach(Some(a.meet(b))),
+        }
+    }
+}
+
+/// Summary of what entering a routine (or exported label / local helper) does
+/// to the 68000 interrupt level and stack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ProcSummary {
+    /// Meet of outgoing interrupt levels across all non-diverging exits.
+    /// `None` means no path returns (diverges / `@noreturn` / infinite loop).
+    pub(crate) exit_level: Option<Level>,
+    /// Meet of interrupt levels observed at any reachable non-diverging point
+    /// inside the callee (including transitively across its own calls). Used by
+    /// Rule 3 (`with` brackets) to catch a callee that lowers the level mid-call
+    /// even if it restores before returning.
+    pub(crate) body_levels: Option<Level>,
+    /// True when any non-diverging exit loses stack tracking (`Stack::Lost`) or
+    /// exits with nonzero stack delta, meaning the callee may have overwritten
+    /// or popped past its caller's stack frame.
+    pub(crate) touches_caller_stack: bool,
+}
+
+impl ProcSummary {
+    pub(crate) const DIVERGES: ProcSummary =
+        ProcSummary { exit_level: None, body_levels: None, touches_caller_stack: false };
+
+    pub(crate) const IDENTITY: ProcSummary = ProcSummary {
+        exit_level: Some(Level::Known(LevelSet::ENTRY)),
+        body_levels: Some(Level::Known(LevelSet::ENTRY)),
+        touches_caller_stack: false,
+    };
+
+    pub(crate) const UNKNOWN: ProcSummary = ProcSummary {
+        exit_level: Some(Level::Unknown),
+        body_levels: Some(Level::Unknown),
+        touches_caller_stack: false,
+    };
+
+    pub(crate) fn meet(self, other: ProcSummary) -> ProcSummary {
+        ProcSummary {
+            exit_level: meet_opt_level(self.exit_level, other.exit_level),
+            body_levels: meet_opt_level(self.body_levels, other.body_levels),
+            touches_caller_stack: self.touches_caller_stack || other.touches_caller_stack,
+        }
+    }
+}
+
+/// Apply a callee summary at a call site. Returns `None` when the callee
+/// diverges (dropping the fall-through edge). Only poisons the caller's stack
+/// when the caller currently holds at least one saved SR on the stack: without
+/// a live SR save, a callee's internal stack loss cannot corrupt a save that
+/// has not yet been pushed.
+pub(crate) fn apply_summary(st: &SrState, summary: ProcSummary) -> Option<SrState> {
+    let callee_lvl = summary.exit_level?;
+    let level = compose_level(st.level, callee_lvl);
+    let stack = match &st.stack {
+        Stack::Known { saves, .. } if summary.touches_caller_stack && !saves.is_empty() => Stack::Lost,
+        other => other.clone(),
+    };
+    Some(SrState { level, stack })
 }
 
 /// One saved level on the stack. `below` is the depth in bytes before the push.
@@ -154,13 +277,482 @@ impl Lattice for SrState {
     }
 }
 
-/// What a call does to the level. 2a: nothing. Piece 2b changes this one place.
+/// What a call does to the level when no summary table is supplied (unit-test
+/// helper for [`step`]). Full call propagation uses [`step_with_summary`].
 fn call_effect(level: Level) -> Level {
     level
 }
 
 fn is_call(mnem: &str) -> bool {
     matches!(mnem, "jsr" | "bsr" | "jbsr")
+}
+
+/// One 68000 procedure fed into [`SummaryTable::compute`] and inter-procedural
+/// interrupt-level checks (step A piece 2b).
+pub(crate) struct SrProcInput<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) items: &'a [CodeItem],
+    /// `"sr"` or `"sr.mask"` when the proc promises to preserve the interrupt
+    /// mask; `None` otherwise.
+    pub(crate) preserves_sr_token: Option<&'static str>,
+    pub(crate) falls_into: Option<&'a str>,
+    pub(crate) is_resumable: bool,
+    pub(crate) is_continuation: bool,
+    pub(crate) span: Span,
+}
+
+/// External facts shared across every procedure in an inter-procedural walk.
+pub(crate) struct SrExternalEnv<'a> {
+    pub(crate) noreturn: &'a BTreeSet<String>,
+    /// Pre-built summaries for `extern proc` declarations.
+    pub(crate) extern_summaries: &'a BTreeMap<String, ProcSummary>,
+    /// Contract-type names (`type T = proc ...`) that explicitly declare
+    /// `clobbers(sr)` or `clobbers(sr.mask)`.
+    pub(crate) sr_clobber_types: &'a BTreeSet<String>,
+    /// True in whole-program mode (`corpus_contracts`); false in single-file
+    /// mode (where cross-file callees are unseen and deferred to whole-program).
+    pub(crate) whole_program: bool,
+}
+
+/// What a call or non-return transfer instruction targets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TransferTarget {
+    /// Divergent rail (`AssertDesugar`) or `@noreturn` target.
+    Divergent,
+    /// A local code label inside the same proc (`bsr .h`, `jsr .h(pc)`, `jmp .h(pc)`).
+    Local(usize),
+    /// A named external symbol (proc head or `Owner.label` export).
+    External(String),
+    /// A non-local symbol with a nonzero offset (`Foo+6`), whose landing point
+    /// is outside the entry-0 model.
+    OffsetUnknown,
+    /// A `@resumable` proc's untyped `jmp (aN)` (`aN != a7`) continuation exit.
+    ResumableReturn,
+    /// An indirect call/tail carrying an explicit `as Type` contract bound.
+    TypedIndirect(String),
+    /// An untyped indirect/computed call or jump (left to piece 4).
+    UntypedIndirect,
+}
+
+/// Classify a call or transfer instruction at `idx`.
+fn classify_transfer(
+    items: &[CodeItem],
+    cfg: &Cfg,
+    idx: usize,
+    is_resumable: bool,
+    noreturn: &BTreeSet<String>,
+) -> TransferTarget {
+    use CodeOperand as O;
+    let CodeItem::Instr { mnemonic, ops, as_type, author, .. } = &items[idx] else {
+        return TransferTarget::UntypedIndirect;
+    };
+    if matches!(author, ItemAuthor::AssertDesugar) {
+        return TransferTarget::Divergent;
+    }
+    if is_resumable
+        && mnemonic == "jmp"
+        && as_type.is_none()
+        && matches!(ops.as_slice(), [O::Ind(r)] if *r != Reg::A7)
+    {
+        return TransferTarget::ResumableReturn;
+    }
+    // Scan from the last operand so 2-operand `dbcc dN, Target` finds Target.
+    if let Some(op) = ops.last() {
+        match op {
+            O::Sym(name) => {
+                if let Some(local_idx) = code_label_index(items, cfg, name) {
+                    return TransferTarget::Local(local_idx);
+                }
+                if noreturn.contains(name) {
+                    return TransferTarget::Divergent;
+                }
+                return TransferTarget::External(name.clone());
+            }
+            O::AbsSym { target, .. } => {
+                if let Some(local_idx) = code_label_index(items, cfg, target) {
+                    return TransferTarget::Local(local_idx);
+                }
+                if noreturn.contains(target) {
+                    return TransferTarget::Divergent;
+                }
+                return TransferTarget::External(target.clone());
+            }
+            O::SymOff { sym, off } => {
+                if *off == 0 {
+                    if let Some(local_idx) = code_label_index(items, cfg, sym) {
+                        return TransferTarget::Local(local_idx);
+                    }
+                    if noreturn.contains(sym) {
+                        return TransferTarget::Divergent;
+                    }
+                    return TransferTarget::External(sym.clone());
+                }
+                return TransferTarget::OffsetUnknown;
+            }
+            O::PcRel { target, addend } => {
+                if *addend == 0 {
+                    if let Some(local_idx) = code_label_index(items, cfg, target) {
+                        return TransferTarget::Local(local_idx);
+                    }
+                    if noreturn.contains(target) {
+                        return TransferTarget::Divergent;
+                    }
+                    return TransferTarget::External(target.clone());
+                }
+                return TransferTarget::OffsetUnknown;
+            }
+            _ => {}
+        }
+    }
+    if let Some(ty) = as_type {
+        return TransferTarget::TypedIndirect(ty.clone());
+    }
+    TransferTarget::UntypedIndirect
+}
+
+/// Converged interrupt-level summaries for every entry point (proc heads,
+/// exported code labels, and local helper labels) across one or more 68000
+/// procedures.
+#[derive(Clone, Debug)]
+pub(crate) struct SummaryTable {
+    /// `(proc_idx, entry_instr_idx)` -> converged summary.
+    pub(crate) entries: BTreeMap<(usize, usize), ProcSummary>,
+    /// Empty-body procs (no instructions) keyed by `proc_idx`.
+    pub(crate) empty_procs: BTreeMap<usize, ProcSummary>,
+    /// Global symbol name (`ProcName` or `Owner.label`) -> `(proc_idx, Option<entry_instr_idx>)`.
+    pub(crate) by_name: BTreeMap<String, (usize, Option<usize>)>,
+    /// Per-proc local `address_taken` code label indices (for `c02` indirect stack check).
+    taken_per_proc: Vec<BTreeSet<usize>>,
+}
+
+impl SummaryTable {
+    /// Compute the least fixpoint of [`ProcSummary`] across all `procs`.
+    /// Each entry is walked from ONLY that entry (no `hidden_entries` or
+    /// `first_unreached` during fixpoint iteration).
+    pub(crate) fn compute(procs: &[SrProcInput<'_>], env: &SrExternalEnv<'_>) -> SummaryTable {
+        let cfgs: Vec<Cfg> = procs.iter().map(|p| Cfg::build(p.items)).collect();
+        let taken_per_proc: Vec<BTreeSet<usize>> =
+            procs.iter().zip(&cfgs).map(|(p, cfg)| address_taken(p.items, cfg)).collect();
+
+        let mut by_name: BTreeMap<String, (usize, Option<usize>)> = BTreeMap::new();
+        let mut entries: BTreeMap<(usize, usize), ProcSummary> = BTreeMap::new();
+        let mut empty_procs: BTreeMap<usize, ProcSummary> = BTreeMap::new();
+
+        for (pi, (proc, cfg)) in procs.iter().zip(&cfgs).enumerate() {
+            let first_instr = proc.items.iter().position(|it| matches!(it, CodeItem::Instr { .. }));
+            by_name.insert(proc.name.to_string(), (pi, first_instr));
+            match first_instr {
+                Some(idx) => {
+                    entries.insert((pi, idx), ProcSummary::DIVERGES);
+                }
+                None => {
+                    empty_procs.insert(pi, ProcSummary::DIVERGES);
+                }
+            }
+            for item in proc.items {
+                match item {
+                    CodeItem::Label { name, export: true, .. } => {
+                        if let Some(idx) = code_label_index(proc.items, cfg, name) {
+                            by_name.insert(name.clone(), (pi, Some(idx)));
+                            entries.insert((pi, idx), ProcSummary::DIVERGES);
+                        }
+                    }
+                    CodeItem::Instr { mnemonic, ops, .. } if is_call(mnemonic) => {
+                        for op in ops {
+                            for name in operand_symbols(op) {
+                                if let Some(idx) = code_label_index(proc.items, cfg, &name) {
+                                    entries.insert((pi, idx), ProcSummary::DIVERGES);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for &idx in &taken_per_proc[pi] {
+                entries.insert((pi, idx), ProcSummary::DIVERGES);
+            }
+        }
+
+        let mut table = SummaryTable { entries, empty_procs, by_name, taken_per_proc };
+
+        // Monotone fixpoint: height per entry is <= 11 (exit) + 11 (body) + 1 (stack),
+        // so iteration terminates quickly even with arbitrary mutual recursion.
+        let entry_keys: Vec<(usize, usize)> = table.entries.keys().copied().collect();
+        let empty_keys: Vec<usize> = table.empty_procs.keys().copied().collect();
+        loop {
+            let mut changed = false;
+            for &pi in &empty_keys {
+                let next = match procs[pi].falls_into {
+                    Some(target) => table.resolve_external(target, env),
+                    None => ProcSummary::IDENTITY,
+                };
+                let slot = table.empty_procs.get_mut(&pi).expect("empty proc key");
+                let merged = slot.meet(next);
+                if merged != *slot {
+                    *slot = merged;
+                    changed = true;
+                }
+            }
+            for &(pi, entry_idx) in &entry_keys {
+                let next = summarize_entry(pi, entry_idx, &procs[pi], &cfgs[pi], &table, env);
+                let slot = table.entries.get_mut(&(pi, entry_idx)).expect("entry key");
+                let merged = slot.meet(next);
+                if merged != *slot {
+                    *slot = merged;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        table
+    }
+
+    pub(crate) fn resolve_external(&self, name: &str, env: &SrExternalEnv<'_>) -> ProcSummary {
+        if env.noreturn.contains(name) {
+            return ProcSummary::DIVERGES;
+        }
+        if let Some(&(pi, entry)) = self.by_name.get(name) {
+            return match entry {
+                Some(idx) => self.entries.get(&(pi, idx)).copied().unwrap_or(ProcSummary::DIVERGES),
+                None => self.empty_procs.get(&pi).copied().unwrap_or(ProcSummary::DIVERGES),
+            };
+        }
+        if let Some(&ext) = env.extern_summaries.get(name) {
+            return ext;
+        }
+        if env.whole_program {
+            ProcSummary::UNKNOWN
+        } else {
+            ProcSummary::IDENTITY
+        }
+    }
+
+    /// Summary of a call instruction at `idx` in `proc_idx`.
+    pub(crate) fn call_summary(
+        &self,
+        proc_idx: usize,
+        items: &[CodeItem],
+        cfg: &Cfg,
+        idx: usize,
+        is_resumable: bool,
+        env: &SrExternalEnv<'_>,
+    ) -> ProcSummary {
+        match classify_transfer(items, cfg, idx, is_resumable, env.noreturn) {
+            TransferTarget::Divergent => ProcSummary::DIVERGES,
+            TransferTarget::Local(local_idx) => {
+                self.entries.get(&(proc_idx, local_idx)).copied().unwrap_or(ProcSummary::DIVERGES)
+            }
+            TransferTarget::External(name) => self.resolve_external(&name, env),
+            TransferTarget::OffsetUnknown => ProcSummary::UNKNOWN,
+            TransferTarget::TypedIndirect(ty) => {
+                if env.sr_clobber_types.contains(&ty) {
+                    ProcSummary::UNKNOWN
+                } else {
+                    ProcSummary::IDENTITY
+                }
+            }
+            TransferTarget::UntypedIndirect => {
+                // Close `c02_helper_drops_return_ptr`: if this proc takes the
+                // address of a local helper whose summary touches its caller's
+                // stack, an untyped indirect call may invoke it. Keep `exit_level`
+                // and `body_levels` as IDENTITY (piece 4 owns blind-call levels).
+                let mut s = ProcSummary::IDENTITY;
+                if let Some(taken) = self.taken_per_proc.get(proc_idx) {
+                    if taken.iter().any(|&t| {
+                        self.entries.get(&(proc_idx, t)).is_some_and(|e| e.touches_caller_stack)
+                    }) {
+                        s.touches_caller_stack = true;
+                    }
+                }
+                s
+            }
+            TransferTarget::ResumableReturn => ProcSummary::IDENTITY,
+        }
+    }
+
+    /// Summary of a leaving `TailOut` / `BranchOut` edge at `idx` in `proc_idx`.
+    /// Returns `None` when the transfer diverges (skipped as an exit).
+    fn exit_transfer_summary(
+        &self,
+        proc_idx: usize,
+        items: &[CodeItem],
+        cfg: &Cfg,
+        idx: usize,
+        is_resumable: bool,
+        env: &SrExternalEnv<'_>,
+    ) -> Option<ProcSummary> {
+        match classify_transfer(items, cfg, idx, is_resumable, env.noreturn) {
+            TransferTarget::Divergent => None,
+            TransferTarget::ResumableReturn => Some(ProcSummary::IDENTITY),
+            TransferTarget::Local(local_idx) => {
+                Some(self.entries.get(&(proc_idx, local_idx)).copied().unwrap_or(ProcSummary::DIVERGES))
+            }
+            TransferTarget::External(name) => Some(self.resolve_external(&name, env)),
+            TransferTarget::OffsetUnknown => Some(ProcSummary::UNKNOWN),
+            TransferTarget::TypedIndirect(ty) => Some(if env.sr_clobber_types.contains(&ty) {
+                ProcSummary::UNKNOWN
+            } else {
+                ProcSummary::IDENTITY
+            }),
+            TransferTarget::UntypedIndirect => Some(ProcSummary::IDENTITY),
+        }
+    }
+}
+
+/// Step one instruction with an optional callee summary table.
+fn step_reach(
+    proc_idx: usize,
+    items: &[CodeItem],
+    cfg: &Cfg,
+    is_resumable: bool,
+    table: &SummaryTable,
+    env: &SrExternalEnv<'_>,
+    reach: &Reach,
+    idx: usize,
+    mnem: &str,
+    ops: &[CodeOperand],
+) -> Reach {
+    let Some(st) = &reach.0 else { return Reach(None) };
+    if is_call(mnem) {
+        let callee = table.call_summary(proc_idx, items, cfg, idx, is_resumable, env);
+        return Reach(apply_summary(st, callee));
+    }
+    Reach(Some(step(items, st, idx, mnem, ops)))
+}
+
+/// Compute one iteration of [`ProcSummary`] starting ONLY from `entry_idx`.
+fn summarize_entry(
+    proc_idx: usize,
+    entry_idx: usize,
+    proc: &SrProcInput<'_>,
+    cfg: &Cfg,
+    table: &SummaryTable,
+    env: &SrExternalEnv<'_>,
+) -> ProcSummary {
+    let seeds = [(entry_idx, Reach(Some(SrState::at_entry())))];
+    let states = forward_in_states(
+        cfg,
+        Cpu::M68000,
+        &seeds,
+        &|r: &Reach, idx, mnem, ops| {
+            step_reach(proc_idx, proc.items, cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
+        },
+        &|_| true,
+    );
+
+    let mut summary = ProcSummary::DIVERGES;
+    for (&idx, reach_in) in &states {
+        let Some(st_in) = &reach_in.0 else { continue };
+        let CodeItem::Instr { mnemonic, ops, .. } = &proc.items[idx] else { continue };
+
+        // Record body levels observed at this instruction and inside any callee.
+        if is_call(mnemonic) {
+            let callee = table.call_summary(proc_idx, proc.items, cfg, idx, proc.is_resumable, env);
+            if let Some(b) = callee.body_levels {
+                summary.body_levels =
+                    meet_opt_level(summary.body_levels, Some(compose_level(st_in.level, b)));
+            }
+        }
+        let reach_out = step_reach(
+            proc_idx,
+            proc.items,
+            cfg,
+            proc.is_resumable,
+            table,
+            env,
+            reach_in,
+            idx,
+            mnemonic,
+            ops,
+        );
+        let Some(out) = reach_out.0 else { continue };
+        summary.body_levels = meet_opt_level(summary.body_levels, Some(out.level));
+
+        let stack_corrupted = |s: &Stack| match s {
+            Stack::Known { depth: 0, .. } => false,
+            _ => true,
+        };
+
+        for edge in edges_for(cfg, Cpu::M68000, idx) {
+            match edge {
+                Edge::Follow(_) => {}
+                Edge::Return if mnemonic == "rte" => {
+                    if proc.is_continuation {
+                        // Decision 1: `@continuation` manufactured `rte` trusts
+                        // the restored level (does not poison caller stack).
+                        summary.exit_level = meet_opt_level(summary.exit_level, Some(out.level));
+                    } else {
+                        summary.exit_level = meet_opt_level(summary.exit_level, Some(Level::Unknown));
+                        if stack_corrupted(&out.stack) {
+                            summary.touches_caller_stack = true;
+                        }
+                    }
+                }
+                Edge::Return => {
+                    summary.exit_level = meet_opt_level(summary.exit_level, Some(out.level));
+                    if stack_corrupted(&out.stack) {
+                        summary.touches_caller_stack = true;
+                    }
+                }
+                Edge::TailOut | Edge::BranchOut => {
+                    if let Some(target_sum) = table.exit_transfer_summary(
+                        proc_idx,
+                        proc.items,
+                        cfg,
+                        idx,
+                        proc.is_resumable,
+                        env,
+                    ) {
+                        if let Some(b) = target_sum.body_levels {
+                            summary.body_levels = meet_opt_level(
+                                summary.body_levels,
+                                Some(compose_level(out.level, b)),
+                            );
+                        }
+                        if let Some(e) = target_sum.exit_level {
+                            summary.exit_level = meet_opt_level(
+                                summary.exit_level,
+                                Some(compose_level(out.level, e)),
+                            );
+                            if stack_corrupted(&out.stack) || target_sum.touches_caller_stack {
+                                summary.touches_caller_stack = true;
+                            }
+                        }
+                    }
+                }
+                Edge::FallOff => {
+                    if let Some(next_name) = proc.falls_into {
+                        let target_sum = table.resolve_external(next_name, env);
+                        if let Some(b) = target_sum.body_levels {
+                            summary.body_levels = meet_opt_level(
+                                summary.body_levels,
+                                Some(compose_level(out.level, b)),
+                            );
+                        }
+                        if let Some(e) = target_sum.exit_level {
+                            summary.exit_level = meet_opt_level(
+                                summary.exit_level,
+                                Some(compose_level(out.level, e)),
+                            );
+                            if stack_corrupted(&out.stack) || target_sum.touches_caller_stack {
+                                summary.touches_caller_stack = true;
+                            }
+                        }
+                    } else {
+                        summary.exit_level = meet_opt_level(summary.exit_level, Some(out.level));
+                        if stack_corrupted(&out.stack) {
+                            summary.touches_caller_stack = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    summary
 }
 
 /// Does this instruction set the level? `stop #imm` loads `sr` from its
@@ -375,60 +967,134 @@ pub(crate) struct MaskFinding {
 /// [`SrState::at_entry`] as well. Out of the model, on purpose: an interior
 /// address formed OUTSIDE the routine without an `export` label.
 pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Vec<MaskFinding> {
+    let empty_ext = BTreeMap::new();
+    let empty_types = BTreeSet::new();
+    let env = SrExternalEnv {
+        noreturn,
+        extern_summaries: &empty_ext,
+        sr_clobber_types: &empty_types,
+        whole_program: false,
+    };
+    let proc = SrProcInput {
+        name: "",
+        items,
+        preserves_sr_token: Some("sr.mask"),
+        falls_into: None,
+        is_resumable: false,
+        is_continuation: false,
+        span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+    };
+    let procs = [proc];
+    let table = SummaryTable::compute(&procs, &env);
+    mask_findings_for_proc(0, &procs[0], &table, &env)
+}
+
+/// Every way out of `proc` that is not provably at the caller's interrupt
+/// level, using the converged [`SummaryTable`] for local helpers, direct calls,
+/// mid-body tails, branches out, and `falls_into` (step A piece 2b).
+pub(crate) fn mask_findings_for_proc(
+    proc_idx: usize,
+    proc: &SrProcInput<'_>,
+    table: &SummaryTable,
+    env: &SrExternalEnv<'_>,
+) -> Vec<MaskFinding> {
+    let items = proc.items;
     let cfg = Cfg::build(items);
-    let walk = |seeds: &[(usize, SrState)]| {
+    let walk = |seeds: &[(usize, Reach)]| {
         forward_in_states(
             &cfg,
             Cpu::M68000,
             seeds,
-            &|st: &SrState, idx, mnem, ops| step(items, st, idx, mnem, ops),
+            &|r: &Reach, idx, mnem, ops| {
+                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
+            },
             &|_| true,
         )
     };
     let mut at = entry_seeds(items, &cfg);
-    let first = walk(&at_entry_states(&at));
+    let first = walk(&at_entry_reach(&at));
     let taken = address_taken(items, &cfg);
-    at.extend(hidden_entries(items, &cfg, &first, &taken));
+    at.extend(hidden_entries_reach(items, &cfg, &first, &taken));
     if offset_entry_hazard(items, &cfg, &taken) {
         at.extend(
             items.iter().enumerate().filter(|(_, it)| matches!(it, CodeItem::Instr { .. })).map(|(idx, _)| idx),
         );
     }
-    let mut seeds = at_entry_states(&at);
+    let mut seeds = at_entry_reach(&at);
     let mut states = walk(&seeds);
-    while let Some(idx) = first_unreached(items, &states) {
-        seeds.push((idx, SrState::at_entry()));
+    while let Some(idx) = first_unreached_reach(items, &states) {
+        seeds.push((idx, Reach(Some(SrState::at_entry()))));
         states = walk(&seeds);
     }
 
     let mut found: BTreeMap<usize, MaskFinding> = BTreeMap::new();
-    for (&idx, st_in) in &states {
+    for (&idx, reach_in) in &states {
+        let Some(_) = &reach_in.0 else { continue };
         let CodeItem::Instr { mnemonic, ops, span, .. } = &items[idx] else { continue };
-        let out = step(items, st_in, idx, mnemonic, ops);
+        let reach_out = step_reach(
+            proc_idx,
+            items,
+            &cfg,
+            proc.is_resumable,
+            table,
+            env,
+            reach_in,
+            idx,
+            mnemonic,
+            ops,
+        );
+        let Some(out) = reach_out.0 else { continue };
         for edge in edges_for(&cfg, Cpu::M68000, idx) {
             let kind = match edge {
                 Edge::Follow(_) => None,
-                Edge::Return if mnemonic == "rte" => Some(MaskFindingKind::Rte),
+                Edge::Return if mnemonic == "rte" => {
+                    if proc.is_continuation {
+                        judge_level(out.level)
+                    } else {
+                        Some(MaskFindingKind::Rte)
+                    }
+                }
                 Edge::Return => judge_level(out.level),
-                // A transfer out: skipped when it diverges (an assert rail, a
-                // noreturn target), as the stack check's `ExitKind::Defer` does.
                 Edge::TailOut | Edge::BranchOut => {
-                    if exit_diverges(&items[idx], noreturn) {
+                    if exit_diverges(&items[idx], env.noreturn) {
                         None
+                    } else if let Some(target_sum) = table.exit_transfer_summary(
+                        proc_idx,
+                        items,
+                        &cfg,
+                        idx,
+                        proc.is_resumable,
+                        env,
+                    ) {
+                        target_sum
+                            .exit_level
+                            .and_then(|e| judge_level(compose_level(out.level, e)))
+                    } else {
+                        None
+                    }
+                }
+                Edge::FallOff => {
+                    if let Some(next_name) = proc.falls_into {
+                        let target_sum = table.resolve_external(next_name, env);
+                        target_sum
+                            .exit_level
+                            .and_then(|e| judge_level(compose_level(out.level, e)))
                     } else {
                         judge_level(out.level)
                     }
                 }
-                // Running off the end is an ordinary way out and never diverges.
-                // `exit_diverges` judges the whole instruction, not the edge: it
-                // would drop a passing assert's `bcc` to the closing label, or the
-                // fall-through of a last `beq Fatal`.
-                Edge::FallOff => judge_level(out.level),
             };
-            // Several leaving edges of one instruction are judged on the one OUT
-            // state, so their findings are equal: keep the first.
             if let Some(kind) = kind {
                 found.entry(idx).or_insert(MaskFinding { idx, span: *span, kind });
+            }
+        }
+    }
+    // Empty proc with `falls_into`: delegate exit verdict to `falls_into`.
+    if items.iter().all(|it| !matches!(it, CodeItem::Instr { .. })) {
+        if let Some(next_name) = proc.falls_into {
+            let target_sum = table.resolve_external(next_name, env);
+            if let Some(kind) = target_sum.exit_level.and_then(judge_level) {
+                found.insert(0, MaskFinding { idx: 0, span: proc.span, kind });
             }
         }
     }
@@ -436,7 +1102,7 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
 }
 
 /// The lowest-index instruction the walk has no state for, if any.
-fn first_unreached(items: &[CodeItem], states: &BTreeMap<usize, SrState>) -> Option<usize> {
+fn first_unreached_reach(items: &[CodeItem], states: &BTreeMap<usize, Reach>) -> Option<usize> {
     items
         .iter()
         .enumerate()
@@ -445,13 +1111,8 @@ fn first_unreached(items: &[CodeItem], states: &BTreeMap<usize, SrState>) -> Opt
 }
 
 /// Every place a routine can be entered, each at [`SrState::at_entry`]: the
-/// first instruction; the instruction at every exported label; the instruction
-/// at every local label a `jsr`/`bsr`/`jbsr` names (a local helper has its own
-/// caller and its own return, and the CFG's call edge does not enter it).
-/// "The instruction at a label" is [`Cfg::label_index`]: the first instruction
-/// at or after the label, so a label followed by another label resolves to the
-/// instruction after both, and a body-closing label is `None` and seeds nothing.
-/// De-duplicated: one seed per instruction.
+/// first instruction; the instruction at every exported code label; the
+/// instruction at every local code label a `jsr`/`bsr`/`jbsr` names.
 fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
     let mut at: BTreeSet<usize> = BTreeSet::new();
     if let Some(first) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) {
@@ -459,11 +1120,11 @@ fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
     }
     for item in items {
         match item {
-            CodeItem::Label { name, export: true, .. } => at.extend(cfg.label_index(name)),
+            CodeItem::Label { name, export: true, .. } => at.extend(code_label_index(items, cfg, name)),
             CodeItem::Instr { mnemonic, ops, .. } if is_call(mnemonic) => {
                 for op in ops {
                     if let CodeOperand::Sym(name) = op {
-                        at.extend(cfg.label_index(name));
+                        at.extend(code_label_index(items, cfg, name));
                     }
                 }
             }
@@ -473,22 +1134,15 @@ fn entry_seeds(items: &[CodeItem], cfg: &Cfg) -> BTreeSet<usize> {
     at
 }
 
-fn at_entry_states(at: &BTreeSet<usize>) -> Vec<(usize, SrState)> {
-    at.iter().map(|&idx| (idx, SrState::at_entry())).collect()
+fn at_entry_reach(at: &BTreeSet<usize>) -> Vec<(usize, Reach)> {
+    at.iter().map(|&idx| (idx, Reach(Some(SrState::at_entry())))).collect()
 }
 
-/// The labels an entry the CFG cannot see may land on, as instruction indices:
-/// (a) every code label whose instruction `first` (the walk from the ordinary
-/// entries) did not reach; (b) every label named in an instruction's `targets`
-/// list; (c) every code label whose address the routine takes, that is, a name
-/// in an operand of an instruction that is not a branch, a call or a return
-/// (`taken`, [`address_taken`]); (d) every code label a branch, jump or call
-/// names in an operand that is not a plain `Sym` (`jmp .r(pc)`, `jsr .h(pc)`, an
-/// `AbsSym` form): the CFG follows only a plain `Sym`, so it does not enter there.
-fn hidden_entries(
+/// The labels an entry the CFG cannot see may land on, as instruction indices.
+fn hidden_entries_reach(
     items: &[CodeItem],
     cfg: &Cfg,
-    first: &BTreeMap<usize, SrState>,
+    first: &BTreeMap<usize, Reach>,
     taken: &BTreeSet<usize>,
 ) -> BTreeSet<usize> {
     let mut at = BTreeSet::new();
@@ -1210,7 +1864,8 @@ mod tests {
             set_sr(0x2700),             // 3
             op("rts", vec![]),          // 4
         ];
-        assert_eq!(found(items), vec![(4, not_callers(&[7]))]);
+        // Piece 2b propagates `.h`'s `{7}` summary back into the caller's `rts` (1) as well.
+        assert_eq!(found(items), vec![(1, not_callers(&[7])), (4, not_callers(&[7]))]);
     }
 
     #[test]
@@ -1639,7 +2294,7 @@ mod tests {
             op("rts", vec![]),                                                // 4
         ];
         items.extend(bracket_at_x()); // 5 label, 6 save, 7 mask, 8 restore, 9 rts
-        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+        assert_eq!(found(items), vec![(2, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]);
     }
 
     #[test]
@@ -1743,7 +2398,7 @@ mod tests {
             set_sr(0x2700),             // 4
             op("rts", vec![]),          // 5
         ];
-        assert_eq!(found(items), vec![(5, not_callers(&[7]))]);
+        assert_eq!(found(items), vec![(1, not_callers(&[7])), (5, not_callers(&[7]))]);
     }
 
     #[test]
@@ -1883,5 +2538,88 @@ mod tests {
             op("beq", vec![sym("Fatal")]),  // 2: BranchOut (diverges) + FallOff
         ];
         assert_eq!(found_with(items, &["Fatal"]), vec![(2, not_callers(&[7]))]);
+    }
+
+    #[test]
+    fn compose_level_is_associative_with_entry_identity_and_overwrites_unknown() {
+        let entry = Level::Known(LevelSet::ENTRY);
+        let l3 = Level::Known(LevelSet::only(3));
+        let l7 = Level::Known(LevelSet::only(7));
+        let e_or_7 = Level::Known(LevelSet::ENTRY.union(LevelSet::only(7)));
+        let sample = [entry, l3, l7, e_or_7, Level::Unknown];
+
+        for a in sample {
+            assert_eq!(compose_level(a, entry), a);
+            assert_eq!(compose_level(entry, a), a);
+            for b in sample {
+                for c in sample {
+                    assert_eq!(
+                        compose_level(compose_level(a, b), c),
+                        compose_level(a, compose_level(b, c)),
+                        "associativity failed on ({a:?}, {b:?}, {c:?})"
+                    );
+                }
+            }
+        }
+        // Unconditional callee setting level 7 overrides even Unknown caller level.
+        assert_eq!(compose_level(Level::Unknown, l7), l7);
+        // Conditional callee preserving entry or setting 7 keeps Unknown Unknown.
+        assert_eq!(compose_level(Level::Unknown, e_or_7), Level::Unknown);
+        assert_eq!(compose_level(l3, e_or_7), Level::Known(LevelSet::only(3).union(LevelSet::only(7))));
+    }
+
+    #[test]
+    fn apply_summary_guards_stack_poison_on_non_empty_saves_and_handles_divergence() {
+        let mut st_no_saves = SrState::at_entry();
+        st_no_saves.stack = Stack::Known { depth: 4, saves: vec![] };
+        let stack_corrupt = ProcSummary {
+            exit_level: Some(Level::Known(LevelSet::ENTRY)),
+            body_levels: Some(Level::Known(LevelSet::ENTRY)),
+            touches_caller_stack: true,
+        };
+        // No saved SR on stack: stack stays Known (C1 fix).
+        let after = apply_summary(&st_no_saves, stack_corrupt).expect("returns");
+        assert_eq!(after.stack, st_no_saves.stack);
+
+        // With a saved SR on stack: stack is poisoned to Lost.
+        let st_saved = SrState {
+            level: Level::Known(LevelSet::only(7)),
+            stack: Stack::Known { depth: 2, saves: vec![Save { below: 0, level: Level::Known(LevelSet::ENTRY) }] },
+        };
+        let after_saved = apply_summary(&st_saved, stack_corrupt).expect("returns");
+        assert_eq!(after_saved.stack, Stack::Lost);
+
+        // Divergent callee returns None (drops fall-through).
+        assert_eq!(apply_summary(&st_saved, ProcSummary::DIVERGES), None);
+    }
+
+    #[test]
+    fn mutually_recursive_local_helpers_converge_and_detect_mask_leak() {
+        // .a calls .b or returns; .b sets level 7 and calls .a or returns.
+        let items = vec![
+            op("bsr", vec![sym(".a")]), // 0
+            op("rts", vec![]),          // 1
+            label(".a"),                // 2
+            tst_d0(),                   // 3
+            op("beq", vec![sym(".a_ret")]), // 4
+            op("bsr", vec![sym(".b")]), // 5
+            label(".a_ret"),            // 6
+            op("rts", vec![]),          // 7
+            label(".b"),                // 8
+            set_sr(0x2700),             // 9
+            tst_d0(),                   // 10
+            op("beq", vec![sym(".b_ret")]), // 11
+            op("bsr", vec![sym(".a")]), // 12
+            label(".b_ret"),            // 13
+            op("rts", vec![]),          // 14
+        ];
+        assert_eq!(
+            found(items),
+            vec![
+                (1, not_callers(&[7])),
+                (7, not_callers(&[7])),
+                (14, not_callers(&[7])),
+            ]
+        );
     }
 }
