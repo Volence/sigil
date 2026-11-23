@@ -3524,37 +3524,16 @@ give those mnemonics their true width (2) in both readings. A correct routine st
 
 ## STEPA-P2B-CALLS
 
-- state: open 2026-11-21 (booked by step A piece 2a, branch `parcel/stepA-p2a-level-walk`)  size: `M`  project: `STEP-A`
-- blockedBy: piece 2a landing. The second deferred rule below also needs the hardware table (piece 3).
+- state: **CLOSED** 2026-11-23 (`parcel/stepA-p2b-calls`)  size: `M`  project: `STEP-A`
+- blockedBy: nothing (handler entry-level rule remains scoped to Step A piece 3 hardware table).
 
-**Piece 2b: calls still do not change the interrupt level.** The 2a walk judges each way out of one routine; a
-`bsr` / `jsr` to a routine that masks and does not restore still builds. Pinned by
-`a_call_to_a_masking_routine_still_builds` in `crates/sigil-frontend-emp/tests/sr_level.rs`, which must change
-when 2b lands.
-
-- The 32 routines in aeon that declare `preserves(sr)` / `preserves(sr.mask)` call 22 routines that declare
-  nothing about the level, so 2b has to decide what an undeclared callee means before it can follow calls.
-- Two deferred rules: (1) the level a `with ints_off { }` acquire set holds until its release; (2) handlers
-  entered at a known level (needs the hardware table, piece 3).
-- `sr_writes_round_trip` (`lower/proc.rs`) survives in 2a only for the context-definition check in `eval/asm.rs`.
-  When that check moves onto the walk it can go.
-- (Piece 2a final review, M5.) A local helper can rewrite its caller's saved word: `bsr .h` (or `jsr .h(pc)`)
-  with `.h: move.w #$2700, 4(sp) / rts`, between the caller's save and restore, builds clean
-  (`h01_helper_rewrites_save`, `q08_pcrel_helper_stack`; measured on master and on the 2a fix-wave binary). The
-  helper's own walk loses its stack but leaves at its caller's level, so nothing is judged; the caller treats the
-  call as changing nothing.
-- (Piece 2a final review, M4.) A mid-body tail or a conditional branch out, at the caller's level, to a routine
-  that does not preserve the level still builds, as on master: `t01` (`beq .x / jmp Other / .x: rts`) and `t02`
-  (`beq Other`), where `Other` masks and returns. Only a LAST unconditional tail is checked against the
-  callee (`terminal_external_tail` in `check_preserves_sr`). 2b must judge every tail and branch out, not only
-  `bsr`/`jsr`.
-- (Piece 2a re-review, minor.) A local helper that throws away its own return address AND the caller's save, and
-  so returns to the caller's caller at level 7: save; mask; `bsr .h`; restore; `rts`; `.h: addq.l #6, sp / rts`
-  (`c01_helper_drops_return_bsr`), the same through `lea .h(pc), a0 / jsr (a0)` (`c02_helper_drops_return_ptr`),
-  and `.h: addq.l #6, sp / bra .out` back into the caller's tail (`c03_helper_jumps_back_into_caller_tail`). rc 0
-  on master, 7d46ec3d, ae04cac7 and f84de117 (probes in `.stepA-p2a-scratch/rereview/p/`). The helper is walked as
-  a routine of its own and its stack underflows (lost), but the level it leaves at is its entry level; the call in
-  the caller is not judged and changes nothing.
+**Resolved (Step A piece 2b):**
+- Added monotone `ProcSummary { exit_level, body_levels, touches_caller_stack }` fixpoint (`SummaryTable::compute`) in `crates/sigil-frontend-emp/src/sr_level.rs`, wired into both single-file `lower_module` and whole-program `corpus_contracts::analyze_corpus_with_contracts` + `sigil build` zero-firing contract gate (`ContractReport::sr_level_firings`, `--report contracts`).
+- Follows direct calls (`jsr`/`bsr`/`jbsr`), mid-body tails (`t01`), conditional branches out (`t02`), `jra` (added to `corpus_contracts::TAIL_MNEMONICS`), `falls_into`, exported mid-body labels (`Owner.label`), closing export labels, enumerated `targets(...)` dispatches, and local helpers (`h01`, `q08`, `c01`-`c03`, plus transitive 2-hop stack-corrupting helpers). Flipped `a_call_to_a_masking_routine_still_builds` -> `a_call_to_a_masking_routine_is_refused`.
+- Owner-approved policy decisions (2026-11-23): `@continuation` manufactured `rte` (`PageIn_Resume`) trusted as level-preserving and audited in `ContractReport::sr_trusted_continuations` (`--report contracts`); typed indirect `as Type` calls with `clobbers`/`out`/`inout` naming `sr`/`sr.mask` treated as `UNKNOWN`, untyped/clean indirect calls deferred to piece 4.
+- Implemented Rule 3 (`[proc.with-sr-level-broken]`): `check_bracket_levels` walks every `with <ctx> { }` acquire via CFG and enforces the held concrete interrupt level across body writes and callees (`body_levels` + `exit_level`), including `released_by_rte`.
+- Retired `sr_writes_round_trip` (`lower/proc.rs`, `lower/mod.rs`); `eval/asm.rs` now uses `sr_level::context_pair_round_trips_sr`.
+- Deferred to piece 3: handlers entered at a known hardware interrupt level (needs the hardware table).
 
 ## STEPA-P2A-FALSE-REFUSALS
 
@@ -3738,14 +3717,13 @@ level and build, after piece 2a.** Each measured on master (`sigil-base`), the r
 - **An interior address formed OUTSIDE the routine without an `export` label** (another routine jumping to
   `P` plus an offset). Out of the model on purpose (module doc of `sr_level.rs`); not measured.
 - **Raw `dc.w` that encodes an `sr` write** (`d10_data_sr`): rc 0 on all three. Home: `STEPA-P2A-OWNER-NOTES` (2).
-- **Calls** (piece 2b): a call to a routine that masks (`a_call_to_a_masking_routine_still_builds`); a local helper
-  that rewrites its caller's saved word (`h01`, `q08`: rc 0 on all four); a mid-body tail or branch out to a
-  non-preserver (`t01`, `t02`: rc 0 on all four, `[proc.sr-undeclared]` warning only). Home: `STEPA-P2B-CALLS`.
 - **The S and T bits under bare `preserves(sr)`** (`b01`, `b03`): rc 1 on master, rc 0 on 7d46ec3d and ae04cac7
   (advisory only). Owner ruled 2026-11-23: leave as-is (`STEPA-P2A-OWNER-NOTES` CLOSED).
 
-- **A local helper that throws away its return address and the caller's save** (`rereview/p/c01`-`c03`): rc 0 on
-  all four binaries. A call route. Home: `STEPA-P2B-CALLS`.
+Closed on `parcel/stepA-p2b-calls` (`STEPA-P2B-CALLS`): **Calls, mid-body tails, conditional branches out, and
+local helpers** — calling a masking routine (`a_call_to_a_masking_routine_is_refused`), local helper rewriting
+caller's saved word (`h01`, `q08`, plus 2-hop), mid-body tail or conditional branch out to a non-preserver
+(`t01`, `t02`), and local helpers discarding return address and save (`c01`-`c03`, including before divergent code).
 
 Closed on `parcel/cfg-bt-bf-edges` (`CFG-BT-BF-EDGES`): **`bt` / `bf`** (`q04_bt_plain`, `q03_bf_call`, `m2_bt_s`,
 `m2_bt_w`, `m_bt`, `m2_bf`) — refused in `.emp` lowering with `[mnemonic.bt-bf]`.
