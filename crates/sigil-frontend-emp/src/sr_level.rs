@@ -322,6 +322,8 @@ enum TransferTarget {
     Divergent,
     /// A local code label inside the same proc (`bsr .h`, `jsr .h(pc)`, `jmp .h(pc)`).
     Local(usize),
+    /// A body-closing local code label at the end of the proc (delegates to `falls_into`).
+    ClosingLocal,
     /// A named external symbol (proc head or `Owner.label` export).
     External(String),
     /// A non-local symbol with a nonzero offset (`Foo+6`), whose landing point
@@ -333,6 +335,24 @@ enum TransferTarget {
     TypedIndirect(String),
     /// An untyped indirect/computed call or jump (left to piece 4).
     UntypedIndirect,
+}
+
+fn classify_symbol_target(
+    items: &[CodeItem],
+    cfg: &Cfg,
+    name: &str,
+    noreturn: &BTreeSet<String>,
+) -> TransferTarget {
+    if let Some(local_idx) = code_label_index(items, cfg, name) {
+        return TransferTarget::Local(local_idx);
+    }
+    if is_closing_code_label(items, name) {
+        return TransferTarget::ClosingLocal;
+    }
+    if noreturn.contains(name) {
+        return TransferTarget::Divergent;
+    }
+    TransferTarget::External(name.to_string())
 }
 
 /// Classify a call or transfer instruction at `idx`.
@@ -360,45 +380,17 @@ fn classify_transfer(
     // Scan from the last operand so 2-operand `dbcc dN, Target` finds Target.
     if let Some(op) = ops.last() {
         match op {
-            O::Sym(name) => {
-                if let Some(local_idx) = code_label_index(items, cfg, name) {
-                    return TransferTarget::Local(local_idx);
-                }
-                if noreturn.contains(name) {
-                    return TransferTarget::Divergent;
-                }
-                return TransferTarget::External(name.clone());
-            }
-            O::AbsSym { target, .. } => {
-                if let Some(local_idx) = code_label_index(items, cfg, target) {
-                    return TransferTarget::Local(local_idx);
-                }
-                if noreturn.contains(target) {
-                    return TransferTarget::Divergent;
-                }
-                return TransferTarget::External(target.clone());
-            }
+            O::Sym(name) => return classify_symbol_target(items, cfg, name, noreturn),
+            O::AbsSym { target, .. } => return classify_symbol_target(items, cfg, target, noreturn),
             O::SymOff { sym, off } => {
                 if *off == 0 {
-                    if let Some(local_idx) = code_label_index(items, cfg, sym) {
-                        return TransferTarget::Local(local_idx);
-                    }
-                    if noreturn.contains(sym) {
-                        return TransferTarget::Divergent;
-                    }
-                    return TransferTarget::External(sym.clone());
+                    return classify_symbol_target(items, cfg, sym, noreturn);
                 }
                 return TransferTarget::OffsetUnknown;
             }
             O::PcRel { target, addend } => {
                 if *addend == 0 {
-                    if let Some(local_idx) = code_label_index(items, cfg, target) {
-                        return TransferTarget::Local(local_idx);
-                    }
-                    if noreturn.contains(target) {
-                        return TransferTarget::Divergent;
-                    }
-                    return TransferTarget::External(target.clone());
+                    return classify_symbol_target(items, cfg, target, noreturn);
                 }
                 return TransferTarget::OffsetUnknown;
             }
@@ -411,6 +403,17 @@ fn classify_transfer(
     TransferTarget::UntypedIndirect
 }
 
+/// Shared read-only context for walking a single 68000 procedure.
+#[derive(Clone, Copy)]
+struct WalkCtx<'a> {
+    proc_idx: usize,
+    items: &'a [CodeItem],
+    cfg: &'a Cfg<'a>,
+    is_resumable: bool,
+    table: &'a SummaryTable,
+    env: &'a SrExternalEnv<'a>,
+}
+
 /// Converged interrupt-level summaries for every entry point (proc heads,
 /// exported code labels, and local helper labels) across one or more 68000
 /// procedures.
@@ -418,8 +421,8 @@ fn classify_transfer(
 pub(crate) struct SummaryTable {
     /// `(proc_idx, entry_instr_idx)` -> converged summary.
     pub(crate) entries: BTreeMap<(usize, usize), ProcSummary>,
-    /// Empty-body procs (no instructions) keyed by `proc_idx`.
-    pub(crate) empty_procs: BTreeMap<usize, ProcSummary>,
+    /// Empty-body procs or body-closing labels (delegating to `falls_into`) keyed by `proc_idx`.
+    pub(crate) closing_procs: BTreeMap<usize, ProcSummary>,
     /// Global symbol name (`ProcName` or `Owner.label`) -> `(proc_idx, Option<entry_instr_idx>)`.
     pub(crate) by_name: BTreeMap<String, (usize, Option<usize>)>,
     /// Per-proc local `address_taken` code label indices (for `c02` indirect stack check).
@@ -437,7 +440,7 @@ impl SummaryTable {
 
         let mut by_name: BTreeMap<String, (usize, Option<usize>)> = BTreeMap::new();
         let mut entries: BTreeMap<(usize, usize), ProcSummary> = BTreeMap::new();
-        let mut empty_procs: BTreeMap<usize, ProcSummary> = BTreeMap::new();
+        let mut closing_procs: BTreeMap<usize, ProcSummary> = BTreeMap::new();
 
         for (pi, (proc, cfg)) in procs.iter().zip(&cfgs).enumerate() {
             let first_instr = proc.items.iter().position(|it| matches!(it, CodeItem::Instr { .. }));
@@ -447,22 +450,36 @@ impl SummaryTable {
                     entries.insert((pi, idx), ProcSummary::DIVERGES);
                 }
                 None => {
-                    empty_procs.insert(pi, ProcSummary::DIVERGES);
+                    closing_procs.insert(pi, ProcSummary::DIVERGES);
                 }
             }
             for item in proc.items {
                 match item {
-                    CodeItem::Label { name, export: true, .. } => {
+                    CodeItem::Label { name, export, .. } => {
                         if let Some(idx) = code_label_index(proc.items, cfg, name) {
-                            by_name.insert(name.clone(), (pi, Some(idx)));
-                            entries.insert((pi, idx), ProcSummary::DIVERGES);
+                            if *export {
+                                by_name.insert(name.clone(), (pi, Some(idx)));
+                                entries.insert((pi, idx), ProcSummary::DIVERGES);
+                            }
+                        } else if is_closing_code_label(proc.items, name) {
+                            closing_procs.insert(pi, ProcSummary::DIVERGES);
+                            if *export {
+                                by_name.insert(name.clone(), (pi, None));
+                            }
                         }
                     }
-                    CodeItem::Instr { mnemonic, ops, .. } if is_call(mnemonic) => {
-                        for op in ops {
-                            for name in operand_symbols(op) {
-                                if let Some(idx) = code_label_index(proc.items, cfg, &name) {
-                                    entries.insert((pi, idx), ProcSummary::DIVERGES);
+                    CodeItem::Instr { mnemonic, ops, targets, .. } => {
+                        for t in targets {
+                            if let Some(idx) = code_label_index(proc.items, cfg, t) {
+                                entries.insert((pi, idx), ProcSummary::DIVERGES);
+                            }
+                        }
+                        if is_transfer(mnemonic) {
+                            for op in ops {
+                                for name in operand_symbols(op) {
+                                    if let Some(idx) = code_label_index(proc.items, cfg, &name) {
+                                        entries.insert((pi, idx), ProcSummary::DIVERGES);
+                                    }
                                 }
                             }
                         }
@@ -475,20 +492,20 @@ impl SummaryTable {
             }
         }
 
-        let mut table = SummaryTable { entries, empty_procs, by_name, taken_per_proc };
+        let mut table = SummaryTable { entries, closing_procs, by_name, taken_per_proc };
 
         // Monotone fixpoint: height per entry is <= 11 (exit) + 11 (body) + 1 (stack),
         // so iteration terminates quickly even with arbitrary mutual recursion.
         let entry_keys: Vec<(usize, usize)> = table.entries.keys().copied().collect();
-        let empty_keys: Vec<usize> = table.empty_procs.keys().copied().collect();
+        let closing_keys: Vec<usize> = table.closing_procs.keys().copied().collect();
         loop {
             let mut changed = false;
-            for &pi in &empty_keys {
+            for &pi in &closing_keys {
                 let next = match procs[pi].falls_into {
                     Some(target) => table.resolve_external(target, env),
                     None => ProcSummary::IDENTITY,
                 };
-                let slot = table.empty_procs.get_mut(&pi).expect("empty proc key");
+                let slot = table.closing_procs.get_mut(&pi).expect("closing proc key");
                 let merged = slot.meet(next);
                 if merged != *slot {
                     *slot = merged;
@@ -518,8 +535,8 @@ impl SummaryTable {
         }
         if let Some(&(pi, entry)) = self.by_name.get(name) {
             return match entry {
-                Some(idx) => self.entries.get(&(pi, idx)).copied().unwrap_or(ProcSummary::DIVERGES),
-                None => self.empty_procs.get(&pi).copied().unwrap_or(ProcSummary::DIVERGES),
+                Some(idx) => self.entries.get(&(pi, idx)).copied().unwrap_or(ProcSummary::UNKNOWN),
+                None => self.closing_procs.get(&pi).copied().unwrap_or(ProcSummary::UNKNOWN),
             };
         }
         if let Some(&ext) = env.extern_summaries.get(name) {
@@ -532,25 +549,20 @@ impl SummaryTable {
         }
     }
 
-    /// Summary of a call instruction at `idx` in `proc_idx`.
-    pub(crate) fn call_summary(
-        &self,
-        proc_idx: usize,
-        items: &[CodeItem],
-        cfg: &Cfg,
-        idx: usize,
-        is_resumable: bool,
-        env: &SrExternalEnv<'_>,
-    ) -> ProcSummary {
-        match classify_transfer(items, cfg, idx, is_resumable, env.noreturn) {
+    /// Summary of a call instruction at `idx`.
+    fn call_summary(&self, ctx: WalkCtx<'_>, idx: usize) -> ProcSummary {
+        match classify_transfer(ctx.items, ctx.cfg, idx, ctx.is_resumable, ctx.env.noreturn) {
             TransferTarget::Divergent => ProcSummary::DIVERGES,
             TransferTarget::Local(local_idx) => {
-                self.entries.get(&(proc_idx, local_idx)).copied().unwrap_or(ProcSummary::DIVERGES)
+                self.entries.get(&(ctx.proc_idx, local_idx)).copied().unwrap_or(ProcSummary::UNKNOWN)
             }
-            TransferTarget::External(name) => self.resolve_external(&name, env),
+            TransferTarget::ClosingLocal => {
+                self.closing_procs.get(&ctx.proc_idx).copied().unwrap_or(ProcSummary::IDENTITY)
+            }
+            TransferTarget::External(name) => self.resolve_external(&name, ctx.env),
             TransferTarget::OffsetUnknown => ProcSummary::UNKNOWN,
             TransferTarget::TypedIndirect(ty) => {
-                if env.sr_clobber_types.contains(&ty) {
+                if ctx.env.sr_clobber_types.contains(&ty) {
                     ProcSummary::UNKNOWN
                 } else {
                     ProcSummary::IDENTITY
@@ -562,9 +574,9 @@ impl SummaryTable {
                 // stack, an untyped indirect call may invoke it. Keep `exit_level`
                 // and `body_levels` as IDENTITY (piece 4 owns blind-call levels).
                 let mut s = ProcSummary::IDENTITY;
-                if let Some(taken) = self.taken_per_proc.get(proc_idx) {
+                if let Some(taken) = self.taken_per_proc.get(ctx.proc_idx) {
                     if taken.iter().any(|&t| {
-                        self.entries.get(&(proc_idx, t)).is_some_and(|e| e.touches_caller_stack)
+                        self.entries.get(&(ctx.proc_idx, t)).is_some_and(|e| e.touches_caller_stack)
                     }) {
                         s.touches_caller_stack = true;
                     }
@@ -575,26 +587,46 @@ impl SummaryTable {
         }
     }
 
-    /// Summary of a leaving `TailOut` / `BranchOut` edge at `idx` in `proc_idx`.
+    /// Summary of a leaving `TailOut` / `BranchOut` edge at `idx`.
     /// Returns `None` when the transfer diverges (skipped as an exit).
-    fn exit_transfer_summary(
-        &self,
-        proc_idx: usize,
-        items: &[CodeItem],
-        cfg: &Cfg,
-        idx: usize,
-        is_resumable: bool,
-        env: &SrExternalEnv<'_>,
-    ) -> Option<ProcSummary> {
-        match classify_transfer(items, cfg, idx, is_resumable, env.noreturn) {
+    fn exit_transfer_summary(&self, ctx: WalkCtx<'_>, idx: usize) -> Option<ProcSummary> {
+        if let CodeItem::Instr { targets, .. } = &ctx.items[idx] {
+            if !targets.is_empty() {
+                let mut acc = ProcSummary::DIVERGES;
+                for t in targets {
+                    let s = if let Some(local_idx) = code_label_index(ctx.items, ctx.cfg, t) {
+                        self.entries
+                            .get(&(ctx.proc_idx, local_idx))
+                            .copied()
+                            .unwrap_or(ProcSummary::UNKNOWN)
+                    } else if is_closing_code_label(ctx.items, t) {
+                        self.closing_procs
+                            .get(&ctx.proc_idx)
+                            .copied()
+                            .unwrap_or(ProcSummary::IDENTITY)
+                    } else {
+                        self.resolve_external(t, ctx.env)
+                    };
+                    acc = acc.meet(s);
+                }
+                return Some(acc);
+            }
+        }
+        match classify_transfer(ctx.items, ctx.cfg, idx, ctx.is_resumable, ctx.env.noreturn) {
             TransferTarget::Divergent => None,
             TransferTarget::ResumableReturn => Some(ProcSummary::IDENTITY),
-            TransferTarget::Local(local_idx) => {
-                Some(self.entries.get(&(proc_idx, local_idx)).copied().unwrap_or(ProcSummary::DIVERGES))
-            }
-            TransferTarget::External(name) => Some(self.resolve_external(&name, env)),
+            TransferTarget::Local(local_idx) => Some(
+                self.entries
+                    .get(&(ctx.proc_idx, local_idx))
+                    .copied()
+                    .unwrap_or(ProcSummary::UNKNOWN),
+            ),
+            TransferTarget::ClosingLocal => Some(
+                self.closing_procs.get(&ctx.proc_idx).copied().unwrap_or(ProcSummary::IDENTITY),
+            ),
+            TransferTarget::External(name) => Some(self.resolve_external(&name, ctx.env)),
             TransferTarget::OffsetUnknown => Some(ProcSummary::UNKNOWN),
-            TransferTarget::TypedIndirect(ty) => Some(if env.sr_clobber_types.contains(&ty) {
+            TransferTarget::TypedIndirect(ty) => Some(if ctx.env.sr_clobber_types.contains(&ty) {
                 ProcSummary::UNKNOWN
             } else {
                 ProcSummary::IDENTITY
@@ -606,12 +638,7 @@ impl SummaryTable {
 
 /// Step one instruction with an optional callee summary table.
 fn step_reach(
-    proc_idx: usize,
-    items: &[CodeItem],
-    cfg: &Cfg,
-    is_resumable: bool,
-    table: &SummaryTable,
-    env: &SrExternalEnv<'_>,
+    ctx: WalkCtx<'_>,
     reach: &Reach,
     idx: usize,
     mnem: &str,
@@ -619,10 +646,10 @@ fn step_reach(
 ) -> Reach {
     let Some(st) = &reach.0 else { return Reach(None) };
     if is_call(mnem) {
-        let callee = table.call_summary(proc_idx, items, cfg, idx, is_resumable, env);
+        let callee = ctx.table.call_summary(ctx, idx);
         return Reach(apply_summary(st, callee));
     }
-    Reach(Some(step(items, st, idx, mnem, ops)))
+    Reach(Some(step(ctx.items, st, idx, mnem, ops)))
 }
 
 /// Compute one iteration of [`ProcSummary`] starting ONLY from `entry_idx`.
@@ -634,14 +661,13 @@ fn summarize_entry(
     table: &SummaryTable,
     env: &SrExternalEnv<'_>,
 ) -> ProcSummary {
+    let ctx = WalkCtx { proc_idx, items: proc.items, cfg, is_resumable: proc.is_resumable, table, env };
     let seeds = [(entry_idx, Reach(Some(SrState::at_entry())))];
     let states = forward_in_states(
         cfg,
         Cpu::M68000,
         &seeds,
-        &|r: &Reach, idx, mnem, ops| {
-            step_reach(proc_idx, proc.items, cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
-        },
+        &|r: &Reach, idx, mnem, ops| step_reach(ctx, r, idx, mnem, ops),
         &|_| true,
     );
 
@@ -650,33 +676,28 @@ fn summarize_entry(
         let Some(st_in) = &reach_in.0 else { continue };
         let CodeItem::Instr { mnemonic, ops, .. } = &proc.items[idx] else { continue };
 
-        // Record body levels observed at this instruction and inside any callee.
+        // Record body levels observed inside any callee, propagate transitive
+        // `touches_caller_stack` (review C2), and model early return past the
+        // caller when a stack-corrupting callee returns (review C3).
         if is_call(mnemonic) {
-            let callee = table.call_summary(proc_idx, proc.items, cfg, idx, proc.is_resumable, env);
+            let callee = table.call_summary(ctx, idx);
             if let Some(b) = callee.body_levels {
                 summary.body_levels =
                     meet_opt_level(summary.body_levels, Some(compose_level(st_in.level, b)));
             }
+            if callee.touches_caller_stack {
+                if let Some(e) = callee.exit_level {
+                    summary.touches_caller_stack = true;
+                    summary.exit_level =
+                        meet_opt_level(summary.exit_level, Some(compose_level(st_in.level, e)));
+                }
+            }
         }
-        let reach_out = step_reach(
-            proc_idx,
-            proc.items,
-            cfg,
-            proc.is_resumable,
-            table,
-            env,
-            reach_in,
-            idx,
-            mnemonic,
-            ops,
-        );
+        let reach_out = step_reach(ctx, reach_in, idx, mnemonic, ops);
         let Some(out) = reach_out.0 else { continue };
         summary.body_levels = meet_opt_level(summary.body_levels, Some(out.level));
 
-        let stack_corrupted = |s: &Stack| match s {
-            Stack::Known { depth: 0, .. } => false,
-            _ => true,
-        };
+        let stack_corrupted = |s: &Stack| !matches!(s, Stack::Known { depth: 0, .. });
 
         for edge in edges_for(cfg, Cpu::M68000, idx) {
             match edge {
@@ -700,14 +721,7 @@ fn summarize_entry(
                     }
                 }
                 Edge::TailOut | Edge::BranchOut => {
-                    if let Some(target_sum) = table.exit_transfer_summary(
-                        proc_idx,
-                        proc.items,
-                        cfg,
-                        idx,
-                        proc.is_resumable,
-                        env,
-                    ) {
+                    if let Some(target_sum) = table.exit_transfer_summary(ctx, idx) {
                         if let Some(b) = target_sum.body_levels {
                             summary.body_levels = meet_opt_level(
                                 summary.body_levels,
@@ -989,6 +1003,32 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
     mask_findings_for_proc(0, &procs[0], &table, &env)
 }
 
+pub(crate) fn mask_findings_for_decl(
+    decl: &crate::ast::ProcDecl,
+    items: &[CodeItem],
+    noreturn: &BTreeSet<String>,
+) -> Vec<MaskFinding> {
+    let empty_ext = BTreeMap::new();
+    let empty_types = BTreeSet::new();
+    let env = SrExternalEnv {
+        noreturn,
+        extern_summaries: &empty_ext,
+        sr_clobber_types: &empty_types,
+        whole_program: false,
+    };
+    let proc = SrProcInput {
+        name: &decl.name,
+        items,
+        falls_into: decl.falls_into.as_deref(),
+        is_resumable: decl.is_resumable(),
+        is_continuation: decl.is_continuation(),
+        span: decl.span,
+    };
+    let procs = [proc];
+    let table = SummaryTable::compute(&procs, &env);
+    mask_findings_for_proc(0, &procs[0], &table, &env)
+}
+
 /// Every way out of `proc` that is not provably at the caller's interrupt
 /// level, using the converged [`SummaryTable`] for local helpers, direct calls,
 /// mid-body tails, branches out, and `falls_into` (step A piece 2b).
@@ -1000,14 +1040,13 @@ pub(crate) fn mask_findings_for_proc(
 ) -> Vec<MaskFinding> {
     let items = proc.items;
     let cfg = Cfg::build(items);
+    let ctx = WalkCtx { proc_idx, items, cfg: &cfg, is_resumable: proc.is_resumable, table, env };
     let walk = |seeds: &[(usize, Reach)]| {
         forward_in_states(
             &cfg,
             Cpu::M68000,
             seeds,
-            &|r: &Reach, idx, mnem, ops| {
-                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
-            },
+            &|r: &Reach, idx, mnem, ops| step_reach(ctx, r, idx, mnem, ops),
             &|_| true,
         )
     };
@@ -1029,20 +1068,21 @@ pub(crate) fn mask_findings_for_proc(
 
     let mut found: BTreeMap<usize, MaskFinding> = BTreeMap::new();
     for (&idx, reach_in) in &states {
-        let Some(_) = &reach_in.0 else { continue };
+        let Some(st_in) = &reach_in.0 else { continue };
         let CodeItem::Instr { mnemonic, ops, span, .. } = &items[idx] else { continue };
-        let reach_out = step_reach(
-            proc_idx,
-            items,
-            &cfg,
-            proc.is_resumable,
-            table,
-            env,
-            reach_in,
-            idx,
-            mnemonic,
-            ops,
-        );
+        // Review C3: a callee that touches its caller's stack can discard its
+        // return address and return directly past `proc` at `st_in.level`.
+        if is_call(mnemonic) {
+            let callee = table.call_summary(ctx, idx);
+            if callee.touches_caller_stack {
+                if let Some(e) = callee.exit_level {
+                    if let Some(kind) = judge_level(compose_level(st_in.level, e)) {
+                        found.entry(idx).or_insert(MaskFinding { idx, span: *span, kind });
+                    }
+                }
+            }
+        }
+        let reach_out = step_reach(ctx, reach_in, idx, mnemonic, ops);
         let Some(out) = reach_out.0 else { continue };
         for edge in edges_for(&cfg, Cpu::M68000, idx) {
             let kind = match edge {
@@ -1058,14 +1098,7 @@ pub(crate) fn mask_findings_for_proc(
                 Edge::TailOut | Edge::BranchOut => {
                     if exit_diverges(&items[idx], env.noreturn) {
                         None
-                    } else if let Some(target_sum) = table.exit_transfer_summary(
-                        proc_idx,
-                        items,
-                        &cfg,
-                        idx,
-                        proc.is_resumable,
-                        env,
-                    ) {
+                    } else if let Some(target_sum) = table.exit_transfer_summary(ctx, idx) {
                         target_sum
                             .exit_level
                             .and_then(|e| judge_level(compose_level(out.level, e)))
@@ -1101,12 +1134,15 @@ pub(crate) fn mask_findings_for_proc(
     found.into_values().collect()
 }
 
-/// The lowest-index instruction the walk has no state for, if any.
+/// The lowest-index instruction the walk has no live (`Reach(Some(_))`) state for.
 fn first_unreached_reach(items: &[CodeItem], states: &BTreeMap<usize, Reach>) -> Option<usize> {
     items
         .iter()
         .enumerate()
-        .find(|(idx, it)| matches!(it, CodeItem::Instr { .. }) && !states.contains_key(idx))
+        .find(|(idx, it)| {
+            matches!(it, CodeItem::Instr { .. })
+                && !matches!(states.get(idx), Some(Reach(Some(_))))
+        })
         .map(|(idx, _)| idx)
 }
 
@@ -1150,7 +1186,7 @@ fn hidden_entries_reach(
         match item {
             CodeItem::Label { name, .. } => {
                 if let Some(idx) = code_label_index(items, cfg, name) {
-                    if !first.contains_key(&idx) {
+                    if !matches!(first.get(&idx), Some(Reach(Some(_)))) {
                         at.insert(idx);
                     }
                 }
@@ -1248,6 +1284,17 @@ fn code_label_index(items: &[CodeItem], cfg: &Cfg, name: &str) -> Option<usize> 
     between_is_code.then_some(target)
 }
 
+/// True when `name` is a local label at the end of `items` (only labels and
+/// context marks follow it, no instructions or inline data).
+fn is_closing_code_label(items: &[CodeItem], name: &str) -> bool {
+    let Some(pos) =
+        items.iter().position(|it| matches!(it, CodeItem::Label { name: n, .. } if n == name))
+    else {
+        return false;
+    };
+    items[pos..].iter().all(|it| matches!(it, CodeItem::Label { .. } | CodeItem::ContextMark { .. }))
+}
+
 /// A branch, a call or a return: a mnemonic whose symbol operand is where
 /// control goes, not an address the routine takes.
 fn is_transfer(mnem: &str) -> bool {
@@ -1330,6 +1377,18 @@ pub(crate) fn preserves_sr_token(tokens: &[(String, Option<String>)]) -> Option<
     }
 }
 
+/// True when a proc/extern/contract-type signature explicitly licenses writing
+/// `sr` or `sr.mask` via `clobbers(...)`, `out(...)`, `out(... if cc)`, or `inout(...)`.
+pub(crate) fn sig_modifies_sr_mask(sig: &crate::ast::ProcSig) -> bool {
+    sig.clobbers.as_deref().is_some_and(tokens_clobber_sr_mask)
+        || sig.out.as_deref().is_some_and(tokens_clobber_sr_mask)
+        || sig.inout.as_deref().is_some_and(tokens_clobber_sr_mask)
+        || sig
+            .out_cond
+            .iter()
+            .any(|c| c.reg.eq_ignore_ascii_case("sr") || c.reg.eq_ignore_ascii_case("sr.mask"))
+}
+
 /// Build an interrupt-level summary from an `extern proc` declaration.
 pub(crate) fn extern_proc_summary(decl: &crate::ast::ExternProcDecl) -> ProcSummary {
     if decl.is_noreturn() {
@@ -1338,7 +1397,7 @@ pub(crate) fn extern_proc_summary(decl: &crate::ast::ExternProcDecl) -> ProcSumm
     if preserves_sr_token(&decl.sig.preserves).is_some() {
         return ProcSummary::IDENTITY;
     }
-    if decl.sig.clobbers.as_deref().is_some_and(tokens_clobber_sr_mask) {
+    if sig_modifies_sr_mask(&decl.sig) {
         return ProcSummary::UNKNOWN;
     }
     ProcSummary::IDENTITY
@@ -1424,6 +1483,7 @@ pub(crate) fn check_bracket_levels(
         return Vec::new();
     }
     let cfg = Cfg::build(items);
+    let ctx = WalkCtx { proc_idx, items, cfg: &cfg, is_resumable: proc.is_resumable, table, env };
     let mut findings = Vec::new();
 
     for region in &regions {
@@ -1437,9 +1497,7 @@ pub(crate) fn check_bracket_levels(
             &cfg,
             Cpu::M68000,
             &acq_seeds,
-            &|r: &Reach, idx, mnem, ops| {
-                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
-            },
+            &|r: &Reach, idx, mnem, ops| step_reach(ctx, r, idx, mnem, ops),
             &|succ| region.in_acquire(succ),
         );
 
@@ -1450,18 +1508,7 @@ pub(crate) fn check_bracket_levels(
                 continue;
             }
             let CodeItem::Instr { mnemonic, ops, .. } = &items[idx] else { continue };
-            let reach_out = step_reach(
-                proc_idx,
-                items,
-                &cfg,
-                proc.is_resumable,
-                table,
-                env,
-                reach_in,
-                idx,
-                mnemonic,
-                ops,
-            );
+            let reach_out = step_reach(ctx, reach_in, idx, mnemonic, ops);
             let Some(out) = reach_out.0 else { continue };
             for edge in edges_for(&cfg, Cpu::M68000, idx) {
                 if let Edge::Follow(succ) = edge {
@@ -1489,9 +1536,7 @@ pub(crate) fn check_bracket_levels(
             &cfg,
             Cpu::M68000,
             &body_seeds,
-            &|r: &Reach, idx, mnem, ops| {
-                step_reach(proc_idx, items, &cfg, proc.is_resumable, table, env, r, idx, mnem, ops)
-            },
+            &|r: &Reach, idx, mnem, ops| step_reach(ctx, r, idx, mnem, ops),
             &|succ| succ > region.acquire_end && succ < region.body_end,
         );
 
@@ -1502,7 +1547,7 @@ pub(crate) fn check_bracket_levels(
                 continue;
             }
             if is_call(mnemonic) {
-                let callee = table.call_summary(proc_idx, items, &cfg, idx, proc.is_resumable, env);
+                let callee = table.call_summary(ctx, idx);
                 let mut combined: Option<Level> = None;
                 if let Some(b) = callee.body_levels {
                     combined =
@@ -1523,12 +1568,15 @@ pub(crate) fn check_bracket_levels(
                         ) {
                             TransferTarget::External(name) => Some(name),
                             TransferTarget::TypedIndirect(ty) => Some(format!("({ty})")),
-                            TransferTarget::Local(_) => ops.iter().find_map(|o| match o {
-                                CodeOperand::Sym(n) | CodeOperand::PcRel { target: n, .. } => {
-                                    Some(n.clone())
-                                }
-                                _ => None,
-                            }),
+                            TransferTarget::Local(_) | TransferTarget::ClosingLocal => {
+                                ops.iter().find_map(|o| match o {
+                                    CodeOperand::Sym(n)
+                                    | CodeOperand::PcRel { target: n, .. }
+                                    | CodeOperand::AbsSym { target: n, .. }
+                                    | CodeOperand::SymOff { sym: n, .. } => Some(n.clone()),
+                                    _ => None,
+                                })
+                            }
                             _ => None,
                         };
                         findings.push(BracketFinding {
@@ -2321,7 +2369,7 @@ mod tests {
             ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]),  // 12
             op("bra", vec![sym(".r")]),                              // 13
         ];
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]);
     }
 
     /// Every instruction is walked: an unreached `stop` then `rte` is judged as
@@ -2448,7 +2496,7 @@ mod tests {
             restore(),                                               // 8
             op("rts", vec![]),                                       // 9
         ];
-        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+        assert_eq!(found(items), vec![(1, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]);
     }
 
     /// Probe x4: a pointer into a REACHED restore. The ordinary path arrives
@@ -2533,7 +2581,7 @@ mod tests {
         ];
         assert_eq!(
             found(items),
-            vec![(5, not_callers(&[7])), (10, MaskFindingKind::Untracked), (13, MaskFindingKind::Untracked)]
+            vec![(5, MaskFindingKind::Untracked), (10, MaskFindingKind::Untracked), (13, MaskFindingKind::Untracked)]
         );
     }
 
@@ -2554,7 +2602,7 @@ mod tests {
             restore(),                                               // 8
             op("rts", vec![]),                                       // 9
         ];
-        assert_eq!(found(items), vec![(9, MaskFindingKind::Untracked)]);
+        assert_eq!(found(items), vec![(4, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]);
     }
 
     /// Seed class (a) on its own: `a0` comes from the caller, so nothing names
@@ -2668,7 +2716,7 @@ mod tests {
             label(".via"),                                                     // 7
             op("jmp", vec![O::PcRel { target: ".r".to_string(), addend: 0 }]), // 8
         ];
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked), (8, MaskFindingKind::Untracked)]);
     }
 
     /// Probe r2: a balanced helper called as `jsr .h(pc)` stays clean.

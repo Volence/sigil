@@ -157,7 +157,7 @@ pub(super) fn lower_proc<'a>(
     for a in asserts {
         builder.push_link_assert(a);
     }
-    let Some(buf) = buf else { return None };
+    let buf = buf?;
     super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
     // The proc's extent for the build export: the fragments its body emitted, in the
     // section that holds its label. A body that ended in another section (none does
@@ -1878,7 +1878,7 @@ fn check_preserves_inner(
         sr_out = (Some(token), explicit_bare_sr, tail_failed);
         if run_sr_walk && !tail_failed {
             let before = diags.len();
-            let findings = crate::sr_level::mask_findings(&buf.items, noreturn);
+            let findings = crate::sr_level::mask_findings_for_decl(proc, &buf.items, noreturn);
             for finding in findings {
                 let message = crate::sr_level::format_mask_finding(&proc.name, token, &finding.kind);
                 push(diags, Level::Error, finding.span, message);

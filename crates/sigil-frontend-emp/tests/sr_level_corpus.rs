@@ -254,3 +254,57 @@ proc Next () clobbers(sr) {
     assert_eq!(r.sr_level_firings.len(), 1, "{:#?}", r.sr_level_firings);
     assert_eq!(r.sr_level_firings[0].proc, "P");
 }
+
+#[test]
+fn cross_file_mutual_recursion_clean_and_masking() {
+    let f1 = "module a
+proc Even () clobbers(d0) preserves(sr.mask) {
+    tst.w d0
+    beq .done
+    jsr Odd
+.done:
+    rts
+}
+";
+    let f2 = "module b
+proc Odd () clobbers(d0) {
+    jsr Even
+    rts
+}
+";
+    let r_clean = analyze_files(&[f1, f2]);
+    assert!(r_clean.sr_level_firings.is_empty(), "{:#?}", r_clean.sr_level_firings);
+
+    let f2_bad = "module b
+proc Odd () clobbers(d0, sr) {
+    move.w #$2700, sr
+    jsr Even
+    rts
+}
+";
+    let r_bad = analyze_files(&[f1, f2_bad]);
+    assert_eq!(r_bad.sr_level_firings.len(), 1, "{:#?}", r_bad.sr_level_firings);
+    assert_eq!(r_bad.sr_level_firings[0].proc, "Even");
+}
+
+#[test]
+fn cross_file_closing_export_label_before_falls_into_is_resolved() {
+    let f1 = "module a
+proc Caller () clobbers(d0) preserves(sr.mask) {
+    jmp Host.tail
+}
+";
+    let f2 = "module b
+proc Host () clobbers(d0) falls_into Next {
+    moveq #0, d0
+export .tail:
+}
+proc Next () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+";
+    let r = analyze_files(&[f1, f2]);
+    assert_eq!(r.sr_level_firings.len(), 1, "{:#?}", r.sr_level_firings);
+    assert_eq!(r.sr_level_firings[0].proc, "Caller");
+}

@@ -2120,7 +2120,7 @@ fn run_module_sr_level_pass(
 ) {
     use crate::sr_level::{
         check_bracket_levels, extern_proc_summary, format_bracket_finding, format_mask_finding,
-        mask_findings_for_proc, tokens_clobber_sr_mask, ProcSummary, SrExternalEnv, SrProcInput,
+        mask_findings_for_proc, sig_modifies_sr_mask, ProcSummary, SrExternalEnv, SrProcInput,
         SummaryTable,
     };
     let any_sr_work = lowered_68k.iter().any(|lp| {
@@ -2141,7 +2141,7 @@ fn run_module_sr_level_pass(
                     ext.insert(e.name.clone(), extern_proc_summary(e));
                 }
                 ast::Item::ContractType(ct) => {
-                    if ct.sig.clobbers.as_deref().is_some_and(tokens_clobber_sr_mask) {
+                    if sig_modifies_sr_mask(&ct.sig) {
                         clob_types.insert(ct.name.clone());
                     }
                 }

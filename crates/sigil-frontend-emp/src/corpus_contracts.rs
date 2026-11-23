@@ -1401,8 +1401,7 @@ pub fn analyze_corpus_with_contracts(
                     ext.insert(e.name.clone(), crate::sr_level::extern_proc_summary(e));
                 }
                 Item::ContractType(ct) => {
-                    if ct.sig.clobbers.as_deref().is_some_and(crate::sr_level::tokens_clobber_sr_mask)
-                    {
+                    if crate::sr_level::sig_modifies_sr_mask(&ct.sig) {
                         clob_types.insert(ct.name.clone());
                     }
                 }

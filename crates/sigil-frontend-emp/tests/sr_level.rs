@@ -418,7 +418,14 @@ fn a_targets_jump_into_the_middle_of_dead_code_is_refused() {
     rts",
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp .tbl(pc, d1.w) targets(.mid)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe x4: a pointer into a reached restore.
@@ -526,11 +533,19 @@ fn into_reached_restore(via: &str) -> String {
 fn a_pc_relative_jump_into_a_reached_restore_is_refused() {
     let src = into_reached_restore("    jmp .r(pc)");
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "rts", 0)),
+            err(untracked(), line_named(&src, "jmp .r(pc)", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe b05 (re-review N2): the same through `jsr .r(pc)`. Since piece 2b,
-/// `.r`'s `Unknown` summary also propagates back into `.via`'s `rts`.
+/// `.r`'s `Unknown` + `touches_caller_stack` summary flags the call site and
+/// propagates back into `.via`'s `rts`.
 #[test]
 fn a_pc_relative_call_into_a_reached_restore_is_refused() {
     let src = into_reached_restore("    jsr .r(pc)\n    rts");
@@ -539,6 +554,7 @@ fn a_pc_relative_call_into_a_reached_restore_is_refused() {
         d,
         vec![
             err(untracked(), line_named(&src, "rts", 0)),
+            err(untracked(), line_named(&src, "jsr .r(pc)", 0)),
             err(untracked(), line_named(&src, "rts", 1)),
         ],
         "{d:#?}"
@@ -1240,5 +1256,189 @@ proc P () clobbers(d0) {{
     assert!(
         !d.iter().any(|x| x.message.starts_with("[proc.with-sr-level-broken]")),
         "AssertDesugar must not trigger Rule 3: {d:#?}"
+    );
+}
+
+// ---- Step A piece 2b: blind-review regression tests (C1-C3, I1-I3, M3) ----
+
+/// Review C1: `jmp .done(pc)` and `jmp (.done).l` while masked must NOT default
+/// to DIVERGES (which would fail open on both `preserves(sr.mask)` and `with ints_off`).
+#[test]
+fn review_c1_pcrel_and_abs_local_tail_while_masked_is_refused() {
+    let pcrel = routine(
+        MASK,
+        "    move.w #$2700, sr
+    jmp .done(pc)
+.done:
+    rts",
+    );
+    let d_pc = lower(&pcrel);
+    assert!(
+        d_pc.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "jmp .done(pc) while masked must be refused: {d_pc:#?}"
+    );
+
+    let abs = routine(
+        MASK,
+        "    move.w #$2700, sr
+    jmp (.done).l
+.done:
+    rts",
+    );
+    let d_abs = lower(&abs);
+    assert!(
+        d_abs.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "jmp (.done).l while masked must be refused: {d_abs:#?}"
+    );
+}
+
+/// Review C2: `touches_caller_stack` must propagate transitively through an
+/// intermediate proc `M` that has no SR saves of its own.
+#[test]
+fn review_c2_two_hop_caller_stack_rewrite_is_refused() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    jsr M
+    move.w (sp)+, sr
+    rts
+}
+proc M () clobbers(d0) {
+    jsr H
+    rts
+}
+proc H () clobbers(d0) {
+    move.w #$2700, 8(sp)
+    rts
+}
+";
+    let d = lower(src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "2-hop caller-stack overwrite must be refused: {d:#?}"
+    );
+}
+
+/// Review C3: a stack-corrupting helper (`addq.l #4, sp; rts`) called while
+/// masked and followed by diverging code must still be refused at the call site.
+#[test]
+fn review_c3_stack_drop_helper_before_divergent_code_is_refused() {
+    let src = routine(
+        MASK,
+        "    move.w #$2700, sr
+    bsr .h
+.dead:
+    bra .dead
+.h:
+    addq.l #4, sp
+    rts",
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "c01 before divergent loop must still be refused: {d:#?}"
+    );
+}
+
+/// Review I1: an unreached masking label/block placed after a `@noreturn` call
+/// must still be walked and refused as an unreached entry.
+#[test]
+fn review_i1_unreached_masking_code_after_noreturn_call_is_refused() {
+    let src = "module m
+@noreturn
+extern proc Die () clobbers(d0)
+proc P () clobbers(d0) preserves(sr.mask) {
+    jsr Die
+.hidden:
+    move.w #$2700, sr
+    rts
+}
+";
+    let d = lower(src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "unreached masking block after @noreturn call must be refused: {d:#?}"
+    );
+}
+
+/// Review I2: a callee with an enumerated `targets(...)` computed jump whose arm
+/// masks or unmasks must be caught in both `preserves(sr.mask)` and `with ints_off`.
+#[test]
+fn review_i2_callee_enumerated_dispatch_targets_are_summarized() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc Caller () clobbers(d0, d1) preserves(sr.mask) {{
+    jsr Dispatch
+    rts
+}}
+proc Bracketed () clobbers(d0, d1) {{
+    with ints_off {{
+        jsr DispatchUnmask
+    }}
+    rts
+}}
+proc Dispatch () clobbers(d0, d1, sr) {{
+    jmp .tbl(pc, d1.w) targets(.a, .b)
+.tbl:
+    nop
+.a:
+    rts
+.b:
+    move.w #$2700, sr
+    rts
+}}
+proc DispatchUnmask () clobbers(d0, d1, sr) {{
+    jmp .tbl(pc, d1.w) targets(.a, .b)
+.tbl:
+    nop
+.a:
+    rts
+.b:
+    move.w #$2000, sr
+    rts
+}}
+"
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")
+            && x.message.contains("`Caller`")),
+        "enumerated targets() masking arm must fail Caller: {d:#?}"
+    );
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.message.contains("`Bracketed`")),
+        "enumerated targets() unmasking arm must fail Bracketed: {d:#?}"
+    );
+}
+
+/// Review I3: `extern proc` and contract `type` with `out(sr.mask)` or `inout(sr.mask)`
+/// license SR mask writes and must be treated as UNKNOWN.
+#[test]
+fn review_i3_extern_and_type_out_sr_mask_are_refused() {
+    let ext_src = "module m
+extern proc SetIrq () out(sr.mask)
+proc P () clobbers(d0) preserves(sr.mask) {
+    jsr SetIrq
+    rts
+}
+";
+    let d_ext = lower(ext_src);
+    assert!(
+        d_ext.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "extern proc out(sr.mask) must fail preserves(sr.mask): {d_ext:#?}"
+    );
+
+    let ty_src = "module m
+type SetIrqHook = proc () out(sr.mask)
+proc P () clobbers(a0) preserves(sr.mask) {
+    jsr (a0) as SetIrqHook
+    rts
+}
+";
+    let d_ty = lower(ty_src);
+    assert!(
+        d_ty.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "typed indirect out(sr.mask) must fail preserves(sr.mask): {d_ty:#?}"
     );
 }
