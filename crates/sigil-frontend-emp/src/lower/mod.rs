@@ -397,6 +397,7 @@ fn lower_module_inner(
     // Set when a failing `ensure_fatal` stopped the item walk, which also skips
     // the declared-struct-size pass below (D5.3 stops the module's remaining work).
     let mut fatal_stop = false;
+    let mut lowered_68k: Vec<proc::LoweredProcSr<'_>> = Vec::new();
 
     for (index, item) in file.items.iter().enumerate() {
         match item {
@@ -424,7 +425,7 @@ fn lower_module_inner(
             }
             ast::Item::Proc(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
-                proc::lower_proc(
+                if let Some(lp) = proc::lower_proc(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
@@ -433,7 +434,9 @@ fn lower_module_inner(
                     &mut diags,
                     &mut asm_counter,
                     expansions,
-                );
+                ) {
+                    lowered_68k.push(lp);
+                }
             }
             ast::Item::Offsets(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
@@ -579,6 +582,7 @@ fn lower_module_inner(
                     contracts,
                     &noreturn,
                     &sr_mask_preservers,
+                    &mut lowered_68k,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -662,6 +666,12 @@ fn lower_module_inner(
         }
     }
 
+    // Step A piece 2b: module-wide inter-procedural interrupt-level check over
+    // every 68000 proc lowered in this file (top-level and section-nested).
+    if !lowered_68k.is_empty() {
+        run_module_sr_level_pass(file, &lowered_68k, &noreturn, &mut diags);
+    }
+
     // Every struct this module declares with a `(size: N)` has its layout forced,
     // so the declared size is verified whether or not an item above used the
     // struct. Runs after the item walk, and a diagnostic an item above already
@@ -741,9 +751,9 @@ fn ensure_default(
 /// Returns `false` when a failing `ensure_fatal` in this section aborted
 /// evaluation, so the caller stops lowering the module's remaining items (D5.3).
 #[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
-fn lower_section_items(
-    file: &ast::File,
-    sec: &ast::SectionDecl,
+fn lower_section_items<'a>(
+    file: &'a ast::File,
+    sec: &'a ast::SectionDecl,
     placement: &Placement,
     as_compat: bool,
     invariant_regs: &[String],
@@ -758,6 +768,7 @@ fn lower_section_items(
     contracts: &crate::contract::InterfaceEnv,
     noreturn: &std::collections::BTreeSet<String>,
     sr_mask_preservers: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    lowered_68k: &mut Vec<proc::LoweredProcSr<'a>>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -779,7 +790,7 @@ fn lower_section_items(
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
-                proc::lower_proc(
+                if let Some(lp) = proc::lower_proc(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
@@ -788,7 +799,9 @@ fn lower_section_items(
                     diags,
                     asm_counter,
                     expansions,
-                );
+                ) {
+                    lowered_68k.push(lp);
+                }
             }
             ast::Item::Ensure(decl) => {
                 let cont = lower_item_guard(
@@ -2095,6 +2108,77 @@ pub(crate) fn collect_sr_mask_preservers(
     let mut map = std::collections::BTreeMap::new();
     walk(items, file, defines, contracts, &mut map);
     map
+}
+
+/// Step A piece 2b: module-wide inter-procedural interrupt-level check over
+/// all 68000 procs lowered in one file (top-level and section-nested).
+fn run_module_sr_level_pass(
+    file: &ast::File,
+    lowered_68k: &[proc::LoweredProcSr<'_>],
+    noreturn: &std::collections::BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::sr_level::{
+        extern_proc_summary, format_mask_finding, mask_findings_for_proc, tokens_clobber_sr_mask,
+        ProcSummary, SrExternalEnv, SrProcInput, SummaryTable,
+    };
+    fn collect_ext_and_types(
+        items: &[ast::Item],
+        ext: &mut std::collections::BTreeMap<String, ProcSummary>,
+        clob_types: &mut std::collections::BTreeSet<String>,
+    ) {
+        for item in items {
+            match item {
+                ast::Item::ExternProc(e) => {
+                    ext.insert(e.name.clone(), extern_proc_summary(e));
+                }
+                ast::Item::ContractType(ct) => {
+                    if ct.sig.clobbers.as_deref().is_some_and(tokens_clobber_sr_mask) {
+                        clob_types.insert(ct.name.clone());
+                    }
+                }
+                ast::Item::Section(sec) => collect_ext_and_types(&sec.items, ext, clob_types),
+                _ => {}
+            }
+        }
+    }
+    let mut extern_summaries = std::collections::BTreeMap::new();
+    let mut sr_clobber_types = std::collections::BTreeSet::new();
+    collect_ext_and_types(&file.items, &mut extern_summaries, &mut sr_clobber_types);
+
+    let inputs: Vec<SrProcInput<'_>> = lowered_68k
+        .iter()
+        .map(|lp| SrProcInput {
+            name: &lp.decl.name,
+            items: &lp.buf.items,
+            preserves_sr_token: lp.preserves_sr_token,
+            falls_into: lp.decl.falls_into.as_deref(),
+            is_resumable: lp.decl.is_resumable(),
+            is_continuation: lp.decl.is_continuation(),
+            span: lp.decl.span,
+        })
+        .collect();
+    let env = SrExternalEnv {
+        noreturn,
+        extern_summaries: &extern_summaries,
+        sr_clobber_types: &sr_clobber_types,
+        whole_program: false,
+    };
+    let table = SummaryTable::compute(&inputs, &env);
+
+    for (pi, lp) in lowered_68k.iter().enumerate() {
+        let Some(token) = lp.preserves_sr_token else { continue };
+        if lp.sr_tail_failed {
+            continue;
+        }
+        let findings = mask_findings_for_proc(pi, &inputs[pi], &table, &env);
+        for finding in &findings {
+            err(diags, finding.span, format_mask_finding(&lp.decl.name, token, &finding.kind));
+        }
+        if lp.explicit_bare_sr && findings.is_empty() {
+            proc::run_ccr_advisory(lp.decl, &lp.buf, noreturn, diags);
+        }
+    }
 }
 
 fn validate_module_invariants(

@@ -1299,6 +1299,75 @@ fn judge_level(level: Level) -> Option<MaskFindingKind> {
     }
 }
 
+/// True when a `clobbers(...)` token list names `sr` or `sr.mask`.
+pub(crate) fn tokens_clobber_sr_mask(tokens: &[(String, Option<String>)]) -> bool {
+    tokens.iter().any(|(lo, hi)| {
+        hi.is_none() && (lo.eq_ignore_ascii_case("sr") || lo.eq_ignore_ascii_case("sr.mask"))
+    })
+}
+
+/// The mask-preserving spelling (`"sr"` or `"sr.mask"`) declared in a
+/// `preserves(...)` list, if any. Bare `"sr"` wins if both appear.
+pub(crate) fn preserves_sr_token(tokens: &[(String, Option<String>)]) -> Option<&'static str> {
+    let mut has_bare = false;
+    let mut has_mask = false;
+    for (lo, hi) in tokens {
+        if hi.is_some() {
+            continue;
+        }
+        if lo.eq_ignore_ascii_case("sr") {
+            has_bare = true;
+        } else if lo.eq_ignore_ascii_case("sr.mask") {
+            has_mask = true;
+        }
+    }
+    if has_bare {
+        Some("sr")
+    } else if has_mask {
+        Some("sr.mask")
+    } else {
+        None
+    }
+}
+
+/// Build an interrupt-level summary from an `extern proc` declaration.
+pub(crate) fn extern_proc_summary(decl: &crate::ast::ExternProcDecl) -> ProcSummary {
+    if decl.is_noreturn() {
+        return ProcSummary::DIVERGES;
+    }
+    if preserves_sr_token(&decl.sig.preserves).is_some() {
+        return ProcSummary::IDENTITY;
+    }
+    if decl.sig.clobbers.as_deref().is_some_and(tokens_clobber_sr_mask) {
+        return ProcSummary::UNKNOWN;
+    }
+    ProcSummary::IDENTITY
+}
+
+/// Format a `[proc.preserves-sr-unbalanced]` diagnostic message.
+pub(crate) fn format_mask_finding(name: &str, token: &str, kind: &MaskFindingKind) -> String {
+    match kind {
+        MaskFindingKind::NotTheCallers { levels } => {
+            let levels = levels.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
+            format!(
+                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
+                 way out can be reached with the interrupt level at {levels}, not the caller's \
+                 (a path masks interrupts and does not restore the saved level)"
+            )
+        }
+        MaskFindingKind::Untracked => format!(
+            "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
+             interrupt level cannot be followed to this way out (restore it with \
+             `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it \
+             was at the save)"
+        ),
+        MaskFindingKind::Rte => format!(
+            "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but leaves \
+             by `rte`, which loads the interrupt level from the stack"
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

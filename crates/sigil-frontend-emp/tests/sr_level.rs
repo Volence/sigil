@@ -185,8 +185,8 @@ fn an_rte_is_refused() {
 
 /// Survey variant `j`.
 #[test]
-fn a_call_to_a_masking_routine_still_builds() {
-    // 2a keeps today's reading of calls; piece 2b closes this
+fn a_call_to_a_masking_routine_is_refused() {
+    // Piece 2b closes this (in 2a this was `a_call_to_a_masking_routine_still_builds`).
     let src = "module m
 proc P () clobbers(d0) preserves(sr.mask) {
     jsr Q
@@ -197,7 +197,10 @@ proc Q () clobbers(sr) {
     rts
 }
 ";
-    assert_eq!(lower(src), vec![]);
+    assert_eq!(
+        lower(src),
+        vec![err(not_the_callers("sr.mask", "7"), line_named(src, "rts", 0))],
+    );
 }
 
 const INTS_OFF: &str = "context ints_off {
@@ -246,11 +249,12 @@ fn with_ints_off_and_an_early_return_inside_is_refused() {
     assert_eq!(codes, PINNED_WITH_INTS_OFF_EARLY_RETURN, "{d:#?}");
 }
 
-/// Measured, not assumed (see the notes' Task 4 section).
+/// Measured, not assumed: since piece 2b, the `sr_level` walk runs in the
+/// module-wide post-pass after per-proc `context` and `stack` checks.
 const PINNED_WITH_INTS_OFF_EARLY_RETURN: &[(Level, &str)] = &[
-    (Level::Error, "[proc.preserves-sr-unbalanced]"),
     (Level::Error, "[context.escape]"),
     (Level::Error, "[stack.unbalanced]"),
+    (Level::Error, "[proc.preserves-sr-unbalanced]"),
 ];
 
 /// The routine itself is refused with no entrant: an entry at `.mid` pops a word
@@ -828,4 +832,190 @@ fn balanced_local_helper_inside_mask_still_builds() {
     rts",
     );
     assert_eq!(lower(&src), vec![]);
+}
+
+// ---- Step A piece 2b: Task 2 same-file inter-procedural propagation ----
+
+#[test]
+fn a_two_hop_call_chain_to_a_masking_routine_is_refused() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr.mask) {
+    jbsr M
+    rts
+}
+proc M () clobbers(d0) {
+    jbsr Q
+    rts
+}
+proc Q () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+";
+    assert_eq!(
+        lower(src),
+        vec![err(not_the_callers("sr.mask", "7"), line_named(src, "rts", 0))],
+    );
+}
+
+#[test]
+fn a_call_to_an_undeclared_sr_clean_routine_builds() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    jbsr Helper
+    move.w (sp)+, sr
+    rts
+}
+proc Helper () clobbers(d0) {
+    moveq #1, d0
+    rts
+}
+";
+    assert_eq!(lower(src), vec![]);
+}
+
+/// STEPA-P2B-CALLS M4 (`t01`): mid-body tail to a routine that masks.
+#[test]
+fn a_mid_body_tail_to_a_masking_routine_is_refused() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr.mask) {
+    tst.w d0
+    beq .x
+    jmp Other
+.x:
+    rts
+}
+proc Other () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+";
+    assert_eq!(
+        lower(src),
+        vec![err(not_the_callers("sr.mask", "7"), line_named(src, "jmp Other", 0))],
+    );
+}
+
+/// STEPA-P2B-CALLS M4 (`t02`): conditional branch out to a routine that masks.
+#[test]
+fn a_conditional_branch_out_to_a_masking_routine_is_refused() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr.mask) {
+    tst.w d0
+    beq Other
+    rts
+}
+proc Other () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+";
+    assert_eq!(
+        lower(src),
+        vec![err(not_the_callers("sr.mask", "7"), line_named(src, "beq Other", 0))],
+    );
+}
+
+#[test]
+fn extern_clobbers_sr_is_refused_and_noreturn_extern_inside_mask_builds() {
+    let bad = "module m
+extern proc Masker () clobbers(sr)
+proc P () clobbers(d0) preserves(sr.mask) {
+    jsr Masker
+    rts
+}
+";
+    assert_eq!(
+        lower(bad),
+        vec![err(untracked(), line_named(bad, "rts", 0))],
+    );
+
+    let ok_div = "module m
+@noreturn
+extern proc Die () clobbers(sr)
+proc P () clobbers(d0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    tst.w d0
+    beq .ok
+    jsr Die
+.ok:
+    move.w (sp)+, sr
+    rts
+}
+";
+    assert_eq!(lower(ok_div), vec![]);
+}
+
+#[test]
+fn typed_indirect_call_clobbering_sr_is_refused_and_clean_hook_builds() {
+    let bad = "module m
+type BadHook = proc () clobbers(sr)
+proc P () clobbers(a0) preserves(sr.mask) {
+    jsr (a0) as BadHook
+    rts
+}
+";
+    assert_eq!(
+        lower(bad),
+        vec![err(untracked(), line_named(bad, "rts", 0))],
+    );
+
+    let ok_hook = "module m
+type CleanHook = proc () clobbers(d0)
+proc P () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as CleanHook
+    rts
+}
+";
+    assert_eq!(lower(ok_hook), vec![]);
+}
+
+#[test]
+fn continuation_rte_and_resumable_jmp_callees_build() {
+    let src = "module m
+proc Wait () clobbers(d0, a3) preserves(sr.mask) {
+    jbsr Process
+    rts
+}
+proc Process () clobbers(d0, a3) {
+    tst.w d0
+    beq .resume
+    jbra Decoder
+.resume:
+    jbra Resume
+}
+@resumable
+proc Decoder () clobbers(d0) {
+    moveq #0, d0
+    jmp (a3)
+}
+@continuation
+proc Resume () clobbers(d0) {
+    moveq #1, d0
+    rte
+}
+";
+    assert_eq!(lower(src), vec![]);
+}
+
+#[test]
+fn bare_preserves_sr_calling_masker_emits_mask_error_without_ccr_advisory() {
+    let src = "module m
+proc P () clobbers(d0) preserves(sr) {
+    moveq #1, d0
+    jsr Q
+    rts
+}
+proc Q () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+";
+    assert_eq!(
+        lower(src),
+        vec![err(not_the_callers("sr", "7"), line_named(src, "rts", 0))],
+    );
 }

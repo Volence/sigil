@@ -103,17 +103,29 @@ pub(super) struct ProcCtx<'a> {
 /// fallthrough and the clobber lint — while leaving the hard `falls_into`
 /// adjacency ERROR untouched. `expansions` is the program's template-expansion
 /// map, threaded beside the counter for the same reason (program-wide ids).
+/// One lowered 68000 procedure handed back from [`lower_proc`] to
+/// `lower_module_with_contracts` so the module-wide interrupt-level pass
+/// (step A piece 2b) runs once over all same-file callees without duplicating
+/// diagnostics or disturbing `verified_preserves_regs` / `preserve_oracle_inputs`.
+pub(super) struct LoweredProcSr<'a> {
+    pub(super) decl: &'a ast::ProcDecl,
+    pub(super) buf: crate::value::CodeBuf,
+    pub(super) preserves_sr_token: Option<&'static str>,
+    pub(super) explicit_bare_sr: bool,
+    pub(super) sr_tail_failed: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(super) fn lower_proc(
+pub(super) fn lower_proc<'a>(
     file: &ast::File,
-    proc: &ast::ProcDecl,
+    proc: &'a ast::ProcDecl,
     siblings: Siblings<'_>,
     ctx: ProcCtx,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
     expansions: &mut Option<sigil_span::SourceMap>,
-) {
+) -> Option<LoweredProcSr<'a>> {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     let start = builder.fragment_position();
     builder.define_label(&proc.name);
@@ -145,7 +157,7 @@ pub(super) fn lower_proc(
     for a in asserts {
         builder.push_link_assert(a);
     }
-    let Some(buf) = buf else { return };
+    let Some(buf) = buf else { return None };
     super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
     // The proc's extent for the build export: the fragments its body emitted, in the
     // section that holds its label. A body that ended in another section (none does
@@ -250,12 +262,15 @@ pub(super) fn lower_proc(
     // explicit `preserves`. On 68k, the S2-D6b syntactic slice stands unchanged
     // (byte-frozen — `preserves.rs` untouched). Both are opt-in declared
     // CONTRACTs, error-tier, NOT silenced by `@as_compat`.
+    let mut sr_deferred = (None, false, false);
     if ctx.cpu == Cpu::Z80 {
         check_z80_preserves(
             proc, &buf, ctx.invariant_regs, ctx.callee_preserves, ctx.noreturn, diags,
         );
     } else if !proc.preserves.is_empty() {
-        check_preserves(proc, &buf, ctx.noreturn, ctx.sr_mask_preservers, diags);
+        sr_deferred = check_preserves_inner(
+            proc, &buf, ctx.noreturn, ctx.sr_mask_preservers, false, diags,
+        );
     }
 
     // 5b. `@noreturn` contract (noreturn-tail model): a proc claiming it never
@@ -356,6 +371,12 @@ pub(super) fn lower_proc(
     // proc, a dispatch-table inline body, a script body, or an item-position
     // `asm {}` template. Running it there catches a `targets(...)` clause on any
     // path with no double-report.
+    if ctx.cpu == Cpu::M68000 {
+        let (preserves_sr_token, explicit_bare_sr, sr_tail_failed) = sr_deferred;
+        Some(LoweredProcSr { decl: proc, buf, preserves_sr_token, explicit_bare_sr, sr_tail_failed })
+    } else {
+        None
+    }
 }
 
 /// Report the `[stack.*]` findings for one proc body.
@@ -1614,6 +1635,22 @@ fn check_preserves(
     sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
     diags: &mut Vec<Diagnostic>,
 ) {
+    let _ = check_preserves_inner(proc, buf, noreturn, sr_mask_preservers, true, diags);
+}
+
+/// Core of [`check_preserves`]. When `run_sr_walk` is `false` (called from
+/// [`lower_proc`]), the `sr_level` path walk and bare-`sr` CCR advisory are
+/// deferred to the module-wide post-pass in `lower/mod.rs` so same-file calls
+/// are resolved in a single pass with no duplicate diagnostics. Returns
+/// `(preserves_sr_token, explicit_bare_sr, sr_tail_failed)`.
+fn check_preserves_inner(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
+    run_sr_walk: bool,
+    diags: &mut Vec<Diagnostic>,
+) -> (Option<&'static str>, bool, bool) {
     // Fold the declared segments to the canonical movem mask
     // (bit0=D0..bit7=D7, bit8=A0..bit15=A7 — the `CodeOperand::RegList`
     // convention).
@@ -1759,7 +1796,7 @@ fn check_preserves(
         }
     }
     if bad {
-        return;
+        return (None, false, false);
     }
 
     // §6 partial-width word facets. A register full-preserved AND word-preserved
@@ -1789,7 +1826,7 @@ fn check_preserves(
                     proc.name
                 ),
             );
-            return;
+            return (None, false, false);
         }
     }
     for c in &clob.regs {
@@ -1805,7 +1842,7 @@ fn check_preserves(
                         proc.name
                     ),
                 );
-                return;
+                return (None, false, false);
             }
             // §6: the word facet is a preserve too — `preserves({c}.w) clobbers({c})`
             // claims the low word survives AND licenses destroying the register, a
@@ -1822,38 +1859,33 @@ fn check_preserves(
                         proc.name
                     ),
                 );
-                return;
+                return (None, false, false);
             }
         }
     }
 
     // Verification dispatches on the declared SPELLING. A mask claim (bare `sr`
-    // or `sr.mask`) runs `check_preserves_sr`, whose mask half is judged by the
-    // level walk (`sr_level::mask_findings`): every way out must be at the
-    // caller's interrupt level. An EXPLICIT `sr.ccr` additionally runs the CCR
-    // slice, which demands every flag effect sit inside the bracket; bare `sr`
-    // gets no CCR proof here — its CCR half is UNCHECKED beyond the advisory
-    // below (a flag write after the restore is invisible; the gap is ledgered
-    // against S2-D7's dataflow half).
+    // or `sr.mask`) runs the tail checks here and either runs the level walk
+    // inline (`run_sr_walk == true`, for `verified_preserves_regs` /
+    // `preserve_oracle_inputs`) or defers it to the module-wide post-pass
+    // (`run_sr_walk == false`, called from `lower_proc`) so same-file calls are
+    // resolved in one pass with no duplicate diagnostics.
+    let mut sr_out = (None, false, false);
     if pres_sr.mask {
-        let before = diags.len();
-        check_preserves_sr(
-            proc,
-            buf,
-            if explicit_bare_sr { "sr" } else { "sr.mask" },
-            sr_mask_preservers,
-            noreturn,
-            diags,
-        );
-        // Advisory (noreturn-tail model, warn tier): bare `preserves(sr)` claims
-        // BOTH halves, but only the mask is proven by `check_preserves_sr`
-        // — its CCR half is otherwise unverified (ledgered against S2-D7). The
-        // CCR-bracket walk names a bare-`sr` proc whose condition codes are not
-        // provably the caller's at return. Gated on the mask proof PASSING, so it
-        // stays CCR-SPECIFIC: a proc that already failed the mask proof is not
-        // also nagged about the half it never reached.
-        if explicit_bare_sr && diags.len() == before {
-            check_ccr_advisory(proc, buf, noreturn, diags);
+        let token = if explicit_bare_sr { "sr" } else { "sr.mask" };
+        let tail_failed =
+            check_preserves_sr_tail(proc, buf, token, sr_mask_preservers, noreturn, diags);
+        sr_out = (Some(token), explicit_bare_sr, tail_failed);
+        if run_sr_walk && !tail_failed {
+            let before = diags.len();
+            let findings = crate::sr_level::mask_findings(&buf.items, noreturn);
+            for finding in findings {
+                let message = crate::sr_level::format_mask_finding(&proc.name, token, &finding.kind);
+                push(diags, Level::Error, finding.span, message);
+            }
+            if explicit_bare_sr && diags.len() == before {
+                check_ccr_advisory(proc, buf, noreturn, diags);
+            }
         }
     }
     if explicit_sr_ccr {
@@ -1916,7 +1948,7 @@ fn check_preserves(
     }
 
     if declared == 0 {
-        return; // no full mask (SR-family- or word-facet-only contract)
+        return sr_out; // no full mask (SR-family- or word-facet-only contract)
     }
 
     // §5 verified preserves (the dataflow upgrade — subsumes the D2.32 movem-pair
@@ -1955,7 +1987,7 @@ fn check_preserves(
         .filter(|r| !matches!(real.get(r), Some(crate::preserves::PreserveStatus::Verified)))
         .collect();
     if not_verified.is_empty() {
-        return;
+        return sr_out;
     }
     let optimistic = crate::preserves::verify_preserved(
         &buf.items,
@@ -1989,6 +2021,7 @@ fn check_preserves(
             ),
         );
     }
+    sr_out
 }
 
 /// Verify a declared `out(...)` set (S2-D6e — the third register-contract
@@ -2563,23 +2596,28 @@ fn check_out(
 /// line-order test `sr_writes_round_trip`, which the context-definition check
 /// still uses). The full-SR round trip restores both halves, so one proof
 /// serves either claim; a body with NO SR writes preserves vacuously.
-fn check_preserves_sr(
+/// Run the deferred bare-`preserves(sr)` CCR advisory from the module-wide
+/// post-pass when the interrupt-level walk passes cleanly.
+pub(super) fn run_ccr_advisory(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    check_ccr_advisory(proc, buf, noreturn, diags);
+}
+
+/// Tail-only checks for `preserves(sr)` / `preserves(sr.mask)`. Returns `true`
+/// when a tail refusal fired so the caller skips the level walk (avoiding
+/// duplicate errors on the same proc).
+fn check_preserves_sr_tail(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     token: &str,
     sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
     noreturn: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
-) {
-    // The mnemonic-less tail refusals (68k preserves-through-tail credit, §2.4):
-    // a declared `falls_into`, or a body that can run off its end, hands the
-    // caller the successor's SR — which this slice cannot see. Applied to the
-    // EXPLICIT `sr.mask` claim, whose mask round-trip nothing else guards, closing
-    // the vacuity that let a fall-through / run-off body pass without proving the
-    // mask survives the leave. A BARE `sr` proc skips these two refusals: its
-    // fall-off is judged by the level walk below (`sr_level::mask_findings`), on
-    // the level at the fall-off point only (the successor's SR is not seen), and
-    // its CCR half by the advisory (WARN), which keeps its tail behavior (§2.4).
+) -> bool {
     if token == "sr.mask" {
         if let Some(why) = sr_tail_refusal(proc, buf, Cpu::M68000) {
             push(
@@ -2592,17 +2630,9 @@ fn check_preserves_sr(
                     proc.name
                 ),
             );
-            return;
+            return true;
         }
     }
-    // An UNCONDITIONAL EXTERNAL tail (the QueueDMA_Critical → *.transfer shape):
-    // the SR the caller finally sees is the tail-callee's, so the mask claim holds
-    // only if that callee ITSELF preserves the mask. A tail to a provable
-    // preserver is CREDITED (the tail edge discharged; the body's own ways out
-    // are still judged by the level walk below); a tail to anything else is
-    // REFUSED, closing the vacuity hole a mask-claiming tail-only body would pass
-    // through. A transfer INTO a local label (the builder classifies it
-    // `Follow`/`FallOff`) is not an external tail and is left to the level walk.
     if let Some(target) = terminal_external_tail(buf, noreturn) {
         if !sr_mask_preservers_credit(sr_mask_preservers, &target) {
             push(
@@ -2617,37 +2647,10 @@ fn check_preserves_sr(
                     proc.name
                 ),
             );
-            return;
+            return true;
         }
     }
-    // Step A piece 2a: every way out must be at the caller's interrupt level,
-    // followed down each path (`crate::sr_level`), one error per way out that is
-    // not, anchored at that way out.
-    use crate::sr_level::{mask_findings, MaskFindingKind};
-    let name = &proc.name;
-    for finding in mask_findings(&buf.items, noreturn) {
-        let message = match &finding.kind {
-            MaskFindingKind::NotTheCallers { levels } => {
-                let levels = levels.iter().map(u8::to_string).collect::<Vec<_>>().join(" or ");
-                format!(
-                    "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but this \
-                     way out can be reached with the interrupt level at {levels}, not the caller's \
-                     (a path masks interrupts and does not restore the saved level)"
-                )
-            }
-            MaskFindingKind::Untracked => format!(
-                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but the \
-                 interrupt level cannot be followed to this way out (restore it with \
-                 `move.w (sp)+, sr` from the matching `move.w sr, -(sp)`, with the stack as it \
-                 was at the save)"
-            ),
-            MaskFindingKind::Rte => format!(
-                "[proc.preserves-sr-unbalanced] `{name}` declares `preserves({token})` but leaves \
-                 by `rte`, which loads the interrupt level from the stack"
-            ),
-        };
-        push(diags, Level::Error, finding.span, message);
-    }
+    false
 }
 
 /// The target symbol of a body's terminating UNCONDITIONAL EXTERNAL tail transfer
