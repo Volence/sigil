@@ -1390,7 +1390,7 @@ mod tests {
         assert!(!err.contains("`engine.eng`"), "{err}");
     }
 
-    const ENGINE: &str = r#"format = 1
+    const ENGINE: &str = r#"format = 2
         helpers = []
         ram_helpers = []
         struct_twins = []
@@ -1438,7 +1438,7 @@ mod tests {
         assert!(err.contains("required_consts"), "the refusal names the missing key: {err}");
     }
 
-    const GAME: &str = r#"format = 1
+    const GAME: &str = r#"format = 2
         id = "g"
         name = "g"
         require_one_text = false

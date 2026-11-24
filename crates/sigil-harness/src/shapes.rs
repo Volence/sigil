@@ -263,6 +263,8 @@ pub fn closure_baseline(aeon: &Path, s: &Shape) -> Result<crate::contract_baseli
         out_unverified: b.out_unverified,
         inout_unverified: b.inout_unverified,
         d1c: b.d1c,
+        clobber_unbounded: b.clobber_unbounded,
+        sr_level: b.sr_level,
         home,
     })
 }

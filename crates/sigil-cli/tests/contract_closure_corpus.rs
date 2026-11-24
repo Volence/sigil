@@ -514,19 +514,19 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
             r.extern_collisions
         );
 
-        // THE ERROR GATE (WARN→ERROR flip, §9): the residue is ZERO in every shipped
-        // shape. ANY firing here — an undeclared transitive register effect, or an
-        // unbounded indirect — is a build error under the strict gate. This is the
-        // permanent gate: an undeclared register effect in `.emp` can no longer ship,
-        // and no longer ship behind a comptime arm one define set happens to elide.
+        // THE ERROR GATE (WARN→ERROR flip, §9): concrete register under-declarations
+        // are ZERO in every shipped shape. Unbounded (`top`) indirect/blind-transfer
+        // firings are ratcheted both ways in `contract_baselines_hold_for_every_shipped_shape`
+        // (step A piece 4, `baseline.toml` format 2).
         let residue: Vec<(String, String)> = r
             .firings
             .iter()
+            .filter(|f| !f.unbounded)
             .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_else(|| "<unbounded>".into())))
             .collect();
         assert!(
-            r.firings.is_empty(),
-            "shape `{label}`: closure firing(s), an undeclared register effect must be \
+            residue.is_empty(),
+            "shape `{label}`: concrete closure firing(s), an undeclared register effect must be \
              declared or verified-preserved before it can ship: {residue:?}"
         );
     }
@@ -2068,6 +2068,39 @@ fn contract_baselines_hold_for_every_shipped_shape() {
             d.is_clean(),
             "shape `{label}`: {}",
             contract_baseline::adjudication_message_in("[proc.inout-unverified]", &d, &profile.baseline.home)
+        );
+
+        // Step A piece 4 (`format = 2`): concrete clobber firings remain strictly
+        // zero-firing; unbounded (`top`) clobber firings and `sr_level` firings are
+        // ratcheted both ways against `baseline.toml`.
+        let concrete: Vec<(String, String)> = r
+            .firings
+            .iter()
+            .filter(|f| !f.unbounded)
+            .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_default()))
+            .collect();
+        assert!(
+            concrete.is_empty(),
+            "shape `{label}`: concrete [proc.clobber-undeclared] firings must be empty: {concrete:?}"
+        );
+        let clobber_unbounded: Vec<String> =
+            r.firings.iter().filter(|f| f.unbounded).map(|f| f.proc.clone()).collect();
+        let d = profile.baseline.diff_clobber_unbounded(&clobber_unbounded);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message_in(
+                "[proc.clobber-undeclared] (unbounded)",
+                &d,
+                &profile.baseline.home
+            )
+        );
+        let sr_level: Vec<String> = r.sr_level_firings.iter().map(|f| f.proc.clone()).collect();
+        let d = profile.baseline.diff_sr_level(&sr_level);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message_in("[sr_level]", &d, &profile.baseline.home)
         );
 
         // Non-vacuity that is not implied by `is_clean()`: the walk must have

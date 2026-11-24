@@ -222,7 +222,7 @@ fn two_game_tree(g_map: &str, h_map: &str) -> tempfile::TempDir {
     let h = tmp.path().join("games/h");
     std::fs::create_dir_all(&h).unwrap();
     std::fs::write(h.join("game.toml"), gt.replace("id = \"g\"", "id = \"h\"").replace("games.g.", "games.h.")).unwrap();
-    std::fs::write(h.join("baseline.toml"), "format = 1\n").unwrap();
+    std::fs::write(h.join("baseline.toml"), "format = 2\n").unwrap();
     std::fs::write(g.join("map.toml"), g_map).unwrap();
     std::fs::write(h.join("map.toml"), h_map).unwrap();
     tmp

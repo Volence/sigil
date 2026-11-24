@@ -86,6 +86,11 @@ pub struct ShapeBaseline {
     /// `[call.live-clobbered]` for this shape, its family rows already added:
     /// `(caller, callee, register)`, a multiset.
     pub d1c: Vec<(String, String, String)>,
+    /// `[proc.clobber-undeclared]` unbounded (top) procs for this shape, its debug
+    /// family rows already added.
+    pub clobber_unbounded: Vec<String>,
+    /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs for this shape.
+    pub sr_level: Vec<String>,
     /// Where an adjudicated row is written, named by [`adjudication_message_in`]: the
     /// description files the rows came from.
     pub home: String,
@@ -112,6 +117,16 @@ impl ShapeBaseline {
     pub fn diff_d1c(&self, got: &[(String, String, String)]) -> BaselineDiff {
         let key = |(p, c, r): &(String, String, String)| format!("{p} @ {c} :: {r}");
         diff_multiset(got.iter().map(key).collect(), self.d1c.iter().map(key).collect())
+    }
+
+    /// Diff `[proc.clobber-undeclared]` unbounded (top) firings.
+    pub fn diff_clobber_unbounded(&self, got: &[String]) -> BaselineDiff {
+        diff_multiset(got.to_vec(), self.clobber_unbounded.clone())
+    }
+
+    /// Diff `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` firings.
+    pub fn diff_sr_level(&self, got: &[String]) -> BaselineDiff {
+        diff_multiset(got.to_vec(), self.sr_level.clone())
     }
 }
 

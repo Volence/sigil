@@ -2918,7 +2918,7 @@ pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
 /// Returns the `--project` directory. The caller names the game (G0b Task 12: no crate the
 /// `sigil` driver links names one; the test suites all call theirs `g`).
 pub fn write_project_fixture(root: &std::path::Path, id: &str) -> std::path::PathBuf {
-    const ENGINE: &str = r#"format = 1
+    const ENGINE: &str = r#"format = 2
 helpers = []
 ram_helpers = []
 struct_twins = []
@@ -2945,7 +2945,7 @@ dac_blip_bank = "d"
 dac_shared_bank = "e"
 "#;
     let game = format!(
-        r#"format = 1
+        r#"format = 2
 id = "{id}"
 name = "{id}"
 require_one_text = false
@@ -2962,10 +2962,10 @@ features = {{ debug = false, crash_report = true, sound = false }}
     let dir = format!("games/{id}");
     for (rel, text) in [
         ("engine/engine.toml".to_string(), ENGINE),
-        ("engine/baseline.toml".to_string(), "format = 1\n"),
+        ("engine/baseline.toml".to_string(), "format = 2\n"),
         (format!("{dir}/game.toml"), game.as_str()),
         (format!("{dir}/map.toml"), ""),
-        (format!("{dir}/baseline.toml"), "format = 1\n"),
+        (format!("{dir}/baseline.toml"), "format = 2\n"),
     ] {
         let path = root.join(rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

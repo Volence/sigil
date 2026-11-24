@@ -21,7 +21,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-const ENGINE_TOML: &str = r#"format = 1
+const ENGINE_TOML: &str = r#"format = 2
 helpers = []
 ram_helpers = []
 struct_twins = []
@@ -84,11 +84,11 @@ const VIOLATION: &str = "pub proc Bad () clobbers(d0) {
 }
 ";
 
-const ENGINE_BASELINE: &str = "format = 1\nd1c = [[\"EngCaller\", \"Callee\", \"d0\"]]\n";
+const ENGINE_BASELINE: &str = "format = 2\nd1c = [[\"EngCaller\", \"Callee\", \"d0\"]]\n";
 /// `h`'s file: its own proc's row, and a row on an ENGINE proc (the shape of demo's
 /// `Parallax_Update` row: a fact about building `h`, which a `g` shape must not inherit).
-const H_BASELINE: &str = "format = 1\nd1c = [[\"HCaller\", \"Callee\", \"d0\"], [\"EngCaller\", \"Callee\", \"d0\"]]\n";
-const G_BASELINE: &str = "format = 1\n";
+const H_BASELINE: &str = "format = 2\nd1c = [[\"HCaller\", \"Callee\", \"d0\"], [\"EngCaller\", \"Callee\", \"d0\"]]\n";
+const G_BASELINE: &str = "format = 2\n";
 /// `g`'s declaration of the constant the fixture engine requires.
 const G_EMP: &str = "module games.g.gconst\npub const REQ_CONST = -1\n";
 /// `h`'s declaration of it, written only by the tests that build `h` itself (G0b Task 11:
@@ -97,7 +97,7 @@ const H_CONST_EMP: &str = "module games.h.hconst\npub const REQ_CONST = -1\n";
 
 fn game_toml(id: &str) -> String {
     format!(
-        r#"format = 1
+        r#"format = 2
 id = "{id}"
 name = "{id}"
 require_one_text = false
@@ -195,7 +195,7 @@ fn a_planted_closure_violation_is_refused_on_project() {
 #[test]
 fn a_drifted_row_in_the_games_file_is_refused() {
     let tmp = tempfile::tempdir().unwrap();
-    tree(tmp.path(), |rel, t| if rel == "games/g/baseline.toml" { "format = 1\nd1c = [[\"HCaller\", \"Callee\", \"d0\"]]\n".into() } else { t });
+    tree(tmp.path(), |rel, t| if rel == "games/g/baseline.toml" { "format = 2\nd1c = [[\"HCaller\", \"Callee\", \"d0\"]]\n".into() } else { t });
     let (err, out) = project_build(tmp.path());
     assert_eq!(out.status.code(), Some(1), "got:\n{err}");
     assert!(err.contains("[call.live-clobbered] (D1c) moved against the frozen baseline."), "got:\n{err}");
@@ -300,7 +300,7 @@ fn another_games_broken_module_is_not_scanned() {
 #[test]
 fn a_stale_row_in_the_games_file_is_refused() {
     let tmp = tempfile::tempdir().unwrap();
-    tree(tmp.path(), |rel, t| if rel == "games/g/baseline.toml" { "format = 1\nout_unverified = [[\"Callee\", \"d0\"]]\n".into() } else { t });
+    tree(tmp.path(), |rel, t| if rel == "games/g/baseline.toml" { "format = 2\nout_unverified = [[\"Callee\", \"d0\"]]\n".into() } else { t });
     let (err, out) = project_build(tmp.path());
     assert_eq!(out.status.code(), Some(1), "got:\n{err}");
     assert!(err.contains("[proc.out-unverified] moved against the frozen baseline."), "got:\n{err}");
@@ -312,7 +312,7 @@ fn a_stale_row_in_the_games_file_is_refused() {
 #[test]
 fn another_games_row_on_an_engine_proc_does_not_join() {
     let tmp = tempfile::tempdir().unwrap();
-    tree(tmp.path(), |rel, t| if rel == "engine/baseline.toml" { "format = 1\n".into() } else { t });
+    tree(tmp.path(), |rel, t| if rel == "engine/baseline.toml" { "format = 2\n".into() } else { t });
     let (err, out) = project_build(tmp.path());
     assert_eq!(out.status.code(), Some(1), "got:\n{err}");
     assert!(err.contains("\"EngCaller @ Callee :: d0 (got 1, want 0)\""), "got:\n{err}");

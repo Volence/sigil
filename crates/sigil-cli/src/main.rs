@@ -2010,16 +2010,13 @@ fn run_indirect_cost_report(subject: &ClosureSubject) {
     for (proc, ty) in sites {
         println!("  {proc:<32} as {ty}");
     }
-    // What this count IS: the sites the corpus walk collected for THIS shape. A
-    // site the walk cannot reach is absent from it: a comptime arm this shape's
-    // defines discard, and a site inside a splice template the walk does not
-    // resolve. So the source text can hold more than this lists, and the honest
-    // cross-check is the grep, printed here so a reader runs both rather than
-    // trusting one.
+    // What this count IS: the sites the evaluated corpus walk collected for THIS
+    // shape (including sites expanded from comptime splice templates). A site
+    // inside a comptime arm this shape's defines discard is absent from it.
     println!(
-        "   (sites the corpus walk reached for this shape; cross-check the source with\n    \
+        "   (sites the evaluated corpus walk reached for this shape; cross-check the source with\n    \
          grep -rn --include='*.emp' -E '(jsr|jmp).*\\) +as +[A-Z]' \"$AEON_DIR\"/engine \"$AEON_DIR\"/games\n    \
-         a grep hit missing from the list above is a site the walk structurally cannot see)"
+         a grep hit missing from the list above is outside this shape's active comptime arms)"
     );
 
     let trusting = report.firings.len();
@@ -2182,6 +2179,8 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
             out_unverified: b.out_unverified,
             inout_unverified: b.inout_unverified,
             d1c: b.d1c,
+            clobber_unbounded: b.clobber_unbounded,
+            sr_level: b.sr_level,
             home,
         },
     })
@@ -2249,7 +2248,7 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
         for row in &d.added {
             let loc = keyed
                 .iter()
-                .find(|(k, _)| row.starts_with(k.as_str()))
+                .find(|(k, _)| row.strip_prefix(k.as_str()).is_some_and(|rest| rest.starts_with(" (")))
                 .and_then(|(_, sp)| src_index.locate(*sp));
             match loc {
                 Some(loc) => eprintln!("    {loc}: {row}"),
@@ -2332,10 +2331,31 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
     };
     failed |= empty_gate("unresolved callees (missing extern proc?)", report.closure.unresolved_callees.len());
     failed |= empty_gate("extern/proc collisions", report.extern_collisions.len());
-    // Located (A7): each firing names the proc, the register, what brings it, and
-    // the proc's declaration. Kept on ONE line on purpose: the red-first proof
-    // swaps this line back to the count-only `empty_gate` row.
-    failed |= refuse_located("[proc.clobber-undeclared] closure firings", &report.firings, |f| f.span, |f| describe_clobber(f, "[proc.clobber-undeclared]"), &src_index);
+    // Located (A7) + step A piece 4 baseline ratchet for unbounded (`top`) rows:
+    // concrete register under-declarations are ALWAYS strictly zero-firing; when
+    // `clobber_unbounded` is empty, every firing prints in one combined list
+    // (preserving the small-fixture refusal wording); when populated, unbounded
+    // firings are ratcheted both ways against `baseline.toml`.
+    if base.clobber_unbounded.is_empty() {
+        failed |= refuse_located("[proc.clobber-undeclared] closure firings", &report.firings, |f| f.span, |f| describe_clobber(f, "[proc.clobber-undeclared]"), &src_index);
+    } else {
+        let concrete: Vec<_> = report.firings.iter().filter(|f| !f.unbounded).collect();
+        failed |= refuse_located("[proc.clobber-undeclared] closure firings", &concrete, |f| f.span, |f| describe_clobber(f, "[proc.clobber-undeclared]"), &src_index);
+        let unbounded_got: Vec<String> =
+            report.firings.iter().filter(|f| f.unbounded).map(|f| f.proc.clone()).collect();
+        let d = base.diff_clobber_unbounded(&unbounded_got);
+        if !d.is_clean() {
+            eprintln!("error: {}", bl::adjudication_message_in("[proc.clobber-undeclared] (unbounded)", &d, &base.home));
+            let spans: Vec<(String, sigil_span::Span)> = report
+                .firings
+                .iter()
+                .filter(|f| f.unbounded)
+                .filter_map(|f| f.span.map(|sp| (f.proc.clone(), sp)))
+                .collect();
+            report_added("[proc.clobber-undeclared] (unbounded)", &d, &spans);
+            failed = true;
+        }
+    }
     // The Z80 twin (A5): the same closure over `(cpu: z80)` procs, minus the ones
     // declaring `@allow("clobbers.computed-dispatch", …)`. One line, as above.
     failed |= refuse_located("[call.clobbers-incomplete] (Z80) closure firings", &report.z80_clobber_firings, |f| f.span, |f| describe_clobber(f, "[call.clobbers-incomplete]"), &src_index);
@@ -2395,13 +2415,28 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
     ) {
         failed = true;
     }
-    if refuse_located("[proc.preserves-sr-unbalanced]/[proc.with-sr-level-broken] firings",
-        &report.sr_level_firings,
-        |f| Some(f.span),
-        |f| f.message.clone(),
-        &src_index,
-    ) {
-        failed = true;
+    if base.sr_level.is_empty() {
+        if refuse_located("[proc.preserves-sr-unbalanced]/[proc.with-sr-level-broken] firings",
+            &report.sr_level_firings,
+            |f| Some(f.span),
+            |f| f.message.clone(),
+            &src_index,
+        ) {
+            failed = true;
+        }
+    } else {
+        let sr_got: Vec<String> = report.sr_level_firings.iter().map(|f| f.proc.clone()).collect();
+        let d = base.diff_sr_level(&sr_got);
+        if !d.is_clean() {
+            eprintln!("error: {}", bl::adjudication_message_in("[sr_level]", &d, &base.home));
+            let spans: Vec<(String, sigil_span::Span)> = report
+                .sr_level_firings
+                .iter()
+                .map(|f| (f.proc.clone(), f.span))
+                .collect();
+            report_added("[sr_level]", &d, &spans);
+            failed = true;
+        }
     }
 
     let out_got: Vec<(String, String)> =
@@ -2911,6 +2946,24 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         for name in &report.sr_trusted_continuations {
             println!("  {name}");
         }
+    }
+
+    println!(
+        "\n-- [blind-transfers] unseen 68000 calls/jumps ({}): --",
+        report.blind_transfers.len(),
+    );
+    for b in &report.blind_transfers {
+        use sigil_frontend_emp::corpus_contracts::BlindTransferKind::*;
+        let kind = match b.kind {
+            UntypedCall => "untyped-call",
+            UntargetedJump => "untargeted-jump",
+            OffsetSymbol => "offset-symbol",
+            ContractlessType => "contractless-type",
+        };
+        println!(
+            "  {:<28} {:<6} ({kind}) @ {}..{}",
+            b.proc, b.mnemonic, b.span.start, b.span.end
+        );
     }
 
     println!(

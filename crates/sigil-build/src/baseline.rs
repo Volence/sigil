@@ -31,6 +31,11 @@ pub struct ClosureBaseline {
     /// `[call.live-clobbered]`, with every file's `d1c_debug` rows on a debug shape:
     /// `(caller, callee, register)`, a multiset.
     pub d1c: Vec<(String, String, String)>,
+    /// `[proc.clobber-undeclared]` unbounded (top) procs, with every file's
+    /// `clobber_unbounded_debug` rows on a debug shape.
+    pub clobber_unbounded: Vec<String>,
+    /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs.
+    pub sr_level: Vec<String>,
     /// The `baseline.toml` files read: the engine's, then the game's.
     pub files: Vec<PathBuf>,
 }
@@ -42,6 +47,9 @@ impl ClosureBaseline {
         self.inout_unverified.extend(b.inout_unverified.iter().cloned());
         let debug_rows: &[(String, String, String)] = if debug { &b.d1c_debug } else { &[] };
         self.d1c.extend(b.d1c.iter().chain(debug_rows).cloned());
+        let unbounded_debug: &[String] = if debug { &b.clobber_unbounded_debug } else { &[] };
+        self.clobber_unbounded.extend(b.clobber_unbounded.iter().chain(unbounded_debug).cloned());
+        self.sr_level.extend(b.sr_level.iter().cloned());
     }
 }
 

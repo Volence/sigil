@@ -41,9 +41,9 @@ use std::path::{Path, PathBuf};
 /// (G0b final review A-I4). After the first landing, ANY change to the key set of
 /// `game.toml`, `engine.toml` or `baseline.toml` (a key added, optional ones included,
 /// removed, renamed or re-typed) bumps `format` in the same change, together with every
-/// committed description. Before that landing (G0b), the number stayed 1 while Tasks 5,
-/// 9a and 11 added required `engine.toml` keys.
-pub const FORMAT: u32 = 1;
+/// committed description. Format 2 (step A piece 4) added `clobber_unbounded`,
+/// `clobber_unbounded_debug`, and `sr_level` to `baseline.toml`.
+pub const FORMAT: u32 = 2;
 
 /// Defines a description may not write, because the driver derives them from [`Features`].
 pub const DERIVED_DEFINES: &[&str] = &["DEBUG", "CRASH_REPORT", "SOUND_DRIVER_ENABLED", "__DEBUG__", "__MDDBG__"];
@@ -502,6 +502,15 @@ pub struct BaselineDesc {
     /// `[call.live-clobbered]` on debug shapes only.
     #[serde(default)]
     pub d1c_debug: Vec<(String, String, String)>,
+    /// `[proc.clobber-undeclared]` unbounded (top) procs on every shape (format 2, step A piece 4).
+    #[serde(default)]
+    pub clobber_unbounded: Vec<String>,
+    /// `[proc.clobber-undeclared]` unbounded (top) procs on debug shapes only (format 2, step A piece 4).
+    #[serde(default)]
+    pub clobber_unbounded_debug: Vec<String>,
+    /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs (format 2, step A piece 4).
+    #[serde(default)]
+    pub sr_level: Vec<String>,
 }
 
 // ───────────────────────────── errors ─────────────────────────────
@@ -797,7 +806,7 @@ mod tests {
     // ── a minimal game for the logic tests ──
 
     const MINI: &str = r#"
-        format = 1
+        format = 2
         id = "mini"
         name = "mini"
         require_one_text = false
@@ -828,7 +837,7 @@ mod tests {
         // Top level, a nested table, and an inline table inside a shape: each is refused, and
         // the message names the key.
         for (bad, key) in [
-            (MINI.replace("format = 1", "format = 1\nbogus_top = 1"), "bogus_top"),
+            (MINI.replace("format = 2", "format = 2\nbogus_top = 1"), "bogus_top"),
             (MINI.replace("residual_as = \"game_root.asm\"", "residual_as = \"g.asm\", bogus_src = 1"), "bogus_src"),
             (MINI.replace("sound = false }\n        [shapes.debug]", "sound = false, bogus_feat = true }\n        [shapes.debug]"), "bogus_feat"),
             (MINI.replace("extends = \"debug\"", "extends = \"debug\"\n        bogus_shape = 1"), "bogus_shape"),
@@ -839,7 +848,7 @@ mod tests {
         }
         // An engine nested table (`[sound]`) is closed too.
         let e: Result<EngineDesc, _> = toml::from_str(
-            r#"format = 1
+            r#"format = 2
             helpers = []
             ram_helpers = []
             struct_twins = []
@@ -915,8 +924,10 @@ mod tests {
         ));
         let rootless = MINI.replace("features = { debug = false, crash_report = true, sound = false }\n", "");
         assert_eq!(parse_game(Path::new("g"), &rootless), Err(DescError::MissingFeatures("release".into())));
-        let fmt2 = MINI.replace("format = 1", "format = 2");
-        assert!(matches!(parse_game(Path::new("g"), &fmt2), Err(DescError::Format { found: 2, .. })));
+        let fmt1 = MINI.replace("format = 2", "format = 1");
+        assert!(matches!(parse_game(Path::new("g"), &fmt1), Err(DescError::Format { found: 1, .. })));
+        let fmt3 = MINI.replace("format = 2", "format = 3");
+        assert!(matches!(parse_game(Path::new("g"), &fmt3), Err(DescError::Format { found: 3, .. })));
     }
 
     /// G0b final review A-I6: a `[[gate]]` pattern the matcher does not define (`?`, `[`,
@@ -941,17 +952,17 @@ mod tests {
     }
 
     /// G0b final review A-I4: an older reader meeting a newer file is told the format, not
-    /// an unknown or missing key. A `format = 2` file that also adds a key, or drops one, is
+    /// an unknown or missing key. A `format = 3` file that also adds a key, or drops one, is
     /// refused as a format mismatch; so is a newer engine.toml and baseline.toml.
     #[test]
     fn a_format_mismatch_is_named_before_any_key_error() {
-        let added = MINI.replace("format = 1", "format = 2\nnew_in_format_two = true");
-        let dropped = MINI.replace("format = 1", "format = 2").replace("require_one_text = false\n", "");
+        let added = MINI.replace("format = 2", "format = 3\nnew_in_format_three = true");
+        let dropped = MINI.replace("format = 2", "format = 3").replace("require_one_text = false\n", "");
         for (what, text) in [("an added key", added), ("a dropped key", dropped)] {
-            assert!(text.contains("format = 2"), "{what}: the mutation did not apply");
+            assert!(text.contains("format = 3"), "{what}: the mutation did not apply");
             let err = parse_game(Path::new("mini/game.toml"), &text).expect_err(what);
-            assert!(matches!(err, DescError::Format { found: 2, .. }), "{what}: {err}");
-            assert!(err.to_string().contains("this reader accepts format = 1"), "{what}: {err}");
+            assert!(matches!(err, DescError::Format { found: 3, .. }), "{what}: {err}");
+            assert!(err.to_string().contains("this reader accepts format = 2"), "{what}: {err}");
         }
         let dir = crate::build_dir::BuildDir::create().unwrap();
         for (name, text) in [("engine.toml", "format = 3\nfrom_the_future = 1\n"), ("baseline.toml", "format = 3\nnew_list = []\n")] {
@@ -960,9 +971,14 @@ mod tests {
             let err = if name == "engine.toml" { load_engine(&path).map(|_| ()) } else { load_baseline(&path).map(|_| ()) };
             assert!(matches!(err, Err(DescError::Format { found: 3, .. })), "{name}: {err:?}");
         }
-        // Control: format 1 with an unknown key is still refused by the key's name.
-        let unknown = MINI.replace("format = 1", "format = 1\nnew_in_format_two = true");
-        assert!(parse_game(Path::new("g"), &unknown).unwrap_err().to_string().contains("new_in_format_two"));
+        // Format 1 is now also refused by format version before key checking.
+        let old_path = dir.path().join("old_baseline.toml");
+        std::fs::write(&old_path, "format = 1\n").unwrap();
+        let err = load_baseline(&old_path).expect_err("format 1 refused");
+        assert!(matches!(err, DescError::Format { found: 1, .. }), "{err:?}");
+        // Control: format 2 with an unknown key is still refused by the key's name.
+        let unknown = MINI.replace("format = 2", "format = 2\nnew_in_format_three = true");
+        assert!(parse_game(Path::new("g"), &unknown).unwrap_err().to_string().contains("new_in_format_three"));
     }
 
     #[test]
