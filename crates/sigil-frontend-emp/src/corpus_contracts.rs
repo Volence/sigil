@@ -1478,11 +1478,13 @@ pub fn analyze_corpus_with_contracts(
     // calls, mid-body tails, conditional branches out, `falls_into`, exported
     // mid-body labels, and Rule 3 (`with <ctx> { }` held-level verification).
     let mut sr_extern_summaries: BTreeMap<String, crate::sr_level::ProcSummary> = BTreeMap::new();
-    let mut sr_clobber_types: BTreeSet<String> = BTreeSet::new();
+    let mut sr_known_types: BTreeSet<String> = BTreeSet::new();
+    let mut sr_preserve_types: BTreeSet<String> = BTreeSet::new();
     fn collect_sr_env(
         items: &[Item],
         ext: &mut BTreeMap<String, crate::sr_level::ProcSummary>,
-        clob_types: &mut BTreeSet<String>,
+        known_types: &mut BTreeSet<String>,
+        preserve_types: &mut BTreeSet<String>,
     ) {
         for item in items {
             match item {
@@ -1490,18 +1492,26 @@ pub fn analyze_corpus_with_contracts(
                     ext.insert(e.name.clone(), crate::sr_level::extern_proc_summary(e));
                 }
                 Item::ContractType(ct) => {
-                    if crate::sr_level::sig_modifies_sr_mask(&ct.sig) {
-                        clob_types.insert(ct.name.clone());
+                    known_types.insert(ct.name.clone());
+                    if crate::sr_level::preserves_sr_token(&ct.sig.preserves).is_some()
+                        && !crate::sr_level::sig_modifies_sr_mask(&ct.sig)
+                    {
+                        preserve_types.insert(ct.name.clone());
                     }
                 }
-                Item::Section(s) => collect_sr_env(&s.items, ext, clob_types),
+                Item::Section(s) => collect_sr_env(&s.items, ext, known_types, preserve_types),
                 _ => {}
             }
         }
     }
     for file in files {
         if !module_is_z80(&file.module) {
-            collect_sr_env(&file.items, &mut sr_extern_summaries, &mut sr_clobber_types);
+            collect_sr_env(
+                &file.items,
+                &mut sr_extern_summaries,
+                &mut sr_known_types,
+                &mut sr_preserve_types,
+            );
         }
     }
     let sr_inputs: Vec<crate::sr_level::SrProcInput<'_>> = proc_bufs
@@ -1518,7 +1528,8 @@ pub fn analyze_corpus_with_contracts(
     let sr_env = crate::sr_level::SrExternalEnv {
         noreturn: &noreturn,
         extern_summaries: &sr_extern_summaries,
-        sr_clobber_types: &sr_clobber_types,
+        known_types: &sr_known_types,
+        sr_preserve_types: &sr_preserve_types,
         whole_program: true,
     };
     let any_sr_work = proc_bufs.iter().any(|pb| {

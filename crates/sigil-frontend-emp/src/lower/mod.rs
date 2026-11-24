@@ -2120,8 +2120,8 @@ fn run_module_sr_level_pass(
 ) {
     use crate::sr_level::{
         check_bracket_levels, extern_proc_summary, format_bracket_finding, format_mask_finding,
-        mask_findings_for_proc, sig_modifies_sr_mask, ProcSummary, SrExternalEnv, SrProcInput,
-        SummaryTable,
+        mask_findings_for_proc, preserves_sr_token, sig_modifies_sr_mask, ProcSummary,
+        SrExternalEnv, SrProcInput, SummaryTable,
     };
     let any_sr_work = lowered_68k.iter().any(|lp| {
         lp.preserves_sr_token.is_some()
@@ -2133,7 +2133,8 @@ fn run_module_sr_level_pass(
     fn collect_ext_and_types(
         items: &[ast::Item],
         ext: &mut std::collections::BTreeMap<String, ProcSummary>,
-        clob_types: &mut std::collections::BTreeSet<String>,
+        known_types: &mut std::collections::BTreeSet<String>,
+        preserve_types: &mut std::collections::BTreeSet<String>,
     ) {
         for item in items {
             match item {
@@ -2141,18 +2142,29 @@ fn run_module_sr_level_pass(
                     ext.insert(e.name.clone(), extern_proc_summary(e));
                 }
                 ast::Item::ContractType(ct) => {
-                    if sig_modifies_sr_mask(&ct.sig) {
-                        clob_types.insert(ct.name.clone());
+                    known_types.insert(ct.name.clone());
+                    if preserves_sr_token(&ct.sig.preserves).is_some()
+                        && !sig_modifies_sr_mask(&ct.sig)
+                    {
+                        preserve_types.insert(ct.name.clone());
                     }
                 }
-                ast::Item::Section(sec) => collect_ext_and_types(&sec.items, ext, clob_types),
+                ast::Item::Section(sec) => {
+                    collect_ext_and_types(&sec.items, ext, known_types, preserve_types)
+                }
                 _ => {}
             }
         }
     }
     let mut extern_summaries = std::collections::BTreeMap::new();
-    let mut sr_clobber_types = std::collections::BTreeSet::new();
-    collect_ext_and_types(&file.items, &mut extern_summaries, &mut sr_clobber_types);
+    let mut known_types = std::collections::BTreeSet::new();
+    let mut sr_preserve_types = std::collections::BTreeSet::new();
+    collect_ext_and_types(
+        &file.items,
+        &mut extern_summaries,
+        &mut known_types,
+        &mut sr_preserve_types,
+    );
 
     let inputs: Vec<SrProcInput<'_>> = lowered_68k
         .iter()
@@ -2168,7 +2180,8 @@ fn run_module_sr_level_pass(
     let env = SrExternalEnv {
         noreturn,
         extern_summaries: &extern_summaries,
-        sr_clobber_types: &sr_clobber_types,
+        known_types: &known_types,
+        sr_preserve_types: &sr_preserve_types,
         whole_program: false,
     };
     let table = SummaryTable::compute(&inputs, &env);

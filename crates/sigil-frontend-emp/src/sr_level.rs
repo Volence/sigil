@@ -196,6 +196,15 @@ impl ProcSummary {
         touches_caller_stack: false,
     };
 
+    /// Worst-case summary for an unseen / blind transfer (`UntypedIndirect`,
+    /// `OffsetUnknown`): unknown interrupt level AND may overwrite or pop past
+    /// the caller's saved SR on the stack (step A piece 4).
+    pub(crate) const BLIND: ProcSummary = ProcSummary {
+        exit_level: Some(Level::Unknown),
+        body_levels: Some(Level::Unknown),
+        touches_caller_stack: true,
+    };
+
     pub(crate) fn meet(self, other: ProcSummary) -> ProcSummary {
         ProcSummary {
             exit_level: meet_opt_level(self.exit_level, other.exit_level),
@@ -307,12 +316,30 @@ pub(crate) struct SrExternalEnv<'a> {
     pub(crate) noreturn: &'a BTreeSet<String>,
     /// Pre-built summaries for `extern proc` declarations.
     pub(crate) extern_summaries: &'a BTreeMap<String, ProcSummary>,
-    /// Contract-type names (`type T = proc ...`) that explicitly declare
-    /// `clobbers(sr)` or `clobbers(sr.mask)`.
-    pub(crate) sr_clobber_types: &'a BTreeSet<String>,
+    /// All contract-type names (`type T = proc ...`) visible in scope.
+    /// In single-file mode (`!whole_program`), an `as Type` absent here is
+    /// imported from another module and deferred to whole-program (`IDENTITY`).
+    pub(crate) known_types: &'a BTreeSet<String>,
+    /// Contract-type names that explicitly declare `preserves(sr)` or
+    /// `preserves(sr.mask)` (and do not modify `sr`/`sr.mask`).
+    pub(crate) sr_preserve_types: &'a BTreeSet<String>,
     /// True in whole-program mode (`corpus_contracts`); false in single-file
-    /// mode (where cross-file callees are unseen and deferred to whole-program).
+    /// mode (where cross-file callees and imported types are deferred).
     pub(crate) whole_program: bool,
+}
+
+fn resolve_typed_indirect(ty: &str, env: &SrExternalEnv<'_>) -> ProcSummary {
+    if env.known_types.contains(ty) {
+        if env.sr_preserve_types.contains(ty) {
+            ProcSummary::IDENTITY
+        } else {
+            ProcSummary::UNKNOWN
+        }
+    } else if env.whole_program {
+        ProcSummary::UNKNOWN
+    } else {
+        ProcSummary::IDENTITY
+    }
 }
 
 /// What a call or non-return transfer instruction targets.
@@ -425,8 +452,6 @@ pub(crate) struct SummaryTable {
     pub(crate) closing_procs: BTreeMap<usize, ProcSummary>,
     /// Global symbol name (`ProcName` or `Owner.label`) -> `(proc_idx, Option<entry_instr_idx>)`.
     pub(crate) by_name: BTreeMap<String, (usize, Option<usize>)>,
-    /// Per-proc local `address_taken` code label indices (for `c02` indirect stack check).
-    taken_per_proc: Vec<BTreeSet<usize>>,
 }
 
 impl SummaryTable {
@@ -435,8 +460,6 @@ impl SummaryTable {
     /// `first_unreached` during fixpoint iteration).
     pub(crate) fn compute(procs: &[SrProcInput<'_>], env: &SrExternalEnv<'_>) -> SummaryTable {
         let cfgs: Vec<Cfg> = procs.iter().map(|p| Cfg::build(p.items)).collect();
-        let taken_per_proc: Vec<BTreeSet<usize>> =
-            procs.iter().zip(&cfgs).map(|(p, cfg)| address_taken(p.items, cfg)).collect();
 
         let mut by_name: BTreeMap<String, (usize, Option<usize>)> = BTreeMap::new();
         let mut entries: BTreeMap<(usize, usize), ProcSummary> = BTreeMap::new();
@@ -487,12 +510,9 @@ impl SummaryTable {
                     _ => {}
                 }
             }
-            for &idx in &taken_per_proc[pi] {
-                entries.insert((pi, idx), ProcSummary::DIVERGES);
-            }
         }
 
-        let mut table = SummaryTable { entries, closing_procs, by_name, taken_per_proc };
+        let mut table = SummaryTable { entries, closing_procs, by_name };
 
         // Monotone fixpoint: height per entry is <= 11 (exit) + 11 (body) + 1 (stack),
         // so iteration terminates quickly even with arbitrary mutual recursion.
@@ -560,29 +580,8 @@ impl SummaryTable {
                 self.closing_procs.get(&ctx.proc_idx).copied().unwrap_or(ProcSummary::IDENTITY)
             }
             TransferTarget::External(name) => self.resolve_external(&name, ctx.env),
-            TransferTarget::OffsetUnknown => ProcSummary::UNKNOWN,
-            TransferTarget::TypedIndirect(ty) => {
-                if ctx.env.sr_clobber_types.contains(&ty) {
-                    ProcSummary::UNKNOWN
-                } else {
-                    ProcSummary::IDENTITY
-                }
-            }
-            TransferTarget::UntypedIndirect => {
-                // Close `c02_helper_drops_return_ptr`: if this proc takes the
-                // address of a local helper whose summary touches its caller's
-                // stack, an untyped indirect call may invoke it. Keep `exit_level`
-                // and `body_levels` as IDENTITY (piece 4 owns blind-call levels).
-                let mut s = ProcSummary::IDENTITY;
-                if let Some(taken) = self.taken_per_proc.get(ctx.proc_idx) {
-                    if taken.iter().any(|&t| {
-                        self.entries.get(&(ctx.proc_idx, t)).is_some_and(|e| e.touches_caller_stack)
-                    }) {
-                        s.touches_caller_stack = true;
-                    }
-                }
-                s
-            }
+            TransferTarget::OffsetUnknown | TransferTarget::UntypedIndirect => ProcSummary::BLIND,
+            TransferTarget::TypedIndirect(ty) => resolve_typed_indirect(&ty, ctx.env),
             TransferTarget::ResumableReturn => ProcSummary::IDENTITY,
         }
     }
@@ -625,13 +624,10 @@ impl SummaryTable {
                 self.closing_procs.get(&ctx.proc_idx).copied().unwrap_or(ProcSummary::IDENTITY),
             ),
             TransferTarget::External(name) => Some(self.resolve_external(&name, ctx.env)),
-            TransferTarget::OffsetUnknown => Some(ProcSummary::UNKNOWN),
-            TransferTarget::TypedIndirect(ty) => Some(if ctx.env.sr_clobber_types.contains(&ty) {
-                ProcSummary::UNKNOWN
-            } else {
-                ProcSummary::IDENTITY
-            }),
-            TransferTarget::UntypedIndirect => Some(ProcSummary::IDENTITY),
+            TransferTarget::OffsetUnknown | TransferTarget::UntypedIndirect => {
+                Some(ProcSummary::BLIND)
+            }
+            TransferTarget::TypedIndirect(ty) => Some(resolve_typed_indirect(&ty, ctx.env)),
         }
     }
 }
@@ -987,7 +983,8 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
     let env = SrExternalEnv {
         noreturn,
         extern_summaries: &empty_ext,
-        sr_clobber_types: &empty_types,
+        known_types: &empty_types,
+        sr_preserve_types: &empty_types,
         whole_program: false,
     };
     let proc = SrProcInput {
@@ -1013,7 +1010,8 @@ pub(crate) fn mask_findings_for_decl(
     let env = SrExternalEnv {
         noreturn,
         extern_summaries: &empty_ext,
-        sr_clobber_types: &empty_types,
+        known_types: &empty_types,
+        sr_preserve_types: &empty_types,
         whole_program: false,
     };
     let proc = SrProcInput {
@@ -2303,11 +2301,18 @@ mod tests {
             set_sr(0x2700),                   // 4
             op("rts", vec![]),                // 5
         ];
-        assert_eq!(found(items), vec![(5, not_callers(&[7]))]);
+        assert_eq!(
+            found(items),
+            vec![
+                (1, MaskFindingKind::Untracked),
+                (2, MaskFindingKind::Untracked),
+                (5, not_callers(&[7])),
+            ]
+        );
     }
 
     #[test]
-    fn a_balanced_helper_entered_only_through_a_pointer_is_clean() {
+    fn a_balanced_helper_entered_only_through_a_pointer_is_refused_as_blind_call() {
         let items = vec![
             lea_pc(".h"),                     // 0
             op("jsr", vec![O::Ind(Reg::A0)]), // 1
@@ -2318,7 +2323,10 @@ mod tests {
             restore(),                        // 6
             op("rts", vec![]),                // 7
         ];
-        assert_eq!(found(items), vec![]);
+        assert_eq!(
+            found(items),
+            vec![(1, MaskFindingKind::Untracked), (2, MaskFindingKind::Untracked)]
+        );
     }
 
     /// The review's I1 shape (probe `c02_ptr_entry_feeds_restore`): a block
@@ -2341,7 +2349,10 @@ mod tests {
             ins(0, "move", W, vec![O::Imm(0x2700), O::PreDec(SP)]), // 11
             op("bra", vec![sym(".r")]),                             // 12
         ];
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(6, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]
+        );
     }
 
     /// The same, entered through `jmp .tbl(pc, d1.w) targets(.b)` (probe
@@ -2463,7 +2474,10 @@ mod tests {
             restore(),                        // 6
             op("rts", vec![]),                // 7
         ];
-        assert_eq!(found(items), vec![(7, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(1, MaskFindingKind::Untracked), (7, MaskFindingKind::Untracked)]
+        );
     }
 
     /// Probe x2: the dead code before `.mid` only saves.
@@ -2478,7 +2492,10 @@ mod tests {
             restore(),                        // 5
             op("rts", vec![]),                // 6
         ];
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(1, MaskFindingKind::Untracked), (6, MaskFindingKind::Untracked)]
+        );
     }
 
     /// Probe x3: the same landing through `targets(.mid)`.
@@ -2515,14 +2532,16 @@ mod tests {
             lea_pc(".mid"),                   // 8
             op("jmp", vec![O::Ind(Reg::A0)]), // 9
         ];
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(6, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]
+        );
     }
 
-    /// A block entered by a pointer in the middle of an unreached region, with its
-    /// own save and restore after the label, and a dead prefix that touches
-    /// neither the level nor the stack.
+    /// Piece 4: an untyped `jmp (a0)` is refused as a blind jump even when the
+    /// local block it intends to land on is balanced.
     #[test]
-    fn a_balanced_block_entered_in_the_middle_of_dead_code_is_clean() {
+    fn a_balanced_block_entered_via_untyped_pointer_is_refused_at_jump() {
         let items = vec![
             lea_pc(".mid"),                                          // 0
             op("jmp", vec![O::Ind(Reg::A0)]),                        // 1
@@ -2534,7 +2553,7 @@ mod tests {
             restore(),                                               // 7
             op("rts", vec![]),                                       // 8
         ];
-        assert_eq!(found(items), vec![]);
+        assert_eq!(found(items), vec![(1, MaskFindingKind::Untracked)]);
     }
 
     /// `.tbl` names data. `label_index` would resolve it to the instruction after
@@ -2617,7 +2636,10 @@ mod tests {
             restore(),                        // 4
             op("rts", vec![]),                // 5
         ];
-        assert_eq!(found(items), vec![(5, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(0, MaskFindingKind::Untracked), (5, MaskFindingKind::Untracked)]
+        );
     }
 
     // ---- F1c: the offset-entry hazard seeds every instruction ----
@@ -2638,7 +2660,10 @@ mod tests {
     fn a_displaced_jump_after_taking_an_address_is_found() {
         let mut items = vec![lea_pc(".x"), jmp_disp("jmp", 6, Reg::A0)]; // 0, 1
         items.extend(bracket_at_x()); // 2 label, 3 save, 4 mask, 5 restore, 6 rts
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(1, MaskFindingKind::Untracked), (6, MaskFindingKind::Untracked)]
+        );
     }
 
     /// Probe y2: the offset is in the taken address, `lea .x+6(pc), a0`.
@@ -2646,7 +2671,10 @@ mod tests {
     fn an_address_with_an_offset_is_found() {
         let mut items = vec![lea_pc_plus(".x", 6), op("jmp", vec![O::Ind(Reg::A0)])]; // 0, 1
         items.extend(bracket_at_x()); // 2..6
-        assert_eq!(found(items), vec![(6, MaskFindingKind::Untracked)]);
+        assert_eq!(
+            found(items),
+            vec![(1, MaskFindingKind::Untracked), (6, MaskFindingKind::Untracked)]
+        );
     }
 
     /// Probe y3: `jmp .x+6(pc)` on one path.
@@ -2663,8 +2691,10 @@ mod tests {
         assert_eq!(found(items), vec![(2, MaskFindingKind::Untracked), (9, MaskFindingKind::Untracked)]);
     }
 
+    /// Piece 4: an untyped `jmp 2(a0)` is refused as a blind jump even when the
+    /// body touches neither SR nor the stack.
     #[test]
-    fn a_hazard_routine_that_never_touches_the_level_or_the_stack_is_clean() {
+    fn an_untyped_displaced_jump_is_refused_as_blind() {
         let items = vec![
             lea_pc(".x"),                                            // 0
             jmp_disp("jmp", 2, Reg::A0),                             // 1
@@ -2673,22 +2703,22 @@ mod tests {
             op("nop", vec![]),                                       // 4
             op("rts", vec![]),                                       // 5
         ];
-        assert_eq!(found(items), vec![]);
+        assert_eq!(found(items), vec![(1, MaskFindingKind::Untracked)]);
     }
 
-    /// A taken address and a plain `jmp (a0)`: no hazard (F1b's label seed covers
-    /// the landing), so a balanced block at the label stays clean.
+    /// Piece 4: an untyped `jmp (a0)` is refused as a blind jump; the balanced
+    /// block at `.x` itself stays clean.
     #[test]
-    fn a_plain_indirect_jump_to_a_taken_label_has_no_hazard() {
+    fn a_plain_indirect_jump_to_a_taken_label_is_refused_at_jump() {
         let mut items = vec![lea_pc(".x"), op("jmp", vec![O::Ind(Reg::A0)])];
         items.extend(bracket_at_x());
-        assert_eq!(found(items), vec![]);
+        assert_eq!(found(items), vec![(1, MaskFindingKind::Untracked)]);
     }
 
-    /// The object-dispatch shape: `jsr 4(a1)` in a masked, balanced routine that
-    /// takes no local label's address. No hazard; clean.
+    /// Piece 4 (W6): an untyped displaced call `jsr 4(a1)` inside a masked
+    /// section is refused as a blind call (both at the call and at `rts`).
     #[test]
-    fn a_displaced_call_with_no_taken_address_has_no_hazard() {
+    fn a_displaced_call_with_no_taken_address_is_refused_as_blind() {
         let items = vec![
             save(),                      // 0
             set_sr(0x2700),              // 1
@@ -2696,7 +2726,10 @@ mod tests {
             restore(),                   // 3
             op("rts", vec![]),           // 4
         ];
-        assert_eq!(found(items), vec![]);
+        assert_eq!(
+            found(items),
+            vec![(2, MaskFindingKind::Untracked), (4, MaskFindingKind::Untracked)]
+        );
     }
 
     // ---- Re-review N2: a transfer that names a label in a non-`Sym` operand ----

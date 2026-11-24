@@ -209,7 +209,7 @@ proc BadDispatch () clobbers(a0) preserves(sr.mask) {
 }
 ";
     let f_types = "module types
-type CleanHook = proc () clobbers(d0)
+type CleanHook = proc () clobbers(d0) preserves(sr.mask)
 type BadHook = proc () clobbers(sr)
 ";
     let f_impl = "module impl
@@ -307,4 +307,46 @@ proc Next () clobbers(sr) {
     let r = analyze_files(&[f1, f2]);
     assert_eq!(r.sr_level_firings.len(), 1, "{:#?}", r.sr_level_firings);
     assert_eq!(r.sr_level_firings[0].proc, "Caller");
+}
+
+#[test]
+fn piece4_cross_file_unannotated_type_undefined_type_and_untargeted_callee_fire() {
+    let f_caller = "module caller
+proc CallUnannotated () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as NoSrHook
+    rts
+}
+proc CallUndefined () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as MissingHook
+    rts
+}
+proc CallSafe () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as SafeHook
+    rts
+}
+proc CallUntargeted () clobbers(d0) preserves(sr.mask) {
+    jsr BlindJump
+    rts
+}
+";
+    let f_types = "module types
+type NoSrHook = proc () clobbers(d0)
+type SafeHook = proc () clobbers(d0) preserves(sr.mask)
+proc BlindJump () clobbers(d0) {
+    jmp .tbl(pc, d0.w)
+.tbl:
+    bra.w .done
+.done:
+    rts
+}
+";
+    let r = analyze_files(&[f_caller, f_types]);
+    let mut procs: Vec<&str> = r.sr_level_firings.iter().map(|f| f.proc.as_str()).collect();
+    procs.dedup();
+    assert_eq!(
+        procs,
+        vec!["CallUnannotated", "CallUndefined", "CallUntargeted"],
+        "{:#?}",
+        r.sr_level_firings
+    );
 }

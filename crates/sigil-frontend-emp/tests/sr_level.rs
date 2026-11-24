@@ -299,13 +299,23 @@ fn a_helper_entered_through_a_pointer_is_refused() {
         "    lea .h(pc), a0\n    jsr (a0)\n    rts\n.h:\n    move.w #$2700, sr\n    rts",
     );
     let d = lower(&src);
-    // The helper is walked as an extra entry and refused on its own `rts`.
-    assert_eq!(d, vec![err(not_the_callers("sr.mask", "7"), line_named(&src, "rts", 1))], "{d:#?}");
+    // Piece 4: untyped `jsr (a0)` is blind (refused at call and caller `rts`),
+    // AND the helper is walked as an extra entry and refused on its own `rts`.
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jsr (a0)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+            err(not_the_callers("sr.mask", "7"), line_named(&src, "rts", 1)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// The final review's I1 probe (`c02_ptr_entry_feeds_restore`): a block reached
 /// only through `jmp (a0)` pushes `$2700` and joins the shared restore. Built
-/// clean before the extra entries; the restore now pops an unknown word.
+/// clean before the extra entries; the restore now pops an unknown word, and
+/// piece 4 also flags the untyped `jmp (a0)`.
 #[test]
 fn a_dead_block_feeding_the_restore_is_refused() {
     let src = routine(
@@ -325,7 +335,14 @@ fn a_dead_block_feeding_the_restore_is_refused() {
     bra .r",
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "rts", 0)),
+            err(untracked(), line_named(&src, "jmp (a0)", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// The final review's I3(a) probe (`s02_copy_top_over_save`): `move.w (sp), 2(sp)`
@@ -379,7 +396,14 @@ fn a_pointer_into_the_middle_of_dead_code_is_refused() {
     rts",
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp (a0)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe x1 with the address taken as an immediate (`ImmLink`).
@@ -397,7 +421,14 @@ fn an_immediate_address_into_the_middle_of_dead_code_is_refused() {
     rts",
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp (a0)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe x3: the landing named by `targets(.mid)`, with the real jump table.
@@ -445,7 +476,14 @@ fn a_pointer_into_a_reached_restore_is_refused() {
     jmp (a0)",
     );
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "rts", 0)),
+            err(untracked(), line_named(&src, "jmp (a0)", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// A data label whose address is taken inside the bracket is not an entry.
@@ -478,7 +516,14 @@ const AT_X: &str = "
 fn a_displaced_jump_after_taking_an_address_is_refused() {
     let src = routine("clobbers(d0, d1, a0) preserves(sr.mask)", &format!("    lea .x(pc), a0\n    jmp 6(a0){AT_X}"));
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp 6(a0)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 /// Probe y3: `jmp .x+6(pc)` on one path. Since piece 2b, the offset jump
@@ -505,7 +550,14 @@ fn a_pc_relative_jump_with_an_offset_is_refused() {
 fn an_immediate_address_with_an_offset_is_refused() {
     let src = routine("clobbers(d0, d1, a0) preserves(sr.mask)", &format!("    movea.l #.x+6, a0\n    jmp (a0){AT_X}"));
     let d = lower(&src);
-    assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
+    assert_eq!(
+        d,
+        vec![
+            err(untracked(), line_named(&src, "jmp (a0)", 0)),
+            err(untracked(), line_named(&src, "rts", 0)),
+        ],
+        "{d:#?}"
+    );
 }
 
 // ---- Re-review N2 and N3 ----
@@ -596,14 +648,19 @@ fn a_pop_on_a_sizeless_instruction_is_refused() {
     assert_eq!(d, vec![err(untracked(), line_named(&src, "rts", 0))], "{d:#?}");
 }
 
-/// The object-dispatch shape must not be refused.
+/// Piece 4 (W6): an untyped displaced indirect call `jsr 4(a1)` is a blind call
+/// and is refused even inside a save/restore bracket (it may rewrite or pop the stack).
 #[test]
-fn a_masked_displaced_call_builds() {
+fn a_masked_displaced_call_is_refused() {
     let src = routine(
         "clobbers(d0, d1, a0, a1) preserves(sr.mask)",
         "    move.w sr, -(sp)\n    move.w #$2700, sr\n    jsr 4(a1)\n    move.w (sp)+, sr\n    rts",
     );
-    assert_eq!(lower(&src), vec![]);
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "untyped jsr 4(a1) must be refused under piece 4: {d:#?}"
+    );
 }
 
 /// The DEBUG assert rail (`subq #2, sp`, a `d(sp)` store, a jump that never
@@ -980,7 +1037,7 @@ proc P () clobbers(a0) preserves(sr.mask) {
     );
 
     let ok_hook = "module m
-type CleanHook = proc () clobbers(d0)
+type CleanHook = proc () clobbers(d0) preserves(sr.mask)
 proc P () clobbers(d0, a0) preserves(sr.mask) {
     jsr (a0) as CleanHook
     rts
@@ -1441,4 +1498,137 @@ proc P () clobbers(a0) preserves(sr.mask) {
         d_ty.iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
         "typed indirect out(sr.mask) must fail preserves(sr.mask): {d_ty:#?}"
     );
+}
+
+// ---- Step A piece 4: Task 2 worst-case blind transfers & Decision 2 typed indirect ----
+
+#[test]
+fn piece4_known_escapes_untyped_indirect_and_data_table_are_refused() {
+    // a01_reg_addq: address arithmetic across instructions + `jmp (a0)`
+    let a01 = routine(
+        "clobbers(d0, a0) preserves(sr.mask)",
+        "    lea .x(pc), a0
+    addq.l #6, a0
+    jmp (a0)
+.x:
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr
+    rts",
+    );
+    assert!(
+        lower(&a01).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "a01_reg_addq must be refused"
+    );
+
+    // a12_data_label_offset: offset on a data label + `jmp (a0)`
+    let a12 = routine(
+        "clobbers(d0, a0) preserves(sr.mask)",
+        "    lea .d+8(pc), a0
+    jmp (a0)
+.d:
+    dc.w 0
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    move.w (sp)+, sr
+    rts",
+    );
+    assert!(
+        lower(&a12).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "a12_data_label_offset must be refused"
+    );
+
+    // g01_label_on_data_nop: label on data word + `jmp (a0)`
+    let g01 = routine(
+        "clobbers(d0, a0) preserves(sr.mask)",
+        "    lea .mid(pc), a0
+    jmp (a0)
+    move.w sr, -(sp)
+    move.w #$2700, sr
+.mid:
+    dc.w $4E71
+    move.w (sp)+, sr
+    rts",
+    );
+    assert!(
+        lower(&g01).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "g01_label_on_data_nop must be refused"
+    );
+
+    // ff-probes/z1: untargeted computed jump through a data table into reached restore
+    let z1 = routine(
+        "clobbers(d0, d1, a0) preserves(sr.mask)",
+        "    tst.w d0
+    beq .x
+    move.w sr, -(sp)
+    move.w #$2700, sr
+.mid:
+    move.w (sp)+, sr
+    rts
+.x:
+    moveq #0, d1
+    move.w .tbl(pc, d1.w), d1
+    jmp .tbl(pc, d1.w)
+.tbl:
+    dc.w .mid-.tbl",
+    );
+    assert!(
+        lower(&z1).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "ff-probes/z1 must be refused"
+    );
+}
+
+#[test]
+fn piece4_blind_call_inside_with_ints_off_fires_rule3() {
+    let src = format!(
+        "module m\n{INTS_OFF}proc P () clobbers(d0, a0) {{
+    with ints_off {{
+        jsr (a0)
+    }}
+    rts
+}}
+"
+    );
+    let d = lower(&src);
+    assert!(
+        d.iter().any(|x| x.level == Level::Error
+            && x.message.starts_with("[proc.with-sr-level-broken]")
+            && x.line == line_named(&src, "jsr (a0)", 0)),
+        "blind call inside with ints_off must fire [proc.with-sr-level-broken]: {d:#?}"
+    );
+}
+
+#[test]
+fn piece4_decision2_typed_indirect_requires_preserves_sr_mask_and_defers_imported() {
+    // Declared locally without preserves(sr.mask) -> refused
+    let unannotated = "module m
+type Unannotated = proc () clobbers(d0)
+proc P () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as Unannotated
+    rts
+}
+";
+    assert!(
+        lower(unannotated).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "as Unannotated without preserves(sr.mask) must be refused"
+    );
+
+    // Declared locally with preserves(sr.mask) -> builds
+    let preserving = "module m
+type Preserving = proc () clobbers(d0) preserves(sr.mask)
+proc P () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as Preserving
+    rts
+}
+";
+    assert_eq!(lower(preserving), vec![]);
+
+    // Not declared in this single file (imported from another module) -> deferred cleanly in single-file mode (C3)
+    let imported = "module m
+proc P () clobbers(d0, a0) preserves(sr.mask) {
+    jsr (a0) as ImportedHook
+    rts
+}
+";
+    assert_eq!(lower(imported), vec![]);
 }
