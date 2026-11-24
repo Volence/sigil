@@ -1632,3 +1632,76 @@ proc P () clobbers(d0, a0) preserves(sr.mask) {
 ";
     assert_eq!(lower(imported), vec![]);
 }
+
+#[test]
+fn piece4_review_c1_pcrel_with_targets_is_refused() {
+    let pcrel_off = "module m
+proc Helper () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+proc P () clobbers(d0) preserves(sr.mask) {
+    jmp Helper+4(pc) targets(.a)
+.a:
+    rts
+}
+";
+    assert!(
+        lower(pcrel_off).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "jmp Helper+4(pc) targets(.a) must not bypass sr_level"
+    );
+
+    let pcrel_direct = "module m
+proc Helper () clobbers(sr) {
+    move.w #$2700, sr
+    rts
+}
+proc P () clobbers(d0) preserves(sr.mask) {
+    jmp Helper(pc) targets(.a)
+.a:
+    rts
+}
+";
+    assert!(
+        lower(pcrel_direct)
+            .iter()
+            .any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "jmp Helper(pc) targets(.a) must not bypass sr_level"
+    );
+}
+
+#[test]
+fn piece4_review_i1_noreturn_with_nonzero_offset_is_refused() {
+    let src = "module m
+@noreturn
+proc Die () clobbers(d0) {
+.hang:
+    bra.s .hang
+}
+proc P () clobbers(d0) preserves(sr.mask) {
+    jmp Die+4
+}
+";
+    assert!(
+        lower(src).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "jmp Die+4 must not be silenced as diverging"
+    );
+}
+
+#[test]
+fn piece4_review_i2_contractless_type_inside_manual_sr_save_is_blind() {
+    let src = "module m
+type EmptyType = proc ()
+proc P () clobbers(d0, a0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    jsr (a0) as EmptyType
+    move.w (sp)+, sr
+    rts
+}
+";
+    assert!(
+        lower(src).iter().any(|x| x.message.starts_with("[proc.preserves-sr-unbalanced]")),
+        "contractless as EmptyType inside manual sr save must be treated as BLIND"
+    );
+}

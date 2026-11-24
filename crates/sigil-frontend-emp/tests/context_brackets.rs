@@ -1197,3 +1197,41 @@ fn piece4_w4_contract_type_requires_enforced_at_as_type_dispatch_sites() {
         r.context_claim_sites
     );
 }
+
+#[test]
+fn piece4_review_c2_and_m5_direct_call_with_as_type_and_tail_jmp_as_type() {
+    let src = "module test.w4_review
+context vblank {
+    acquire = asm { nop }
+    release = asm { nop }
+}
+type EmptyType = proc () clobbers(d0)
+type VBlankHook = proc () requires(vblank) clobbers(d0)
+
+proc DirectCallee () requires(vblank) clobbers(d0) {
+    rts
+}
+proc BypassAttempt () clobbers(d0) {
+    jsr DirectCallee as EmptyType
+    rts
+}
+proc TailUnsatisfied () clobbers(d0, a0) {
+    jmp (a0) as VBlankHook
+}
+";
+    let r = analyze(src);
+    assert!(
+        r.context_unsatisfied
+            .iter()
+            .any(|u| u.proc == "BypassAttempt" && u.callee == "DirectCallee" && u.ctx == "vblank"),
+        "attaching `as EmptyType` to a direct call must not bypass DirectCallee's requires: {:?}",
+        r.context_unsatisfied
+    );
+    assert!(
+        r.context_unsatisfied
+            .iter()
+            .any(|u| u.proc == "TailUnsatisfied" && u.callee == "as VBlankHook" && u.ctx == "vblank"),
+        "tail `jmp (a0) as VBlankHook` must enforce VBlankHook requires: {:?}",
+        r.context_unsatisfied
+    );
+}

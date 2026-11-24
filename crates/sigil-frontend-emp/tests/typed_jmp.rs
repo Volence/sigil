@@ -11,7 +11,7 @@
 //!
 //! The dispatch-bound machinery is mnemonic-generic over CALL ∪ TAIL
 //! (`parser::instr` attaches `as Type` after any instruction's operands;
-//! `corpus_contracts::is_indirect_call` and `collect_indirect_sites` gate on
+//! `corpus_contracts::classify_68k_codebuf_transfers` gates on
 //! `CALL_MNEMONICS ∪ TAIL_MNEMONICS`; the closure charges every indirect site
 //! uniformly), so the `jmp` spelling needs no bespoke lowering — these tests are
 //! the executable proof of that parity, and the guard against a future change

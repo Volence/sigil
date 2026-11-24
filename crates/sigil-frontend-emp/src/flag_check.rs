@@ -781,7 +781,10 @@ impl<'a> Cfg<'a> {
         let names_a_target = ops.iter().any(|o| {
             matches!(
                 o,
-                CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+                CodeOperand::Sym(_)
+                    | CodeOperand::SymOff { .. }
+                    | CodeOperand::AbsSym { .. }
+                    | CodeOperand::PcRel { .. }
             )
         });
         if names_a_target || !matches!(self.edges(idx).as_slice(), [Edge::TailOut]) {

@@ -350,3 +350,22 @@ proc BlindJump () clobbers(d0) {
         r.sr_level_firings
     );
 }
+
+#[test]
+fn piece4_review_i2_undefined_type_inside_manual_sr_save_is_blind_in_whole_program() {
+    let f = "module caller
+proc SavedUndefined () clobbers(d0, a0) preserves(sr.mask) {
+    move.w sr, -(sp)
+    move.w #$2700, sr
+    jsr (a0) as MissingHook
+    move.w (sp)+, sr
+    rts
+}
+";
+    let r = analyze_files(&[f]);
+    assert!(
+        r.sr_level_firings.iter().any(|x| x.proc == "SavedUndefined"),
+        "undefined as MissingHook inside manual sr save must be BLIND in whole-program mode: {:#?}",
+        r.sr_level_firings
+    );
+}

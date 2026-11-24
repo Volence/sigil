@@ -89,10 +89,10 @@ pub enum BlindTransferKind {
 impl BlindTransferKind {
     pub fn label(self) -> &'static str {
         match self {
-            BlindTransferKind::UntypedCall => "untyped call",
-            BlindTransferKind::UntargetedJump => "untargeted jump",
-            BlindTransferKind::OffsetSymbol => "offset symbol",
-            BlindTransferKind::ContractlessType => "contractless type",
+            BlindTransferKind::UntypedCall => "untyped-call",
+            BlindTransferKind::UntargetedJump => "untargeted-jump",
+            BlindTransferKind::OffsetSymbol => "offset-symbol",
+            BlindTransferKind::ContractlessType => "contractless-type",
         }
     }
 }
@@ -1402,7 +1402,6 @@ pub fn analyze_corpus_with_contracts(
                         }
                     }
                 }
-                continue;
             }
             let Some(target) = call_target_sym(ops) else { continue };
             let Some(callee) = nodes.get(&target) else { continue };
@@ -1526,11 +1525,13 @@ pub fn analyze_corpus_with_contracts(
     // mid-body labels, and Rule 3 (`with <ctx> { }` held-level verification).
     let mut sr_extern_summaries: BTreeMap<String, crate::sr_level::ProcSummary> = BTreeMap::new();
     let mut sr_known_types: BTreeSet<String> = BTreeSet::new();
+    let mut sr_contracted_types: BTreeSet<String> = BTreeSet::new();
     let mut sr_preserve_types: BTreeSet<String> = BTreeSet::new();
     fn collect_sr_env(
         items: &[Item],
         ext: &mut BTreeMap<String, crate::sr_level::ProcSummary>,
         known_types: &mut BTreeSet<String>,
+        contracted_types: &mut BTreeSet<String>,
         preserve_types: &mut BTreeSet<String>,
     ) {
         for item in items {
@@ -1540,13 +1541,18 @@ pub fn analyze_corpus_with_contracts(
                 }
                 Item::ContractType(ct) => {
                     known_types.insert(ct.name.clone());
+                    if crate::sr_level::contract_type_has_contract(&ct.sig) {
+                        contracted_types.insert(ct.name.clone());
+                    }
                     if crate::sr_level::preserves_sr_token(&ct.sig.preserves).is_some()
                         && !crate::sr_level::sig_modifies_sr_mask(&ct.sig)
                     {
                         preserve_types.insert(ct.name.clone());
                     }
                 }
-                Item::Section(s) => collect_sr_env(&s.items, ext, known_types, preserve_types),
+                Item::Section(s) => {
+                    collect_sr_env(&s.items, ext, known_types, contracted_types, preserve_types)
+                }
                 _ => {}
             }
         }
@@ -1557,6 +1563,7 @@ pub fn analyze_corpus_with_contracts(
                 &file.items,
                 &mut sr_extern_summaries,
                 &mut sr_known_types,
+                &mut sr_contracted_types,
                 &mut sr_preserve_types,
             );
         }
@@ -1576,6 +1583,7 @@ pub fn analyze_corpus_with_contracts(
         noreturn: &noreturn,
         extern_summaries: &sr_extern_summaries,
         known_types: &sr_known_types,
+        contracted_types: &sr_contracted_types,
         sr_preserve_types: &sr_preserve_types,
         whole_program: true,
     };
@@ -2401,8 +2409,9 @@ fn conds_of(out_cond: &[ast::CondResult]) -> Vec<(String, String)> {
 }
 
 /// The `@discards(name)` sites of a proc body, as (instruction span, name),
-/// recursing comptime-`if` branches and `with` bodies like
-/// [`collect_indirect_sites`]. Both arms of an `if` are collected; the check
+/// recursing comptime-`if` branches and `with` bodies (unlike
+/// [`classify_68k_codebuf_transfers`], which walks evaluated `CodeBuf`s). Both
+/// arms of an `if` are collected; the check
 /// finds each site among the evaluated instructions by span, so a site in the
 /// arm the define set did not select is reported unreached rather than checked.
 ///

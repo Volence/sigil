@@ -67,12 +67,16 @@ pub proc JumpTbl () clobbers(d0) {
         "expected blind-transfers header with 2 entries:\n{stdout}"
     );
     assert!(
-        stdout.contains("DispCall") && stdout.contains("untyped-call"),
-        "expected DispCall untyped-call row:\n{stdout}"
+        stdout.contains("DispCall")
+            && stdout.contains("untyped-call")
+            && stdout.contains("engine/blind.emp:3:"),
+        "expected DispCall untyped-call row with line location:\n{stdout}"
     );
     assert!(
-        stdout.contains("JumpTbl") && stdout.contains("untargeted-jump"),
-        "expected JumpTbl untargeted-jump row:\n{stdout}"
+        stdout.contains("JumpTbl")
+            && stdout.contains("untargeted-jump")
+            && stdout.contains("engine/blind.emp:7:"),
+        "expected JumpTbl untargeted-jump row with line location:\n{stdout}"
     );
 }
 
@@ -169,10 +173,11 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask, d7.w) {
     );
 
     // 3. Added unbounded + sr_level + word_preserve_unverifiable proc fails with adjudication and location.
+    // Name it `BlindProc_Extra` so its prefix matches `BlindProc` and exercises exact-key span matching.
     std::fs::write(
         tmp.path().join("engine/ratchet.emp"),
         format!(
-            "{base_src}pub proc ExtraBlind () clobbers(d0) preserves(sr.mask, d7.w) {{\n    jmp (a0)\n}}\n"
+            "{base_src}pub proc BlindProc_Extra () clobbers(d0) preserves(sr.mask, d7.w) {{\n    jmp (a0)\n}}\n"
         ),
     )
     .unwrap();
@@ -184,8 +189,8 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask, d7.w) {
         "expected clobber_unbounded adjudication:\n{added_err}"
     );
     assert!(
-        added_err.contains("ExtraBlind (got 1, want 0)"),
-        "expected ExtraBlind added row:\n{added_err}"
+        added_err.contains("BlindProc_Extra (got 1, want 0)"),
+        "expected BlindProc_Extra added row:\n{added_err}"
     );
     assert!(
         added_err.contains("[sr_level] moved against the frozen baseline."),
@@ -196,12 +201,12 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask, d7.w) {
         "expected word_preserve_unverifiable adjudication:\n{added_err}"
     );
     assert!(
-        added_err.contains("ExtraBlind :: preserves(d7.w) (got 1, want 0)"),
-        "expected ExtraBlind word_preserve added row:\n{added_err}"
+        added_err.contains("BlindProc_Extra :: preserves(d7.w) (got 1, want 0)"),
+        "expected BlindProc_Extra word_preserve added row:\n{added_err}"
     );
     assert!(
-        added_err.contains("engine/ratchet.emp:"),
-        "expected located path for added row:\n{added_err}"
+        added_err.contains("engine/ratchet.emp:7:"),
+        "expected located path on BlindProc_Extra's own line (not BlindProc's line 2):\n{added_err}"
     );
 
     // 4. Stale baseline rows fail in the GONE direction.

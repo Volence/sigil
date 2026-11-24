@@ -2350,3 +2350,33 @@ fn piece4_targeted_dispatch_and_resumable_exit_are_not_blind() {
     assert!(r.blind_transfers.is_empty(), "targeted jmp and @resumable jmp (a3) are not blind: {:?}", r.blind_transfers);
     assert!(r.firings.is_empty(), "no unbounded firings expected: {:?}", r.firings);
 }
+
+#[test]
+fn piece4_review_c1_pcrel_offset_with_targets_is_still_blind() {
+    let r = analyze(&[
+        "module m
+         proc Helper () clobbers(d0-d7) {
+             moveq #0, d7
+             rts
+         }
+         proc Escape () clobbers(d0) {
+             jmp Helper+4(pc) targets(.a)
+         .a:
+             rts
+         }
+        ",
+    ]);
+    use sigil_frontend_emp::corpus_contracts::BlindTransferKind;
+    assert!(
+        r.blind_transfers
+            .iter()
+            .any(|b| b.proc == "Escape" && b.kind == BlindTransferKind::OffsetSymbol),
+        "jmp Helper+4(pc) targets(.a) must be classified as OffsetSymbol: {:?}",
+        r.blind_transfers
+    );
+    assert!(
+        r.firings.iter().any(|f| f.proc == "Escape" && f.unbounded),
+        "jmp Helper+4(pc) targets(.a) must fire UNBOUNDED: {:?}",
+        r.firings
+    );
+}

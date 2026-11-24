@@ -2134,6 +2134,7 @@ fn run_module_sr_level_pass(
         items: &[ast::Item],
         ext: &mut std::collections::BTreeMap<String, ProcSummary>,
         known_types: &mut std::collections::BTreeSet<String>,
+        contracted_types: &mut std::collections::BTreeSet<String>,
         preserve_types: &mut std::collections::BTreeSet<String>,
     ) {
         for item in items {
@@ -2143,6 +2144,9 @@ fn run_module_sr_level_pass(
                 }
                 ast::Item::ContractType(ct) => {
                     known_types.insert(ct.name.clone());
+                    if crate::sr_level::contract_type_has_contract(&ct.sig) {
+                        contracted_types.insert(ct.name.clone());
+                    }
                     if preserves_sr_token(&ct.sig.preserves).is_some()
                         && !sig_modifies_sr_mask(&ct.sig)
                     {
@@ -2150,7 +2154,13 @@ fn run_module_sr_level_pass(
                     }
                 }
                 ast::Item::Section(sec) => {
-                    collect_ext_and_types(&sec.items, ext, known_types, preserve_types)
+                    collect_ext_and_types(
+                        &sec.items,
+                        ext,
+                        known_types,
+                        contracted_types,
+                        preserve_types,
+                    )
                 }
                 _ => {}
             }
@@ -2158,11 +2168,13 @@ fn run_module_sr_level_pass(
     }
     let mut extern_summaries = std::collections::BTreeMap::new();
     let mut known_types = std::collections::BTreeSet::new();
+    let mut contracted_types = std::collections::BTreeSet::new();
     let mut sr_preserve_types = std::collections::BTreeSet::new();
     collect_ext_and_types(
         &file.items,
         &mut extern_summaries,
         &mut known_types,
+        &mut contracted_types,
         &mut sr_preserve_types,
     );
 
@@ -2181,6 +2193,7 @@ fn run_module_sr_level_pass(
         noreturn,
         extern_summaries: &extern_summaries,
         known_types: &known_types,
+        contracted_types: &contracted_types,
         sr_preserve_types: &sr_preserve_types,
         whole_program: false,
     };

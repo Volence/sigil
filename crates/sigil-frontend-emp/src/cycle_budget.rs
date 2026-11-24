@@ -615,7 +615,10 @@ pub fn check_dispatch_targets(items: &[CodeItem], cpu: Cpu) -> Vec<DispatchFindi
         let names_a_target = ops.iter().any(|o| {
             matches!(
                 o,
-                CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+                CodeOperand::Sym(_)
+                    | CodeOperand::SymOff { .. }
+                    | CodeOperand::AbsSym { .. }
+                    | CodeOperand::PcRel { .. }
             )
         });
         if !matches!(cpu_edges(&cfg, cpu, idx).as_slice(), [Edge::TailOut]) || names_a_target {

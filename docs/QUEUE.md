@@ -3720,6 +3720,20 @@ level and build, after piece 2a.** Each measured on master (`sigil-base`), the r
 - **The S and T bits under bare `preserves(sr)`** (`b01`, `b03`): rc 1 on master, rc 0 on 7d46ec3d and ae04cac7
   (advisory only). Owner ruled 2026-11-23: leave as-is (`STEPA-P2A-OWNER-NOTES` CLOSED).
 
+Closed on `parcel/stepA-p4-blind-transfers` (Step A piece 4 — calls and jumps the checker cannot see):
+12 of the 14 remaining `STEPA-P2A-KNOWN-ESCAPES` probes (`a01_reg_addq`, `a02_lea_disp_reg`, `a03_adda_reg`,
+`a10_imm_addr_arith`, `a13_jsr_reg_arith`, `a05b_procname_offset_lea`, `a12_data_label_offset`,
+`a14_data_ptr_cell`, `a06_data_table_offset`, `g01_label_on_data_nop`, `b06_reg_arith_into_restore`, and
+`ff-probes/z1` data jump table without `targets(...)`), plus `jsr 4(a1)` inside `preserves(sr.mask)`,
+`jsr (a0)` inside `with ints_off`, W6 blind transfers (`jsr d(aN)`, `jsr sym(aN)`, `jsr ($addr).l`,
+`jsr Sym+off`, untargeted computed jumps, contractless/undefined `as Type`), W4 `requires(<ctx>)` on
+`ContractType`, `z80_bus` blind-transfer reset, Decision 2 (`as Type` requires `preserves(sr.mask)`/
+`preserves(sr)` in `sr_level`), and `baseline.toml` `format = 2` ratchets (`clobber_unbounded`,
+`clobber_unbounded_debug`, `sr_level`, `word_preserve_unverifiable`). Only `a04_pea_adjust_rts` (return-address
+stack synthesis with no jump at all) and `h08_disp_jump_targets_given` (explicitly false `targets(...)` list,
+trusted by design) remain in the `STEPA-P2A-KNOWN-ESCAPES` row alongside the out-of-model rows (external
+interior offset without `export`, raw `dc.w` encoding `sr` writes).
+
 Closed on `parcel/stepA-p2b-calls` (`STEPA-P2B-CALLS`): **Calls, mid-body tails, conditional branches out, and
 local helpers** — calling a masking routine (`a_call_to_a_masking_routine_is_refused`), local helper rewriting
 caller's saved word (`h01`, `q08`, plus 2-hop), mid-body tail or conditional branch out to a non-preserver

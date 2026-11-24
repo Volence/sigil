@@ -1982,9 +1982,10 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 /// SCOPE, precisely: the DEFINES are shape-accurate; the MODULE SET is the shape's engine
 /// root and its own game root (G0b Task 9a), the set its build gate analyses.
 fn run_contract_report(subject: &ClosureSubject) {
-    let (report, _manifest, _) = corpus_closure_or_exit(subject);
+    let (report, manifest, _) = corpus_closure_or_exit(subject);
+    let src_index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
     print_report_header("contract closure", &subject.label, &subject.defines);
-    print_contract_report(&report);
+    print_contract_report(&report, &src_index);
 }
 
 /// `--report indirect-cost`: what the trusted `jsr (aN) as Type` narrowing is
@@ -2729,7 +2730,10 @@ fn slot_firing_parts(
 /// `[context.*]` tail is one header over several lists (regions, claim sites, then each
 /// firing kind), because its counts are one tier's census rather than one lint's.
 /// Counts are the report's own vector lengths — nothing is recomputed here.
-fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::ContractReport) {
+fn print_contract_report(
+    report: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    src_index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+) {
     println!(
         "procs (incl externs): {}   externs: {}   contract-types: {}",
         report.proc_count, report.extern_count, report.contract_type_count
@@ -2973,17 +2977,14 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         report.blind_transfers.len(),
     );
     for b in &report.blind_transfers {
-        use sigil_frontend_emp::corpus_contracts::BlindTransferKind::*;
-        let kind = match b.kind {
-            UntypedCall => "untyped-call",
-            UntargetedJump => "untargeted-jump",
-            OffsetSymbol => "offset-symbol",
-            ContractlessType => "contractless-type",
-        };
-        println!(
-            "  {:<28} {:<6} ({kind}) @ {}..{}",
-            b.proc, b.mnemonic, b.span.start, b.span.end
-        );
+        let kind = b.kind.label();
+        match src_index.locate(b.span) {
+            Some(loc) => println!("  {:<28} {:<6} ({kind}) at {loc}", b.proc, b.mnemonic),
+            None => println!(
+                "  {:<28} {:<6} ({kind}) @ {}..{}",
+                b.proc, b.mnemonic, b.span.start, b.span.end
+            ),
+        }
     }
 
     println!(

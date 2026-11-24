@@ -22,7 +22,7 @@
 
 use crate::context::{edges_for, forward_in_states, Lattice};
 use crate::flag_check::{Cfg, Edge};
-use crate::preserves::{exit_diverges, sp_effect, SpEffect};
+use crate::preserves::{sp_effect, SpEffect};
 use crate::value::{CodeItem, CodeOperand, ItemAuthor, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -320,6 +320,10 @@ pub(crate) struct SrExternalEnv<'a> {
     /// In single-file mode (`!whole_program`), an `as Type` absent here is
     /// imported from another module and deferred to whole-program (`IDENTITY`).
     pub(crate) known_types: &'a BTreeSet<String>,
+    /// Contract-type names in `known_types` that declare at least one contract
+    /// clause (`clobbers`, `preserves`, `out`, or `inout`). A known type absent
+    /// here (e.g. `type Empty = proc ()`) is treated as `BLIND`.
+    pub(crate) contracted_types: &'a BTreeSet<String>,
     /// Contract-type names that explicitly declare `preserves(sr)` or
     /// `preserves(sr.mask)` (and do not modify `sr`/`sr.mask`).
     pub(crate) sr_preserve_types: &'a BTreeSet<String>,
@@ -328,15 +332,25 @@ pub(crate) struct SrExternalEnv<'a> {
     pub(crate) whole_program: bool,
 }
 
+/// True when a `type T = proc ...` declares at least one contract clause.
+pub(crate) fn contract_type_has_contract(sig: &crate::ast::ProcSig) -> bool {
+    sig.clobbers.is_some()
+        || !sig.preserves.is_empty()
+        || sig.out.is_some()
+        || sig.inout.is_some()
+}
+
 fn resolve_typed_indirect(ty: &str, env: &SrExternalEnv<'_>) -> ProcSummary {
     if env.known_types.contains(ty) {
         if env.sr_preserve_types.contains(ty) {
             ProcSummary::IDENTITY
+        } else if !env.contracted_types.contains(ty) {
+            ProcSummary::BLIND
         } else {
             ProcSummary::UNKNOWN
         }
     } else if env.whole_program {
-        ProcSummary::UNKNOWN
+        ProcSummary::BLIND
     } else {
         ProcSummary::IDENTITY
     }
@@ -590,7 +604,7 @@ impl SummaryTable {
     /// Returns `None` when the transfer diverges (skipped as an exit).
     fn exit_transfer_summary(&self, ctx: WalkCtx<'_>, idx: usize) -> Option<ProcSummary> {
         if let CodeItem::Instr { targets, .. } = &ctx.items[idx] {
-            if !targets.is_empty() {
+            if !targets.is_empty() && ctx.cfg.enumerated_dispatch(idx).is_some() {
                 let mut acc = ProcSummary::DIVERGES;
                 for t in targets {
                     let s = if let Some(local_idx) = code_label_index(ctx.items, ctx.cfg, t) {
@@ -984,6 +998,7 @@ pub(crate) fn mask_findings(items: &[CodeItem], noreturn: &BTreeSet<String>) -> 
         noreturn,
         extern_summaries: &empty_ext,
         known_types: &empty_types,
+        contracted_types: &empty_types,
         sr_preserve_types: &empty_types,
         whole_program: false,
     };
@@ -1011,6 +1026,7 @@ pub(crate) fn mask_findings_for_decl(
         noreturn,
         extern_summaries: &empty_ext,
         known_types: &empty_types,
+        contracted_types: &empty_types,
         sr_preserve_types: &empty_types,
         whole_program: false,
     };
@@ -1094,9 +1110,7 @@ pub(crate) fn mask_findings_for_proc(
                 }
                 Edge::Return => judge_level(out.level),
                 Edge::TailOut | Edge::BranchOut => {
-                    if exit_diverges(&items[idx], env.noreturn) {
-                        None
-                    } else if let Some(target_sum) = table.exit_transfer_summary(ctx, idx) {
+                    if let Some(target_sum) = table.exit_transfer_summary(ctx, idx) {
                         target_sum
                             .exit_level
                             .and_then(|e| judge_level(compose_level(out.level, e)))
