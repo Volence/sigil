@@ -12136,3 +12136,58 @@ demo_debug = "37d66535/106981"
 lean = "f6b07847/798198"
 s4 = "142a39b9/850262"
 s4_debug = "20acdb67/870606"
+
+[[entry]]
+name = "stepA-p4-format2-repin"
+ab = "aeon b65fb401 tools/landing_build.sh rc 0 (stamp 64b3ece0caf7b4fa), 7/7 ROMs byte-identical"
+aeon_rev = "b65fb4016d8221d056343a3a889e2cb8736f70f5"
+note = "goldens byte-identical to `g0b-game-as-data-repin`, this entry re-pins aeon_rev 9b80db1d237b43d945fcef676a848e7007cfb839 -> b65fb4016d8221d056343a3a889e2cb8736f70f5: a descendant reachable from aeon origin/master whose changes moved no ROM bytes. re-pin to step A piece 4 format = 2 descriptions (6 .toml files, zero .emp edits, zero ROM bytes moved)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2ce7438f"
+full_size = 870972
+anchor_crc = "a153cae9"
+anchor_end = 0xc5c8a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "128361b3"
+full_size = 617715
+anchor_crc = "a9058ecd"
+anchor_end = 0x8b5f2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4587df52"
+full_size = 99980
+anchor_crc = "5a5b6300"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "37d66535"
+full_size = 106981
+anchor_crc = "99043cd0"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f6b07847"
+full_size = 798198
+anchor_crc = "2b08718d"
+anchor_end = 0xc2df6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "142a39b9"
+full_size = 850262
+anchor_crc = "3f0a9b9c"
+anchor_end = 0xc3e78
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "20acdb67"
+full_size = 870606
+anchor_crc = "2172953d"
+anchor_end = 0xc5c8a
