@@ -1129,3 +1129,71 @@ fn released_by_rte_without_an_acquire_is_a_decl_error() {
         "expected the missing-acquire error: {diags:?}"
     );
 }
+
+// ---- Step A piece 4: Task 3 W4 (`requires(...)` on `type ... = proc`) ----
+
+#[test]
+fn piece4_w4_contract_type_requires_enforced_at_as_type_dispatch_sites() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         context vblank {{ granted }}\n\
+         type VBlankHook = proc () clobbers(d0) requires(vblank)\n\
+         type BusHook = proc () clobbers(d0) requires(z80_stopped)\n\
+         type TypoHook = proc () clobbers(d0) requires(no_such_ctx)\n\
+         pub proc Unsatisfied () clobbers(d0, a0, a1) {{\n\
+             jsr (a0) as VBlankHook\n\
+             jsr 4(a1) as VBlankHook\n\
+             rts\n\
+         }}\n\
+         pub proc Granted () clobbers(d0, a0) grants(vblank) {{\n\
+             jsr (a0) as VBlankHook\n\
+             rts\n\
+         }}\n\
+         pub proc Bracketed () clobbers(d0, a0) {{\n\
+             with z80_stopped {{\n\
+                 jsr (a0) as BusHook\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    let unsat: Vec<(&str, &str, &str)> = r
+        .context_unsatisfied
+        .iter()
+        .map(|u| (u.proc.as_str(), u.callee.as_str(), u.ctx.as_str()))
+        .collect();
+    assert_eq!(
+        unsat,
+        vec![
+            ("Unsatisfied", "as VBlankHook", "vblank"),
+            ("Unsatisfied", "as VBlankHook", "vblank"),
+        ],
+        "both indirect as VBlankHook sites in Unsatisfied must fire: {:?}",
+        r.context_unsatisfied
+    );
+    assert!(
+        r.context_discharged
+            .contains(&("Granted".to_string(), "as VBlankHook".to_string(), "vblank".to_string())),
+        "Granted must discharge as VBlankHook: {:?}",
+        r.context_discharged
+    );
+    assert!(
+        r.context_discharged.contains(&(
+            "Bracketed".to_string(),
+            "as BusHook".to_string(),
+            "z80_stopped".to_string()
+        )),
+        "Bracketed must discharge as BusHook: {:?}",
+        r.context_discharged
+    );
+    assert!(
+        r.unknown_context_refs.iter().any(|(n, c, _)| n == "TypoHook" && c == "no_such_ctx"),
+        "unknown context on ContractType must appear in unknown_context_refs: {:?}",
+        r.unknown_context_refs
+    );
+    assert!(
+        r.context_claim_sites
+            .contains(&("VBlankHook".to_string(), "requires".to_string(), "vblank".to_string())),
+        "ContractType requires must appear in context_claim_sites: {:?}",
+        r.context_claim_sites
+    );
+}

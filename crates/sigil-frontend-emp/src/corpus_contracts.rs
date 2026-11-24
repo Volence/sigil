@@ -39,7 +39,7 @@ use crate::preserves::{find_dead_saves, DeadSave};
 use crate::z80_out_verify::{check_z80_out, compute_verified_z80_outs, Z80OutFiring, Z80OutMap};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
 use crate::context::{bracketed_at, check_regions, regions_of, ContextFiring, Region};
-use crate::z80_bus::{check_bus_state, BusEntry, BusFiring};
+use crate::z80_bus::{check_bus_state_with_blind, BusEntry, BusFiring};
 use crate::type_slice::{check_slot_types, SlotTypeMismatch};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
@@ -642,9 +642,10 @@ pub fn analyze_corpus_with_contracts(
         }
     }
     let mut blind_transfers: Vec<BlindTransfer> = Vec::new();
+    let mut blind_indices_by_proc: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for pb in &proc_bufs {
         let cfg = crate::flag_check::Cfg::build(&pb.buf.items);
-        let (sites, blinds) = classify_68k_codebuf_transfers(
+        let (sites, blinds, blind_idxs) = classify_68k_codebuf_transfers(
             &pb.name,
             &pb.buf.items,
             &cfg,
@@ -653,6 +654,9 @@ pub fn analyze_corpus_with_contracts(
         );
         if let Some(node) = nodes.get_mut(&pb.name) {
             node.indirect_sites = sites;
+        }
+        if !blind_idxs.is_empty() {
+            blind_indices_by_proc.insert(pb.name.clone(), blind_idxs);
         }
         blind_transfers.extend(blinds);
     }
@@ -1340,6 +1344,25 @@ pub fn analyze_corpus_with_contracts(
     }
     context_claim_sites.sort();
     unknown_context_refs.sort_by(|a, b| (&a.0, &a.1, a.2.start).cmp(&(&b.0, &b.1, b.2.start)));
+    let mut type_requires: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    fn collect_type_requires(items: &[Item], out: &mut BTreeMap<String, BTreeSet<String>>) {
+        for item in items {
+            match item {
+                Item::ContractType(ct) if !ct.sig.requires.is_empty() => {
+                    out.entry(ct.name.clone())
+                        .or_default()
+                        .extend(ct.sig.requires.iter().map(|(c, _)| c.clone()));
+                }
+                Item::Section(s) => collect_type_requires(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    for file in files {
+        if !module_is_z80(&file.module) {
+            collect_type_requires(&file.items, &mut type_requires);
+        }
+    }
     for pb in &proc_bufs {
         let Some(node) = nodes.get(&pb.name) else { continue };
         // The contexts active for the WHOLE body: the caller's own declared
@@ -1347,7 +1370,7 @@ pub fn analyze_corpus_with_contracts(
         let always: BTreeSet<String> = node.requires.union(&node.grants).cloned().collect();
         let regions = proc_regions.get(&pb.name).map(|r| r.as_slice()).unwrap_or(&[]);
         for (idx, it) in pb.buf.items.iter().enumerate() {
-            let CodeItem::Instr { mnemonic, ops, span, author, .. } = it else { continue };
+            let CodeItem::Instr { mnemonic, ops, span, as_type, author, .. } = it else { continue };
             // An authored divergent rail contributes no callee edge — here it
             // also discharges no context obligation (the rail's target is the
             // compiler's own contract, not a call the host proc makes).
@@ -1357,6 +1380,28 @@ pub fn analyze_corpus_with_contracts(
             if !CALL_MNEMONICS.contains(&mnemonic.as_str())
                 && !TAIL_MNEMONICS.contains(&mnemonic.as_str())
             {
+                continue;
+            }
+            // W4: check `requires(<ctx>)` declared on a `type T = proc ...` at
+            // every `as Type` dispatch site.
+            if let Some(ty) = as_type {
+                if let Some(reqs) = type_requires.get(ty) {
+                    let mut active = always.clone();
+                    active.extend(bracketed_at(regions, idx));
+                    let label = format!("as {ty}");
+                    for ctx in reqs {
+                        if active.contains(ctx) {
+                            context_discharged.push((pb.name.clone(), label.clone(), ctx.clone()));
+                        } else {
+                            context_unsatisfied.push(ContextUnsatisfied {
+                                proc: pb.name.clone(),
+                                callee: label.clone(),
+                                ctx: ctx.clone(),
+                                span: *span,
+                            });
+                        }
+                    }
+                }
                 continue;
             }
             let Some(target) = call_target_sym(ops) else { continue };
@@ -1390,6 +1435,7 @@ pub fn analyze_corpus_with_contracts(
     // bus-holding context runs with the bus held at entry, a fact the inference
     // tier cannot derive and `[context.unsatisfied]` checks at every call site.
     let mut bus_firings: Vec<BusFiring> = Vec::new();
+    let empty_blind = BTreeSet::new();
     for pb in &proc_bufs {
         // Seeded from `requires` ONLY. `grants` is an explicitly UNVERIFIED trust
         // root (§3.2 — the assembler cannot check hardware dispatch), and this
@@ -1401,7 +1447,8 @@ pub fn analyze_corpus_with_contracts(
             Some(n) if n.requires.iter().any(|c| bus_contexts.contains(c)) => BusEntry::Held,
             _ => BusEntry::Unknown,
         };
-        bus_firings.extend(check_bus_state(&pb.name, &pb.buf.items, entry));
+        let blind_idxs = blind_indices_by_proc.get(&pb.name).unwrap_or(&empty_blind);
+        bus_firings.extend(check_bus_state_with_blind(&pb.name, &pb.buf.items, entry, blind_idxs));
     }
     bus_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
 
@@ -1707,6 +1754,14 @@ fn collect_context_claims(
                     claims.push((e.name.clone(), "requires".to_string(), ctx.clone()));
                     if !declared.contains(ctx) {
                         unknown.push((e.name.clone(), ctx.clone(), *span));
+                    }
+                }
+            }
+            Item::ContractType(ct) => {
+                for (ctx, span) in ct.sig.requires.iter() {
+                    claims.push((ct.name.clone(), "requires".to_string(), ctx.clone()));
+                    if !declared.contains(ctx) {
+                        unknown.push((ct.name.clone(), ctx.clone(), *span));
                     }
                 }
             }
@@ -2896,10 +2951,11 @@ fn classify_68k_codebuf_transfers(
     cfg: &crate::flag_check::Cfg<'_>,
     is_resumable: bool,
     bounded_types: &BTreeSet<String>,
-) -> (Vec<Option<String>>, Vec<BlindTransfer>) {
+) -> (Vec<Option<String>>, Vec<BlindTransfer>, BTreeSet<usize>) {
     use CodeOperand as O;
     let mut sites: Vec<Option<String>> = Vec::new();
     let mut blinds: Vec<BlindTransfer> = Vec::new();
+    let mut blind_idxs: BTreeSet<usize> = BTreeSet::new();
 
     for (idx, item) in items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, as_type, targets, author, .. } = item else {
@@ -2930,6 +2986,7 @@ fn classify_68k_codebuf_transfers(
             O::SymOff { off: 0, .. } | O::PcRel { addend: 0, .. } => continue,
             O::SymOff { .. } | O::PcRel { .. } => {
                 sites.push(None);
+                blind_idxs.insert(idx);
                 blinds.push(BlindTransfer {
                     proc: proc_name.to_string(),
                     span: *span,
@@ -2943,6 +3000,7 @@ fn classify_68k_codebuf_transfers(
                         sites.push(Some(ty.clone()));
                     } else {
                         sites.push(None);
+                        blind_idxs.insert(idx);
                         blinds.push(BlindTransfer {
                             proc: proc_name.to_string(),
                             span: *span,
@@ -2957,6 +3015,7 @@ fn classify_68k_codebuf_transfers(
                         BlindTransferKind::UntargetedJump
                     };
                     sites.push(None);
+                    blind_idxs.insert(idx);
                     blinds.push(BlindTransfer {
                         proc: proc_name.to_string(),
                         span: *span,
@@ -2968,5 +3027,5 @@ fn classify_68k_codebuf_transfers(
         }
     }
 
-    (sites, blinds)
+    (sites, blinds, blind_idxs)
 }

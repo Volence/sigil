@@ -162,3 +162,47 @@ fn btst_read_is_not_a_toggle() {
     );
     assert_eq!(r.bus_firings.iter().filter(|f| f.proc == "P").count(), 0, "{:?}", r.bus_firings);
 }
+
+// ---- Step A piece 4: Task 3 blind transfers reset bus state to Unknown ----
+
+#[test]
+fn piece4_blind_call_resets_bus_state_to_unknown() {
+    let r = analyze(
+        "module m\n\
+         pub proc StopThenBlind () clobbers(d0, a0) {\n\
+             move.w  #$0100, Z80_BUS_REQUEST\n\
+             jsr     (a0)\n\
+             rts\n\
+         }\n\
+         pub proc StartThenBlindVdp (d0: u16) clobbers(d0, a1) {\n\
+             move.w  #$0000, Z80_BUS_REQUEST\n\
+             jsr     4(a1)\n\
+             move.w  d0, VDP_CTRL\n\
+             rts\n\
+         }\n\
+         pub proc DirectControl () clobbers(d0) {\n\
+             move.w  #$0100, Z80_BUS_REQUEST\n\
+             jsr     Helper\n\
+             rts\n\
+         }\n\
+         proc Helper () clobbers() { rts }\n",
+    );
+    assert_eq!(
+        count(&r, "StopThenBlind", BusFiringKind::StoppedAtReturn),
+        0,
+        "blind call must reset Held bus state to Unknown: {:?}",
+        r.bus_firings
+    );
+    assert_eq!(
+        count(&r, "StartThenBlindVdp", BusFiringKind::VdpWriteUnstopped),
+        0,
+        "blind call must reset Running bus state to Unknown: {:?}",
+        r.bus_firings
+    );
+    assert_eq!(
+        count(&r, "DirectControl", BusFiringKind::StoppedAtReturn),
+        1,
+        "direct call control must still fire StoppedAtReturn: {:?}",
+        r.bus_firings
+    );
+}

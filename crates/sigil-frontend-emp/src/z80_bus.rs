@@ -212,6 +212,19 @@ pub fn region_acquires_bus(items: &[CodeItem], region: &crate::context::Region) 
 /// once per instruction whose IN-state is a definite bus-contract violation.
 /// `entry` is the proc's declared entry state (see [`BusEntry`]).
 pub fn check_bus_state(proc: &str, items: &[CodeItem], entry: BusEntry) -> Vec<BusFiring> {
+    let empty = std::collections::BTreeSet::new();
+    check_bus_state_with_blind(proc, items, entry, &empty)
+}
+
+/// [`check_bus_state`] with a precomputed set of blind-transfer instruction
+/// indices (step A piece 4): any blind call/jump kills the tracked bus state to
+/// `BusState::Unknown`.
+pub fn check_bus_state_with_blind(
+    proc: &str,
+    items: &[CodeItem],
+    entry: BusEntry,
+    blind_indices: &std::collections::BTreeSet<usize>,
+) -> Vec<BusFiring> {
     let mut firings = Vec::new();
     let cfg = Cfg::build(items);
     let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
@@ -225,7 +238,13 @@ pub fn check_bus_state(proc: &str, items: &[CodeItem], entry: BusEntry) -> Vec<B
         &cfg,
         Cpu::M68000,
         &[(entry_idx, seed)],
-        &|st, _, mnem, ops| step(*st, mnem, ops),
+        &|st, idx, mnem, ops| {
+            if blind_indices.contains(&idx) {
+                BusState::Unknown
+            } else {
+                step(*st, mnem, ops)
+            }
+        },
         &|_| true,
     );
 
