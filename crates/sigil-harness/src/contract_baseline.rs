@@ -91,6 +91,8 @@ pub struct ShapeBaseline {
     pub clobber_unbounded: Vec<String>,
     /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs for this shape.
     pub sr_level: Vec<String>,
+    /// `[proc.preserves-unverifiable]` word-facet firings for this shape: `(proc, reg_facet)`.
+    pub word_preserve_unverifiable: Vec<(String, String)>,
     /// Where an adjudicated row is written, named by [`adjudication_message_in`]: the
     /// description files the rows came from.
     pub home: String,
@@ -127,6 +129,11 @@ impl ShapeBaseline {
     /// Diff `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` firings.
     pub fn diff_sr_level(&self, got: &[String]) -> BaselineDiff {
         diff_multiset(got.to_vec(), self.sr_level.clone())
+    }
+
+    /// Diff `[proc.preserves-unverifiable]` word-facet firings.
+    pub fn diff_word_preserve_unverifiable(&self, got: &[(String, String)]) -> BaselineDiff {
+        diff_pairs(got, &self.word_preserve_unverifiable, "preserves")
     }
 }
 

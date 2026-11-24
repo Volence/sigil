@@ -130,7 +130,7 @@ fn format2_clobber_unbounded_and_sr_level_ratchets_enforce_both_directions() {
     let tmp = tempfile::tempdir().unwrap();
     sigil_harness::test_support::write_project_fixture(tmp.path(), "g");
     let base_src = "module engine.ratchet
-pub proc BlindProc () clobbers(d0) preserves(sr.mask) {
+pub proc BlindProc () clobbers(d0) preserves(sr.mask, d7.w) {
     jmp     .tbl(pc, d0.w)
 .tbl:
     rts
@@ -139,7 +139,7 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask) {
     std::fs::write(tmp.path().join("engine/ratchet.emp"), base_src).unwrap();
     std::fs::write(
         tmp.path().join("engine/baseline.toml"),
-        "format = 2\nclobber_unbounded = [\"BlindProc\"]\nsr_level = [\"BlindProc\"]\n",
+        "format = 2\nclobber_unbounded = [\"BlindProc\"]\nsr_level = [\"BlindProc\"]\nword_preserve_unverifiable = [[\"BlindProc\", \"d7.w\"]]\n",
     )
     .unwrap();
 
@@ -168,16 +168,16 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask) {
         "expected located ConcreteBad refusal:\n{conc_err}"
     );
 
-    // 3. Added unbounded + sr_level proc fails with adjudication message and location.
+    // 3. Added unbounded + sr_level + word_preserve_unverifiable proc fails with adjudication and location.
     std::fs::write(
         tmp.path().join("engine/ratchet.emp"),
         format!(
-            "{base_src}pub proc ExtraBlind () clobbers(d0) preserves(sr.mask) {{\n    jmp (a0)\n}}\n"
+            "{base_src}pub proc ExtraBlind () clobbers(d0) preserves(sr.mask, d7.w) {{\n    jmp (a0)\n}}\n"
         ),
     )
     .unwrap();
     let added = run_sigil(tmp.path(), &["-o", out_bin.to_str().unwrap()]);
-    assert!(!added.status.success(), "added unbounded/sr_level firing must fail");
+    assert!(!added.status.success(), "added unbounded/sr_level/word_preserve firing must fail");
     let added_err = String::from_utf8_lossy(&added.stderr);
     assert!(
         added_err.contains("[proc.clobber-undeclared] (unbounded) moved against the frozen baseline."),
@@ -192,6 +192,14 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask) {
         "expected sr_level adjudication:\n{added_err}"
     );
     assert!(
+        added_err.contains("[proc.preserves-unverifiable] moved against the frozen baseline."),
+        "expected word_preserve_unverifiable adjudication:\n{added_err}"
+    );
+    assert!(
+        added_err.contains("ExtraBlind :: preserves(d7.w) (got 1, want 0)"),
+        "expected ExtraBlind word_preserve added row:\n{added_err}"
+    );
+    assert!(
         added_err.contains("engine/ratchet.emp:"),
         "expected located path for added row:\n{added_err}"
     );
@@ -204,6 +212,10 @@ pub proc BlindProc () clobbers(d0) preserves(sr.mask) {
     assert!(
         stale_err.contains("BlindProc (got 0, want 1)"),
         "expected GONE row for BlindProc:\n{stale_err}"
+    );
+    assert!(
+        stale_err.contains("BlindProc :: preserves(d7.w) (got 0, want 1)"),
+        "expected GONE row for BlindProc word_preserve:\n{stale_err}"
     );
 }
 

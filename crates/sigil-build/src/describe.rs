@@ -42,7 +42,8 @@ use std::path::{Path, PathBuf};
 /// `game.toml`, `engine.toml` or `baseline.toml` (a key added, optional ones included,
 /// removed, renamed or re-typed) bumps `format` in the same change, together with every
 /// committed description. Format 2 (step A piece 4) added `clobber_unbounded`,
-/// `clobber_unbounded_debug`, and `sr_level` to `baseline.toml`.
+/// `clobber_unbounded_debug`, `sr_level`, and `word_preserve_unverifiable` to
+/// `baseline.toml`.
 pub const FORMAT: u32 = 2;
 
 /// Defines a description may not write, because the driver derives them from [`Features`].
@@ -511,6 +512,9 @@ pub struct BaselineDesc {
     /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs (format 2, step A piece 4).
     #[serde(default)]
     pub sr_level: Vec<String>,
+    /// `[proc.preserves-unverifiable]` word-facet firings: `(proc, reg_facet)` (format 2, step A piece 4).
+    #[serde(default)]
+    pub word_preserve_unverifiable: Vec<(String, String)>,
 }
 
 // ───────────────────────────── errors ─────────────────────────────

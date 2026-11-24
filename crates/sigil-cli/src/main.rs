@@ -2181,6 +2181,7 @@ fn project_subject(project: &sigil_build::driver::Project, shape: &str) -> Resul
             d1c: b.d1c,
             clobber_unbounded: b.clobber_unbounded,
             sr_level: b.sr_level,
+            word_preserve_unverifiable: b.word_preserve_unverifiable,
             home,
         },
     })
@@ -2369,7 +2370,26 @@ fn run_contract_gate(subject: impl FnOnce() -> ClosureSubject) -> bool {
     // subroutine whose callers rely on the contract the annotation leaves unchecked.
     failed |= refuse_located("[clobbers.computed-dispatch-called] firings", &report.z80_dispatch_called, |f| f.span, |f| format!("[clobbers.computed-dispatch-called] `{}` declares @allow(\"clobbers.computed-dispatch\") but `{}` calls it directly, so its clobbers(...) is relied on and must be verified; drop the annotation", f.proc, f.caller), &src_index);
     failed |= refuse_located("Z80 name collisions", &report.z80_collisions, |(_, sp)| Some(*sp), |(n, _)| format!("`{n}` is declared twice among the Z80 procs/externs, so the clobber closure checked only one of them"), &src_index);
-    failed |= empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
+    if base.word_preserve_unverifiable.is_empty() {
+        failed |= empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
+    } else {
+        let wp_got: Vec<(String, String)> = report
+            .word_preserve_firings
+            .iter()
+            .map(|(p, r, _)| (p.clone(), r.clone()))
+            .collect();
+        let d = base.diff_word_preserve_unverifiable(&wp_got);
+        if !d.is_clean() {
+            eprintln!("error: {}", bl::adjudication_message_in("[proc.preserves-unverifiable]", &d, &base.home));
+            let spans: Vec<(String, sigil_span::Span)> = report
+                .word_preserve_firings
+                .iter()
+                .map(|(p, r, sp)| (format!("{p} :: preserves({r})"), *sp))
+                .collect();
+            report_added("[proc.preserves-unverifiable]", &d, &spans);
+            failed = true;
+        }
+    }
     failed |= empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
     failed |= empty_gate("unknown context references", report.unknown_context_refs.len());
     failed |= empty_gate("[call.input-undefined] firings", report.input_firings.len());

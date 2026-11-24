@@ -36,6 +36,8 @@ pub struct ClosureBaseline {
     pub clobber_unbounded: Vec<String>,
     /// `[proc.preserves-sr-unbalanced]` / `[proc.with-sr-level-broken]` procs.
     pub sr_level: Vec<String>,
+    /// `[proc.preserves-unverifiable]` word-facet firings: `(proc, reg_facet)`.
+    pub word_preserve_unverifiable: Vec<(String, String)>,
     /// The `baseline.toml` files read: the engine's, then the game's.
     pub files: Vec<PathBuf>,
 }
@@ -50,6 +52,7 @@ impl ClosureBaseline {
         let unbounded_debug: &[String] = if debug { &b.clobber_unbounded_debug } else { &[] };
         self.clobber_unbounded.extend(b.clobber_unbounded.iter().chain(unbounded_debug).cloned());
         self.sr_level.extend(b.sr_level.iter().cloned());
+        self.word_preserve_unverifiable.extend(b.word_preserve_unverifiable.iter().cloned());
     }
 }
 
