@@ -19,7 +19,7 @@
 //! bounds. The report also flags the §11 Q4 collision (a name declared BOTH as
 //! `extern proc` and `proc`).
 
-use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
+use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, ProcDecl, ProcSig};
 use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{
@@ -68,6 +68,42 @@ pub struct SrLevelFiring {
     pub span: Span,
     pub code: &'static str,
     pub message: String,
+}
+
+/// Kind of unseen / blind 68000 transfer (step A piece 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BlindTransferKind {
+    /// Indirect or computed call without a contract bound (`jsr (aN)`, `jsr d(aN)`,
+    /// `jsr (aN, dM.w)`, `jsr sym(aN)`, `jsr ($1234).l`, etc.).
+    UntypedCall,
+    /// Indirect or computed jump/branch without `as Type` or valid `targets(...)`
+    /// (and not a `@resumable` `jmp (aN)` continuation exit).
+    UntargetedJump,
+    /// Call or jump to a symbol with a nonzero offset (`jsr Foo+4`, `jmp P+10(pc)`).
+    OffsetSymbol,
+    /// Indirect call/jump carrying `as Type` where `Type` declares neither
+    /// `clobbers(...)` nor register `preserves(...)`, or is undefined.
+    ContractlessType,
+}
+
+impl BlindTransferKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            BlindTransferKind::UntypedCall => "untyped call",
+            BlindTransferKind::UntargetedJump => "untargeted jump",
+            BlindTransferKind::OffsetSymbol => "offset symbol",
+            BlindTransferKind::ContractlessType => "contractless type",
+        }
+    }
+}
+
+/// One unseen / blind 68000 transfer site (step A piece 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlindTransfer {
+    pub proc: String,
+    pub span: Span,
+    pub mnemonic: String,
+    pub kind: BlindTransferKind,
 }
 
 /// The corpus-wide contract analysis result.
@@ -389,6 +425,10 @@ pub struct ContractReport {
     /// `@continuation` 68000 procs whose manufactured `rte` exit is trusted as
     /// level-preserving (Decision 1, audited in `--report contracts`). Sorted.
     pub sr_trusted_continuations: Vec<String>,
+    /// Unseen / blind 68000 calls and jumps (step A piece 4: W6 / `STEPA-P2A-KNOWN-ESCAPES`),
+    /// treated as worst-case (`top` in closure, `UNKNOWN` in `sr_level`, `Unknown` in `z80_bus`)
+    /// and printed in `--report contracts`. Sorted (proc, span).
+    pub blind_transfers: Vec<BlindTransfer>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -577,6 +617,55 @@ pub fn analyze_corpus_with_contracts(
         .iter()
         .flat_map(|f| crate::lower::collect_noreturn_symbols(&f.items))
         .collect();
+
+    // Step A piece 4: classify indirect / computed / blind 68k transfers from
+    // evaluated `CodeBuf`s (after all `ContractType`s across all files are
+    // collected, closing W6, splice blind spots, and forward-type ordering).
+    let mut bounded_types: BTreeSet<String> = BTreeSet::new();
+    fn collect_bounded_types(items: &[Item], out: &mut BTreeSet<String>) {
+        for item in items {
+            match item {
+                Item::ContractType(t) => {
+                    if t.sig.clobbers.is_some() || !expand_reglist_regs(&t.sig.preserves).is_empty()
+                    {
+                        out.insert(t.name.clone());
+                    }
+                }
+                Item::Section(s) => collect_bounded_types(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    for file in files {
+        if !module_is_z80(&file.module) {
+            collect_bounded_types(&file.items, &mut bounded_types);
+        }
+    }
+    let mut blind_transfers: Vec<BlindTransfer> = Vec::new();
+    for pb in &proc_bufs {
+        let cfg = crate::flag_check::Cfg::build(&pb.buf.items);
+        let (sites, blinds) = classify_68k_codebuf_transfers(
+            &pb.name,
+            &pb.buf.items,
+            &cfg,
+            pb.is_resumable,
+            &bounded_types,
+        );
+        if let Some(node) = nodes.get_mut(&pb.name) {
+            node.indirect_sites = sites;
+        }
+        blind_transfers.extend(blinds);
+    }
+    blind_transfers.sort_by(|a, b| {
+        (&a.proc, a.span.source.0, a.span.start, a.span.end, a.kind, &a.mnemonic).cmp(&(
+            &b.proc,
+            b.span.source.0,
+            b.span.start,
+            b.span.end,
+            b.kind,
+            &b.mnemonic,
+        ))
+    });
 
     let mut closure = compute_closure(&nodes, &types);
 
@@ -1541,6 +1630,7 @@ pub fn analyze_corpus_with_contracts(
         z80_collisions: z80_closure_inputs.collisions,
         sr_level_firings,
         sr_trusted_continuations,
+        blind_transfers,
     }
 }
 
@@ -2584,7 +2674,9 @@ fn proc_node(
         // control simply runs on), so without this the successor's writes never
         // reach the falling proc's `effective` set.
         falls_into: p.falls_into.clone(),
-        indirect_sites: collect_indirect_sites(&p.body, p.is_resumable()),
+        // Populated in the post-pass over evaluated `CodeBuf`s once all files'
+        // `ContractType`s are indexed (step A piece 4).
+        indirect_sites: Vec::new(),
         is_extern: false,
         // §6 partial-width: a `preserves(dN.w)` licenses clobbering the full `dN`
         // for callers (conservative v1 — the caller-visible contract is identical
@@ -2704,6 +2796,7 @@ fn contract_type_bound(t: &ContractTypeDecl) -> RegEffect {
         }
     };
     regs.extend(expand_reglist_regs(t.sig.out.as_deref().unwrap_or(&[])));
+    regs.extend(expand_reglist_regs(t.sig.inout.as_deref().unwrap_or(&[])));
     RegEffect { top: false, regs }
 }
 
@@ -2761,120 +2854,108 @@ fn reg_name(name: &str) -> Option<String> {
 /// is proven in the game_contract tests, and the direct-call propagation it
 /// composes with is proven by `direct_jsr_and_bsr_call_edges`.
 fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
-    crate::flag_check::transfer_target_sym(ops)
+    ops.iter()
+        .rev()
+        .find_map(|o| match o {
+            CodeOperand::Sym(name) => Some(name.as_str()),
+            CodeOperand::SymOff { sym, off: 0 } => Some(sym.as_str()),
+            CodeOperand::AbsSym { target, .. } => Some(target.as_str()),
+            CodeOperand::PcRel { target, addend: 0 } => Some(target.as_str()),
+            _ => None,
+        })
         .filter(|s| !s.contains('$'))
         .map(str::to_string)
 }
 
-/// Scan a proc body (recursing comptime-`if` branches) for indirect call sites,
-/// returning each site's declared bound: `Some(type)` for `jsr (aN) as Type`,
-/// `None` for an unbounded `jsr (aN)`. A call whose target is a bare symbol
-/// (direct) contributes no indirect site.
-///
-/// `is_resumable` reconciles the closure gate with the `@resumable` stackless
-/// contract (bookmark ask 1): a resumable proc exits by a terminal computed
-/// `jmp (aN)` (aN != a7) to a caller-loaded continuation — a BOUNDED, return-like
-/// terminator, not a dispatch into unknown code. Its register budget is already
-/// pinned (a resumable proc MUST declare `clobbers`, and the stackless scan bounds
-/// the body), so such an exit contributes NO unbounded ⊤ site. See
-/// [`is_resumable_continuation_exit`] for the exact (and deliberately narrow) shape
-/// this credits.
-fn collect_indirect_sites(body: &[AsmStmt], is_resumable: bool) -> Vec<Option<String>> {
-    let mut sites = Vec::new();
-    walk_body_for_indirect(body, is_resumable, &mut sites);
-    sites
+/// True when `mnem` is a 68000 non-return control transfer (call, tail jump,
+/// or conditional branch).
+fn is_68k_nonreturn_transfer(mnem: &str) -> bool {
+    CALL_MNEMONICS.contains(&mnem)
+        || TAIL_MNEMONICS.contains(&mnem)
+        || (mnem.starts_with('b') && mnem.len() == 3)
+        || mnem.starts_with("db")
+        || mnem.starts_with("jb")
 }
 
-fn walk_body_for_indirect(body: &[AsmStmt], is_resumable: bool, sites: &mut Vec<Option<String>>) {
-    for stmt in body {
-        match stmt {
-            AsmStmt::Instr(instr) => {
-                if is_indirect_call(instr) {
-                    // A `@resumable` proc's untyped `jmp (aN)` continuation exit is
-                    // credited as a bounded terminator, not an unbounded site — so
-                    // it does not force the proc's effect to ⊤.
-                    if is_resumable && is_resumable_continuation_exit(instr) {
-                        continue;
+/// Classify every non-return 68000 control transfer in an evaluated `CodeBuf`
+/// into closure `indirect_sites` and [`BlindTransfer`] census rows (step A piece 4).
+fn classify_68k_codebuf_transfers(
+    proc_name: &str,
+    items: &[CodeItem],
+    cfg: &crate::flag_check::Cfg<'_>,
+    is_resumable: bool,
+    bounded_types: &BTreeSet<String>,
+) -> (Vec<Option<String>>, Vec<BlindTransfer>) {
+    use CodeOperand as O;
+    let mut sites: Vec<Option<String>> = Vec::new();
+    let mut blinds: Vec<BlindTransfer> = Vec::new();
+
+    for (idx, item) in items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, ops, span, as_type, targets, author, .. } = item else {
+            continue;
+        };
+        if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+            continue;
+        }
+        let m = mnemonic.as_str();
+        if !is_68k_nonreturn_transfer(m) {
+            continue;
+        }
+        // `@resumable` untyped `jmp (aN)` (`aN != a7`) is a bounded continuation return.
+        if is_resumable
+            && m == "jmp"
+            && as_type.is_none()
+            && matches!(ops.as_slice(), [O::Ind(r)] if *r != Reg::A7)
+        {
+            continue;
+        }
+        // Enumerated local `targets(...)` dispatch with all valid local targets.
+        if !targets.is_empty() && cfg.enumerated_dispatch(idx).is_some() {
+            continue;
+        }
+        let Some(target_op) = ops.last() else { continue };
+        match target_op {
+            O::Sym(_) | O::AbsSym { .. } => continue,
+            O::SymOff { off: 0, .. } | O::PcRel { addend: 0, .. } => continue,
+            O::SymOff { .. } | O::PcRel { .. } => {
+                sites.push(None);
+                blinds.push(BlindTransfer {
+                    proc: proc_name.to_string(),
+                    span: *span,
+                    mnemonic: mnemonic.clone(),
+                    kind: BlindTransferKind::OffsetSymbol,
+                });
+            }
+            _ => {
+                if let Some(ty) = as_type {
+                    if bounded_types.contains(ty) {
+                        sites.push(Some(ty.clone()));
+                    } else {
+                        sites.push(None);
+                        blinds.push(BlindTransfer {
+                            proc: proc_name.to_string(),
+                            span: *span,
+                            mnemonic: mnemonic.clone(),
+                            kind: BlindTransferKind::ContractlessType,
+                        });
                     }
-                    sites.push(instr.dispatch_bound.clone());
+                } else {
+                    let kind = if CALL_MNEMONICS.contains(&m) {
+                        BlindTransferKind::UntypedCall
+                    } else {
+                        BlindTransferKind::UntargetedJump
+                    };
+                    sites.push(None);
+                    blinds.push(BlindTransfer {
+                        proc: proc_name.to_string(),
+                        span: *span,
+                        mnemonic: mnemonic.clone(),
+                        kind,
+                    });
                 }
             }
-            AsmStmt::If { then, els, .. } => {
-                walk_body_for_indirect(then, is_resumable, sites);
-                if let Some(e) = els {
-                    walk_body_for_indirect(e, is_resumable, sites);
-                }
-            }
-            AsmStmt::With { body, .. } => walk_body_for_indirect(body, is_resumable, sites),
-            _ => {}
         }
     }
-}
 
-/// A `@resumable` proc's terminal continuation exit that the closure credits as
-/// bounded: an UNTYPED indirect TAIL transfer (`jmp (aN)`) through an address
-/// register that is NOT a7. It leaves the proc to a caller-loaded continuation, so
-/// it is return-like, not a call into unknown code that would clobber the caller's
-/// registers.
-///
-/// Deliberately narrow, on three axes, each keeping the credit sound:
-/// - **TAIL only** (`jmp`/`bra`/`jbra`, never a CALL): an indirect CALL in a
-///   resumable proc (`jsr (aN)`) is already build-fatal via `[resumable.stack-op]`
-///   (it pushes), so it is not a shape this must — or does — credit.
-/// - **aN != a7**: a `jmp (sp)`/`jmp (a7)` READS the stack (also
-///   `[resumable.stack-op]`); excluding it keeps the credit fail-safe (an
-///   unrecognizable / spliced operand register is NOT credited either).
-/// - **UNTYPED only** (`dispatch_bound.is_none()`): a `jmp (aN) as Type` (bookmark
-///   ask 5) is bounded by the dispatch TYPE's effect through the existing indirect-
-///   site machinery, which is STRICTER (it charges the type's clobbers). Excluding
-///   the typed form here lets that bound supersede this credit cleanly the day ask
-///   5 lands — no double-handling, no weakening.
-fn is_resumable_continuation_exit(instr: &InstrLine) -> bool {
-    let Some(m) = single_text(&instr.mnemonic) else { return false };
-    if !TAIL_MNEMONICS.contains(&m) || instr.dispatch_bound.is_some() {
-        return false;
-    }
-    matches!(
-        instr.operands.first().and_then(ind_single_register),
-        Some(r) if r != Reg::A7
-    )
-}
-
-/// The single base register of a bare register-indirect operand (`(aN)`), or
-/// `None` for any richer form (displaced, indexed, sized, multi-part, or a
-/// non-register expression). `Reg::from_name` maps the `sp` spelling to `a7`, so a
-/// `jmp (sp)` resolves to [`Reg::A7`] and is caught by the caller's exclusion.
-fn ind_single_register(op: &Operand) -> Option<Reg> {
-    let Operand::Ind { parts, size, .. } = op else { return None };
-    if size.is_some() || parts.len() != 1 {
-        return None;
-    }
-    let (expr, part_size) = &parts[0];
-    if part_size.is_some() {
-        return None;
-    }
-    let ast::Expr::Path(p) = expr else { return None };
-    match p.segments.as_slice() {
-        [seg] => Reg::from_name(seg),
-        _ => None,
-    }
-}
-
-/// True when an AST instruction is an indirect call/tail-transfer — a call-shaped
-/// mnemonic whose first operand is a register-indirect EA (`jsr (a1)` /
-/// `jsr (a0, d4.w)`), as opposed to a direct `jsr Foo`.
-fn is_indirect_call(instr: &InstrLine) -> bool {
-    let Some(m) = single_text(&instr.mnemonic) else { return false };
-    if !CALL_MNEMONICS.contains(&m) && !TAIL_MNEMONICS.contains(&m) {
-        return false;
-    }
-    matches!(instr.operands.first(), Some(Operand::Ind { .. }))
-}
-
-/// The mnemonic as a single literal string, or `None` if it is spliced.
-fn single_text(mnemonic: &[TextOrSplice]) -> Option<&str> {
-    match mnemonic {
-        [TextOrSplice::Text(s)] => Some(s.as_str()),
-        _ => None,
-    }
+    (sites, blinds)
 }

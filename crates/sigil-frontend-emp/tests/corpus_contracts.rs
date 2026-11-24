@@ -2143,3 +2143,210 @@ fn z80_out_ex_de_hl_permutes_real_production_into_hl() {
     assert!(!z80_out_fires(&r, "P", "h"), "real d,e writes permuted into hl must produce h: {:?}", r.z80_out_firings);
     assert!(!z80_out_fires(&r, "P", "l"), "real d,e writes permuted into hl must produce l: {:?}", r.z80_out_firings);
 }
+
+// ---- Step A piece 4: Task 1 blind-transfer classifier & W6 closure wiring ----
+
+#[test]
+fn piece4_w6_displaced_indexed_and_untargeted_computed_transfers_fire_unbounded() {
+    use sigil_frontend_emp::corpus_contracts::BlindTransferKind;
+    let r = analyze(&[
+        "module m
+         data Tbl: [u16; 2] = [0, 0]
+         proc DispCall () clobbers(d0) {
+             jsr 4(a1)
+             rts
+         }
+         proc IndIdxCall () clobbers(d0) {
+             jsr 4(a1, d0.w)
+             rts
+         }
+         proc SymIndCall () clobbers(d0) {
+             jsr .tbl(a1)
+             rts
+         .tbl:
+             dc.w 0
+         }
+         proc UntargetedJmp () clobbers(d0) {
+             jmp .tbl(pc, d0.w)
+         .tbl:
+             bra.w .a
+         .a:
+             rts
+         }
+         proc AbsIntCall () clobbers(d0) {
+             jsr ($1234).l
+             rts
+         }
+         proc OffsetCall () clobbers(d0) {
+             jsr Helper+4
+             rts
+         }
+         proc OffsetPcRel () clobbers(d0) {
+             jmp Helper+4(pc)
+         }
+         proc Helper () clobbers(d0) {
+             moveq #0, d0
+             rts
+         }
+        ",
+    ]);
+    for name in [
+        "DispCall",
+        "IndIdxCall",
+        "SymIndCall",
+        "UntargetedJmp",
+        "AbsIntCall",
+        "OffsetCall",
+        "OffsetPcRel",
+    ] {
+        assert!(
+            r.firings.iter().any(|f| f.proc == name && f.unbounded),
+            "{name} must fire UNBOUNDED (W6): {:?}",
+            r.firings
+        );
+    }
+    let kinds: Vec<(&str, BlindTransferKind)> =
+        r.blind_transfers.iter().map(|b| (b.proc.as_str(), b.kind)).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ("AbsIntCall", BlindTransferKind::UntypedCall),
+            ("DispCall", BlindTransferKind::UntypedCall),
+            ("IndIdxCall", BlindTransferKind::UntypedCall),
+            ("OffsetCall", BlindTransferKind::OffsetSymbol),
+            ("OffsetPcRel", BlindTransferKind::OffsetSymbol),
+            ("SymIndCall", BlindTransferKind::UntypedCall),
+            ("UntargetedJmp", BlindTransferKind::UntargetedJump),
+        ],
+        "expected exact blind_transfers census: {:#?}",
+        r.blind_transfers
+    );
+}
+
+#[test]
+fn piece4_pcrel_zero_addend_call_is_direct_not_blind_and_charges_clobbers() {
+    let r = analyze(&[
+        "module m
+         proc Caller () clobbers(d0) {
+             jsr Callee(pc)
+             rts
+         }
+         proc Callee () clobbers(d2) {
+             moveq #1, d2
+             rts
+         }
+        ",
+    ]);
+    assert!(
+        r.blind_transfers.is_empty(),
+        "jsr Callee(pc) with addend 0 is direct, not blind: {:?}",
+        r.blind_transfers
+    );
+    assert!(
+        r.firings.iter().any(|f| f.proc == "Caller" && f.reg.as_deref() == Some("d2")),
+        "jsr Callee(pc) must charge Callee's d2 clobber: {:?}",
+        r.firings
+    );
+}
+
+#[test]
+fn piece4_spliced_bounded_indirect_call_is_seen_in_codebuf() {
+    let r = analyze(&[
+        "module m
+         type Hook = proc () clobbers(d2)
+         comptime fn dispatch_hook() -> Code {
+             asm { jsr (a0, d4.w) as Hook }
+         }
+         proc Caller () clobbers(d0) {
+             dispatch_hook()
+             rts
+         }
+        ",
+    ]);
+    assert_eq!(
+        r.bounded_indirect_sites,
+        vec![("Caller".to_string(), "Hook".to_string())],
+        "spliced indirect call must appear in bounded_indirect_sites"
+    );
+    assert!(
+        r.firings.iter().any(|f| f.proc == "Caller" && f.reg.as_deref() == Some("d2")),
+        "spliced as Hook must charge d2: {:?}",
+        r.firings
+    );
+    assert!(r.blind_transfers.is_empty(), "bounded spliced call is not blind: {:?}", r.blind_transfers);
+}
+
+#[test]
+fn piece4_cross_file_forward_contract_type_and_contractless_type_and_inout() {
+    use sigil_frontend_emp::corpus_contracts::BlindTransferKind;
+    let r = analyze(&[
+        "module a
+         proc GoodForward () clobbers(d0, d2) {
+             jsr (a0) as LaterHook
+             rts
+         }
+         proc EmptyCaller () clobbers(d0) {
+             jsr (a0) as EmptyHook
+             rts
+         }
+         proc InoutCaller () clobbers(d0) {
+             jsr (a0) as InoutHook
+             rts
+         }
+        ",
+        "module b
+         type LaterHook = proc () clobbers(d2)
+         type EmptyHook = proc ()
+         type InoutHook = proc () clobbers(d0) inout(d3)
+        ",
+    ]);
+    assert!(
+        !r.firings.iter().any(|f| f.proc == "GoodForward"),
+        "forward cross-file ContractType must resolve bounded: {:?}",
+        r.firings
+    );
+    assert!(
+        r.firings.iter().any(|f| f.proc == "EmptyCaller" && f.unbounded),
+        "contractless type must fire UNBOUNDED: {:?}",
+        r.firings
+    );
+    assert!(
+        r.blind_transfers
+            .iter()
+            .any(|b| b.proc == "EmptyCaller" && b.kind == BlindTransferKind::ContractlessType),
+        "contractless type must appear in blind_transfers: {:?}",
+        r.blind_transfers
+    );
+    assert!(
+        r.firings.iter().any(|f| f.proc == "InoutCaller" && f.reg.as_deref() == Some("d3")),
+        "ContractType inout(d3) must be charged in closure: {:?}",
+        r.firings
+    );
+}
+
+#[test]
+fn piece4_targeted_dispatch_and_resumable_exit_are_not_blind() {
+    let r = analyze(&[
+        "module m
+         proc Targeted () clobbers(d0) {
+             jmp .tbl(pc, d0.w) targets(.a, .b)
+         .tbl:
+             bra.w .a
+             bra.w .b
+         .a:
+             moveq #0, d0
+             rts
+         .b:
+             moveq #1, d0
+             rts
+         }
+         @resumable
+         proc Resumable () clobbers(d0) {
+             moveq #0, d0
+             jmp (a3)
+         }
+        ",
+    ]);
+    assert!(r.blind_transfers.is_empty(), "targeted jmp and @resumable jmp (a3) are not blind: {:?}", r.blind_transfers);
+    assert!(r.firings.is_empty(), "no unbounded firings expected: {:?}", r.firings);
+}
